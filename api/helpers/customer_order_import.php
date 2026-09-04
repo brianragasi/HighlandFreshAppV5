@@ -53,7 +53,7 @@ function hfEnsureManualCustomerOrderSchema(PDO $db): void
         $db->exec("CREATE TABLE customer_order_import_lines (
         id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
         import_id BIGINT UNSIGNED NOT NULL,
-        row_number INT UNSIGNED NOT NULL,
+        `row_number` INT UNSIGNED NOT NULL,
         customer_product_code VARCHAR(100) NULL,
         description VARCHAR(255) NULL,
         product_id INT NULL,
@@ -75,7 +75,7 @@ function hfEnsureManualCustomerOrderSchema(PDO $db): void
         original_unit_entered VARCHAR(40) NULL,
         original_po_unit_price DECIMAL(12,2) NULL,
         PRIMARY KEY (id),
-        UNIQUE KEY uk_customer_order_import_row (import_id, row_number),
+        UNIQUE KEY uk_customer_order_import_row (import_id, `row_number`),
         KEY idx_customer_order_line_product (product_id),
         CONSTRAINT fk_customer_order_line_import
             FOREIGN KEY (import_id) REFERENCES customer_order_imports(id) ON DELETE CASCADE,
@@ -1751,7 +1751,7 @@ function hfSaveManualCustomerOrder(PDO $db, int $importId, array $data, int $use
             throw new RuntimeException("This PO number already created Sales Order {$existingOrder}. Open that order instead of creating a duplicate.");
         }
 
-        $currentStmt = $db->prepare('SELECT * FROM customer_order_import_lines WHERE import_id = ? ORDER BY row_number, id FOR UPDATE');
+        $currentStmt = $db->prepare('SELECT * FROM customer_order_import_lines WHERE import_id = ? ORDER BY `row_number`, `id` FOR UPDATE');
         $currentStmt->execute([$importId]);
         $currentLines = $currentStmt->fetchAll(PDO::FETCH_ASSOC);
         $currentById = [];
@@ -1766,14 +1766,14 @@ function hfSaveManualCustomerOrder(PDO $db, int $importId, array $data, int $use
         }
 
         $updateLine = $db->prepare("UPDATE customer_order_import_lines SET
-            row_number = ?, customer_product_code = ?, description = ?, product_id = ?,
+            `row_number` = ?, customer_product_code = ?, description = ?, product_id = ?,
             quantity_entered = ?, unit_entered = ?, quantity_base = ?, quantity_boxes = ?, quantity_pieces = ?,
             po_unit_price = ?, system_unit_price = ?, line_status = ?, issue_text = ?, raw_data = ?,
             original_customer_product_code = ?, original_description = ?, original_product_id = ?,
             original_quantity_entered = ?, original_unit_entered = ?, original_po_unit_price = ?
             WHERE id = ? AND import_id = ?");
         $insertLine = $db->prepare("INSERT INTO customer_order_import_lines (
-            import_id, row_number, customer_product_code, description, product_id,
+            import_id, `row_number`, customer_product_code, description, product_id,
             quantity_entered, unit_entered, quantity_base, quantity_boxes, quantity_pieces,
             po_unit_price, system_unit_price, line_status, issue_text, raw_data,
             original_customer_product_code, original_description, original_product_id,
@@ -1836,7 +1836,7 @@ function hfSaveManualCustomerOrder(PDO $db, int $importId, array $data, int $use
             }
         }
 
-        $savedStmt = $db->prepare('SELECT * FROM customer_order_import_lines WHERE import_id = ? ORDER BY row_number, id');
+        $savedStmt = $db->prepare('SELECT * FROM customer_order_import_lines WHERE import_id = ? ORDER BY `row_number`, `id`');
         $savedStmt->execute([$importId]);
         $savedLines = $savedStmt->fetchAll(PDO::FETCH_ASSOC);
         $activeLines = array_values(array_filter($savedLines, static fn(array $line): bool => (int)($line['quantity_base'] ?? 0) > 0));
@@ -1957,7 +1957,7 @@ function hfCorrectManualCustomerOrderEncoding(PDO $db, int $importId, string $re
             throw new RuntimeException('This order already has a customer confirmation record and must keep its original request history.');
         }
 
-        $linesStmt = $db->prepare('SELECT * FROM customer_order_import_lines WHERE import_id = ? ORDER BY row_number, id FOR UPDATE');
+        $linesStmt = $db->prepare('SELECT * FROM customer_order_import_lines WHERE import_id = ? ORDER BY `row_number`, `id` FOR UPDATE');
         $linesStmt->execute([$importId]);
         $beforeLines = $linesStmt->fetchAll(PDO::FETCH_ASSOC);
         if (!hfManualOrderHasChanges($beforeLines)) {
@@ -2108,7 +2108,7 @@ function hfRecordCustomerOrderCall(PDO $db, int $importId, array $data, int $use
         if ($clarificationOnly) {
             $snapshot = [];
         } else {
-            $lineStmt = $db->prepare('SELECT * FROM customer_order_import_lines WHERE import_id = ? ORDER BY row_number, id');
+            $lineStmt = $db->prepare('SELECT * FROM customer_order_import_lines WHERE import_id = ? ORDER BY `row_number`, `id`');
             $lineStmt->execute([$importId]);
             $lines = $lineStmt->fetchAll(PDO::FETCH_ASSOC);
             if (!$lines) {
@@ -2537,7 +2537,7 @@ function hfConvertCustomerOrderImport(
             FROM customer_order_import_lines l
             LEFT JOIN products p ON p.id = l.product_id
             WHERE l.import_id = ?
-            ORDER BY l.row_number
+            ORDER BY l.`row_number`
         ");
         $linesStmt->execute([$importId]);
         $lines = $linesStmt->fetchAll(PDO::FETCH_ASSOC);

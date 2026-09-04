@@ -23,24 +23,6 @@ try {
     }
 
     $db = Database::getInstance()->getConnection();
-    if ($requestMethod === 'GET' && $action === 'schema_diagnostics') {
-        if (($currentUser['role'] ?? '') !== 'general_manager') {
-            Response::error('Only the General Manager can view database diagnostics.', 403);
-        }
-        $tables = [];
-        foreach (['customer_order_imports', 'customer_order_import_lines'] as $table) {
-            $columns = $db->query("SHOW COLUMNS FROM {$table}")->fetchAll(PDO::FETCH_ASSOC);
-            $tables[$table] = array_map(static fn(array $column): array => [
-                'field' => $column['Field'],
-                'type' => $column['Type'],
-                'nullable' => $column['Null'],
-                'default' => $column['Default'],
-                'extra' => $column['Extra'],
-            ], $columns);
-        }
-        Response::success(['tables' => $tables], 'Customer order inbox schema diagnostics');
-    }
-
     hfEnsureManualCustomerOrderSchema($db);
 
     if ($requestMethod === 'GET') {
@@ -56,12 +38,6 @@ try {
     // PDOException extends RuntimeException. This must stay above the runtime
     // branch so a live database/schema fault is not blamed on form input.
     error_log('Customer Order Inbox Database Error: ' . $e->getMessage());
-    if (($currentUser['role'] ?? '') === 'general_manager'
-        && filter_var(getParam('database_diagnostic', false), FILTER_VALIDATE_BOOLEAN)) {
-        Response::error('Protected customer-order database diagnostic.', 422, [
-            'database' => $e->getMessage(),
-        ]);
-    }
     Response::error('The customer order could not be saved because the live database needs attention. Please try again after the database update.', 500);
 } catch (RuntimeException $e) {
     Response::error($e->getMessage(), 400);
@@ -331,7 +307,7 @@ function handleCustomerOrderInboxGet(PDO $db, string $action): void
             FROM customer_order_import_lines l
             LEFT JOIN products p ON p.id = l.product_id
             WHERE l.import_id = ?
-            ORDER BY l.row_number
+            ORDER BY l.`row_number`
         ");
         $lines->execute([$id]);
         $import['lines'] = $lines->fetchAll(PDO::FETCH_ASSOC);

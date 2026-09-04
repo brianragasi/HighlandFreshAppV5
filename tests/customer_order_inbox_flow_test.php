@@ -60,5 +60,9 @@ inboxAssert(
     strpos($endpointSource, 'catch (PDOException $e)') < strpos($endpointSource, 'catch (RuntimeException $e)'),
     'PDO exceptions must be caught before RuntimeException because PDOException inherits from RuntimeException.'
 );
+inboxAssert(
+    !preg_match('/ORDER BY\s+(?:[a-z]+\.)?row_number\b/i', $helperSource . "\n" . $endpointSource),
+    'ROW_NUMBER must be quoted in SQL because hosted MariaDB treats it as a reserved window-function name.'
+);
 
 echo "Customer order inbox flow checks passed.\n";
