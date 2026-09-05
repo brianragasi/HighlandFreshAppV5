@@ -19,6 +19,136 @@
             font-family: 'Inter', sans-serif;
         }
 
+        /* Picking is a linear warehouse task, so keep the workbench wide and
+           present one step at a time instead of squeezing cards into columns. */
+        #pickingModal .pick-modal-box {
+            width: min(96vw, 72rem);
+            max-width: 72rem;
+            height: min(92vh, 56rem);
+            max-height: 92vh;
+            padding: 0;
+            overflow: hidden;
+        }
+        .pick-modal-scroll {
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow-y: auto;
+            overflow-x: hidden;
+            background: oklch(var(--b2) / 0.55);
+            padding: 1.25rem;
+        }
+        .pick-modal-content {
+            width: 100%;
+            max-width: 68rem;
+            margin: 0 auto;
+            display: grid;
+            gap: 1rem;
+        }
+        .pick-work-card {
+            border: 1px solid oklch(var(--bc) / 0.12);
+            border-radius: 0.875rem;
+            background: oklch(var(--b1));
+            box-shadow: 0 0.2rem 0.75rem oklch(var(--bc) / 0.05);
+            padding: 1.1rem;
+        }
+        .pick-section-heading {
+            display: flex;
+            align-items: center;
+            gap: 0.55rem;
+            margin-bottom: 0.8rem;
+            font-size: 0.78rem;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: oklch(var(--bc) / 0.62);
+        }
+        .pick-meta-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 0.75rem;
+        }
+        .pick-meta-item {
+            min-width: 0;
+            border-radius: 0.65rem;
+            background: oklch(var(--b2) / 0.65);
+            padding: 0.7rem 0.8rem;
+        }
+        .pick-meta-label {
+            display: block;
+            margin-bottom: 0.18rem;
+            font-size: 0.65rem;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: oklch(var(--bc) / 0.48);
+        }
+        .pick-meta-value {
+            display: block;
+            font-size: 0.9rem;
+            font-weight: 600;
+            line-height: 1.35;
+            overflow-wrap: anywhere;
+        }
+        .pick-required-list {
+            display: grid;
+            gap: 0.5rem;
+            margin-top: 0.9rem;
+        }
+        .pick-required-row {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 1rem;
+            min-width: 0;
+            border: 1px solid oklch(var(--bc) / 0.1);
+            border-radius: 0.65rem;
+            padding: 0.65rem 0.8rem;
+        }
+        .pick-required-name {
+            min-width: 0;
+            overflow-wrap: anywhere;
+        }
+        .pick-scan-controls {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto auto;
+            gap: 0.65rem;
+            align-items: stretch;
+        }
+        .pick-scanned-table-wrap {
+            max-height: 18rem;
+            overflow: auto;
+        }
+        .pick-modal-footer {
+            width: 100%;
+            max-width: 68rem;
+            margin: 0 auto;
+        }
+        @media (max-width: 639px) {
+            #pickingModal .pick-modal-box {
+                width: 100vw;
+                height: 96vh;
+                max-height: 96vh;
+                border-radius: 1rem 1rem 0 0;
+            }
+            .pick-modal-scroll {
+                padding: 0.75rem;
+            }
+            .pick-meta-grid {
+                grid-template-columns: 1fr;
+            }
+            .pick-scan-controls {
+                grid-template-columns: minmax(0, 1fr) auto;
+            }
+            .pick-scan-controls .pick-scan-submit {
+                grid-column: 1 / -1;
+                grid-row: 2;
+            }
+            .pick-scan-controls > button:last-child {
+                grid-column: 2;
+                grid-row: 1;
+            }
+        }
+
         .scrollbar-thin::-webkit-scrollbar {
             width: 6px;
         }
@@ -824,15 +954,12 @@
 
     <!-- ==================== PICKING MODAL (Tablet-Optimized) ==================== -->
     <dialog id="pickingModal" class="modal modal-bottom sm:modal-middle">
-        <div class="modal-box w-full max-w-5xl h-[92vh] max-h-[92vh] p-0 flex flex-col rounded-t-2xl sm:rounded-2xl">
+        <div class="modal-box pick-modal-box flex flex-col rounded-t-2xl sm:rounded-2xl">
 
             <!-- ─── Header ─── -->
             <header class="bg-gradient-to-r from-primary to-primary/80 text-primary-content px-6 py-4 shrink-0 rounded-t-2xl">
                 <div class="flex items-center justify-between">
                     <div class="flex items-center gap-3">
-                        <button class="btn btn-ghost btn-sm btn-circle text-primary-content" onclick="closePickingModal()">
-                            <i class="fas fa-times text-lg"></i>
-                        </button>
                         <div>
                             <h2 class="text-lg font-bold flex items-center gap-2">
                                 <i class="fas fa-clipboard-check"></i>
@@ -841,128 +968,119 @@
                             <p class="text-sm text-primary-content/70" id="pickModalCustomer">Loading...</p>
                         </div>
                     </div>
-                    <span class="badge badge-lg bg-white/20 text-primary-content border-0 font-bold" id="pickModalStatus">PICKING</span>
+                    <div class="flex items-center gap-2">
+                        <span class="badge badge-lg bg-white/20 text-primary-content border-0 font-bold" id="pickModalStatus">PICKING</span>
+                        <button class="btn btn-ghost btn-sm btn-circle text-primary-content" onclick="closePickingModal()" title="Close picking" aria-label="Close picking">
+                            <i class="fas fa-times text-lg"></i>
+                        </button>
+                    </div>
                 </div>
                 <!-- Progress Bar -->
                 <div class="mt-3">
                     <div class="flex justify-between text-xs text-primary-content/80 mb-1">
                         <span>Picking Progress</span>
-                        <span id="pickProgressLabel">0 / 0 items</span>
+                        <span id="pickProgressLabel">0 / 0 units picked</span>
                     </div>
                     <progress id="pickProgressBar" class="progress progress-accent w-full h-3" value="0" max="100"></progress>
                 </div>
             </header>
 
-            <!-- ─── Body: 2-Column Flex ─── -->
-            <div class="flex-1 min-h-0 overflow-y-auto overflow-x-hidden bg-base-200/50 p-4 lg:p-6">
-                <div class="flex flex-col lg:flex-row gap-5 max-w-5xl mx-auto">
-
-                    <!-- LEFT COLUMN: Action Zone -->
-                    <div class="w-full lg:w-3/5 flex flex-col gap-4">
-
-                        <!-- Barcode Scanner Input -->
-                        <div class="card bg-base-100 shadow-md border border-base-300">
-                            <div class="card-body p-5">
-                                <label class="text-xs font-semibold uppercase tracking-wider text-base-content/60 mb-2">
-                                    <i class="fas fa-barcode mr-1"></i> Scan / Enter Barcode
-                                </label>
-                                <div class="flex gap-2">
-                                    <input type="text" id="pickBarcodeInput"
-                                        class="input input-bordered input-lg flex-1 text-xl font-mono tracking-wide bg-base-200 focus:bg-white"
-                                        placeholder="Scan barcode here..."
-                                        onkeypress="if(event.key==='Enter') pickScanBarcode()"
-                                        autocomplete="off">
-                                    <button class="btn btn-primary btn-lg px-6 text-lg" onclick="pickScanBarcode()">
-                                        <i class="fas fa-search mr-1"></i> Scan
-                                    </button>
-                                    <button class="btn btn-ghost btn-lg btn-square" onclick="pickOpenCamera()" title="Phone Camera">
-                                        <i class="fas fa-camera text-xl"></i>
-                                    </button>
-                                </div>
+            <!-- ─── Body: Guided linear picking flow ─── -->
+            <div class="pick-modal-scroll">
+                <div class="pick-modal-content">
+                    <section class="pick-work-card" aria-labelledby="pickOrderHeading">
+                        <h3 id="pickOrderHeading" class="pick-section-heading">
+                            <span class="badge badge-primary badge-sm">1</span>
+                            Review what must be picked
+                        </h3>
+                        <div id="pickDRSummary">
+                            <div class="flex justify-center py-6">
+                                <span class="loading loading-spinner loading-md"></span>
                             </div>
                         </div>
+                    </section>
 
-                        <!-- Scan Result Alert -->
-                        <div id="pickScanResult" class="hidden">
-                            <div id="pickScanResultContent" class="rounded-xl p-4 shadow-md border"></div>
+                    <section class="pick-work-card" aria-labelledby="pickScanHeading">
+                        <h3 id="pickScanHeading" class="pick-section-heading">
+                            <span class="badge badge-primary badge-sm">2</span>
+                            Scan a finished-goods batch
+                        </h3>
+                        <p class="text-sm text-base-content/60 mb-3">Scan the batch barcode, then enter how many boxes or loose pieces you are picking.</p>
+                        <div class="pick-scan-controls">
+                            <input type="text" id="pickBarcodeInput"
+                                class="input input-bordered input-lg w-full text-lg font-mono tracking-wide bg-base-200 focus:bg-white"
+                                placeholder="Scan or enter a batch barcode"
+                                aria-label="Finished-goods batch barcode"
+                                onkeypress="if(event.key==='Enter') pickScanBarcode()"
+                                autocomplete="off">
+                            <button class="btn btn-primary btn-lg pick-scan-submit" onclick="pickScanBarcode()">
+                                <i class="fas fa-barcode"></i> Check batch
+                            </button>
+                            <button class="btn btn-outline btn-lg btn-square" onclick="pickOpenCamera()" title="Use phone camera" aria-label="Use phone camera">
+                                <i class="fas fa-camera"></i>
+                            </button>
                         </div>
+                    </section>
 
-                        <!-- FIFO Warning -->
-                        <div id="pickFifoWarning" class="alert alert-warning shadow-md hidden">
-                            <i class="fas fa-exclamation-triangle text-xl"></i>
-                            <div>
-                                <h3 class="font-bold">FIFO Warning</h3>
-                                <div class="text-sm" id="pickFifoWarningText"></div>
-                            </div>
-                            <button class="btn btn-sm btn-warning" onclick="pickOverrideFIFO()">Override</button>
-                        </div>
-
-                        <!-- Scanned Items Table -->
-                        <div class="card bg-base-100 shadow-md border border-base-300 flex-1">
-                            <div class="card-body p-4">
-                                <div class="flex justify-between items-center mb-3">
-                                    <h3 class="font-bold text-sm uppercase tracking-wide text-base-content/70">
-                                        <i class="fas fa-list-check text-success mr-1"></i> Scanned Items
-                                    </h3>
-                                    <div class="flex items-center gap-2">
-                                        <span class="badge badge-primary badge-sm font-mono" id="pickScannedCount">0 items</span>
-                                        <button class="btn btn-ghost btn-xs text-error" onclick="pickClearScanned()" title="Clear All">
-                                            <i class="fas fa-trash-can"></i>
-                                        </button>
-                                    </div>
-                                </div>
-                                <div class="overflow-x-auto overflow-y-auto max-h-[40vh]">
-                                    <table class="table table-sm table-zebra">
-                                        <thead>
-                                            <tr>
-                                                <th>Product</th>
-                                                <th>Batch</th>
-                                                <th>Expiry</th>
-                                                <th class="text-right">Qty</th>
-                                                <th></th>
-                                            </tr>
-                                        </thead>
-                                        <tbody id="pickScannedItemsTable">
-                                            <tr>
-                                                <td colspan="5" class="text-center py-8 text-base-content/40">
-                                                    <i class="fas fa-barcode text-4xl mb-2 opacity-20"></i>
-                                                    <p class="text-sm">Scan items to begin picking</p>
-                                                </td>
-                                            </tr>
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        </div>
+                    <div id="pickScanResult" class="hidden">
+                        <div id="pickScanResultContent" class="rounded-xl p-4 shadow-md border"></div>
                     </div>
 
-                    <!-- RIGHT COLUMN: Checklist -->
-                    <div class="w-full lg:w-2/5 flex flex-col gap-4">
-                        <!-- DR Summary Card -->
-                        <div class="card bg-base-100 shadow-md border border-base-300 flex-1">
-                            <div class="card-body p-4">
-                                <h3 class="font-bold text-sm uppercase tracking-wide text-base-content/70 mb-3">
-                                    <i class="fas fa-file-invoice text-info mr-1"></i> Order Checklist
-                                </h3>
-                                <div id="pickDRSummary" class="space-y-3">
-                                    <div class="flex justify-center py-6">
-                                        <span class="loading loading-spinner loading-md"></span>
-                                    </div>
-                                </div>
+                    <div id="pickFifoWarning" class="alert alert-warning shadow-md hidden">
+                        <i class="fas fa-exclamation-triangle text-xl"></i>
+                        <div>
+                            <h3 class="font-bold">FIFO Warning</h3>
+                            <div class="text-sm" id="pickFifoWarningText"></div>
+                        </div>
+                        <button class="btn btn-sm btn-warning" onclick="pickOverrideFIFO()">Override</button>
+                    </div>
+
+                    <section class="pick-work-card" aria-labelledby="pickItemsHeading">
+                        <div class="flex justify-between items-center gap-3 mb-3">
+                            <h3 id="pickItemsHeading" class="pick-section-heading mb-0">
+                                <span class="badge badge-primary badge-sm">3</span>
+                                Confirm picked items
+                            </h3>
+                            <div class="flex items-center gap-2">
+                                <span class="badge badge-primary badge-sm font-mono" id="pickScannedCount">0 items</span>
+                                <button class="btn btn-ghost btn-xs text-error" onclick="pickClearScanned()" title="Clear all picked items" aria-label="Clear all picked items">
+                                    <i class="fas fa-trash-can"></i>
+                                </button>
                             </div>
                         </div>
-                    </div>
+                        <div class="pick-scanned-table-wrap">
+                            <table class="table table-sm table-zebra w-full">
+                                <thead>
+                                    <tr>
+                                        <th>Product</th>
+                                        <th>Batch</th>
+                                        <th>Expiry</th>
+                                        <th class="text-right">Quantity</th>
+                                        <th aria-label="Actions"></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="pickScannedItemsTable">
+                                    <tr>
+                                        <td colspan="5" class="text-center py-8 text-base-content/40">
+                                            <i class="fas fa-barcode text-4xl mb-2 opacity-20"></i>
+                                            <p class="text-sm">No batches picked yet</p>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
                 </div>
             </div>
 
             <!-- ─── Footer: Generate DR Button ─── -->
             <footer class="bg-base-100 border-t-2 border-base-300 px-6 py-4 shrink-0">
-                <div class="flex items-center justify-between gap-3 max-w-5xl mx-auto">
+                <div class="pick-modal-footer flex items-center justify-between gap-3">
                     <button class="btn btn-ghost" onclick="closePickingModal()">
                         <i class="fas fa-arrow-left mr-1"></i> Cancel
                     </button>
                     <button class="btn btn-success btn-lg flex-1 max-w-sm text-lg font-bold shadow-lg" id="pickBtnConfirm" onclick="pickConfirmRelease()" disabled>
-                        <i class="fas fa-check-circle mr-2"></i> Generate DR
+                        <i class="fas fa-check-circle mr-2"></i> Generate Delivery Receipt
                     </button>
                 </div>
             </footer>
@@ -1120,23 +1238,31 @@
                     `${pickModalDR.customer_name || 'Unknown'} — ${pickModalDR.delivery_address || ''}`;
 
                 let summaryHtml = `
-                    <div class="space-y-2">
-                        <div class="text-sm space-y-1">
-                            <div><i class="fas fa-user w-5 text-base-content/60"></i> ${escapeHtml(pickModalDR.customer_name || 'N/A')}</div>
-                            <div><i class="fas fa-tag w-5 text-base-content/60"></i> ${escapeHtml(pickModalDR.customer_type || 'N/A')}</div>
-                            <div><i class="fas fa-map-marker-alt w-5 text-base-content/60"></i> ${escapeHtml(pickModalDR.delivery_address || 'N/A')}</div>
+                    <div>
+                        <div class="pick-meta-grid">
+                            <div class="pick-meta-item">
+                                <span class="pick-meta-label">Customer</span>
+                                <span class="pick-meta-value"><i class="fas fa-user text-primary mr-2"></i>${escapeHtml(pickModalDR.customer_name || 'N/A')}</span>
+                            </div>
+                            <div class="pick-meta-item">
+                                <span class="pick-meta-label">Customer type</span>
+                                <span class="pick-meta-value"><i class="fas fa-tag text-primary mr-2"></i>${escapeHtml(pickModalDR.customer_type || 'N/A')}</span>
+                            </div>
+                            <div class="pick-meta-item">
+                                <span class="pick-meta-label">Delivery address</span>
+                                <span class="pick-meta-value"><i class="fas fa-map-marker-alt text-primary mr-2"></i>${escapeHtml(pickModalDR.delivery_address || 'N/A')}</span>
+                            </div>
                         </div>
-                        <div class="alert alert-info text-xs py-2">
+                        <div class="alert alert-info text-sm py-2 mt-3">
                             <i class="fas fa-info-circle"></i>
-                            <span>Scan a batch, enter the boxes or loose pieces, then click "Generate DR" when complete.</span>
+                            <span>Pick the full required quantity below. The Delivery Receipt can be generated only when every line is complete.</span>
                         </div>
                 `;
 
                 if (pickModalDR.items && pickModalDR.items.length > 0) {
                     summaryHtml += `
-                        <div class="divider my-2"></div>
-                        <div id="pickRequiredItemsList">
-                            <div class="font-semibold mb-2">Required Items:</div>
+                        <div id="pickRequiredItemsList" class="pick-required-list">
+                            <div class="font-semibold">Items to pick</div>
                             ${pickModalDR.items.map(pickRenderRequiredRow).join('')}
                         </div>
                     `;
@@ -1495,7 +1621,7 @@
                     <td></td>
                 </tr>`;
 
-            document.getElementById('pickScannedCount').textContent = `${pickScannedItems.length} items (${grandTotal} pcs)`;
+            document.getElementById('pickScannedCount').textContent = `${pickScannedItems.length} ${pickScannedItems.length === 1 ? 'batch' : 'batches'} · ${grandTotal} units`;
             pickUpdateProgress();
         }
 
@@ -1507,7 +1633,7 @@
                         <p>Scan items to add to release list</p>
                     </td>
                 </tr>`;
-            document.getElementById('pickScannedCount').textContent = '0 items';
+            document.getElementById('pickScannedCount').textContent = '0 batches';
         }
 
         function pickRemoveItem(index) {
@@ -1730,9 +1856,9 @@
                 countClass = 'font-mono text-warning';
             }
 
-            return `<div class="flex justify-between items-center gap-2 ${rowClass}">
-                <span class="min-w-0 truncate">${icon}${escapeHtml(ProductDisplay.name(item))}</span>
-                <span class="${countClass} shrink-0">${scannedQty}/${requiredQty}</span>
+            return `<div class="pick-required-row ${rowClass}">
+                <span class="pick-required-name">${icon}${escapeHtml(ProductDisplay.name(item))}</span>
+                <span class="${countClass} shrink-0">${scannedQty} / ${requiredQty} picked</span>
             </div>`;
         }
 
@@ -1741,7 +1867,7 @@
             const listEl = document.getElementById('pickRequiredItemsList');
             if (!listEl) return;
             listEl.innerHTML = `
-                <div class="font-semibold mb-2">Required Items:</div>
+                <div class="font-semibold">Items to pick</div>
                 ${pickModalDR.items.map(pickRenderRequiredRow).join('')}
             `;
 
@@ -1751,7 +1877,7 @@
             const labelEl = document.getElementById('pickProgressLabel');
             const barEl = document.getElementById('pickProgressBar');
             if (labelEl) {
-                labelEl.textContent = `${totalScanned} / ${totalRequired} items`;
+                labelEl.textContent = `${totalScanned} / ${totalRequired} units picked`;
             }
             if (barEl && totalRequired > 0) {
                 barEl.value = Math.min(100, Math.round((totalScanned / totalRequired) * 100));
