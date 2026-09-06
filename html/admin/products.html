@@ -897,7 +897,7 @@
                 <table class="table table-sm">
                     <thead>
                         <tr>
-                            <th>Packaging material</th>
+                            <th>Required component / material</th>
                             <th class="w-72">Material usage</th>
                             <th class="w-28">Waste %</th>
                             <th class="w-20">UOM</th>
@@ -912,7 +912,7 @@
             </p>
             <button type="button" id="addPackagingBomRowBtn" class="btn btn-ghost btn-sm mt-3 gap-2 border-dashed border-2"
                 onclick="addPackagingBomRow()">
-                <i class="fas fa-plus text-primary"></i>Add packaging material
+                <i class="fas fa-plus text-primary"></i>Add optional packaging
             </button>
 
             <div class="modal-action">
@@ -961,6 +961,7 @@
         let packagingBomRequiresBottleSet = false;
         let packagingBomPackageStyle = '';
         let packagingBomPrimaryContainerId = 0;
+        let packagingBomSku = {};
         let packagingContainerOptions = [];
         let packagingSets = [];
         let packagingSetMaterials = [];
@@ -1071,12 +1072,45 @@
             });
         }
 
-        function packagingBomNextMissingRole() {
-            const required = PACKAGE_STYLE_REQUIREMENTS[packagingBomPackageStyle] || {};
-            const selectedRoles = Array.from(document.querySelectorAll('#packagingBomRows [data-pack-bom="ingredient"]'))
-                .map(select => select.options?.[select.selectedIndex]?.dataset?.role || '')
-                .filter(Boolean);
-            return Object.keys(required).find(role => !selectedRoles.includes(role)) || '';
+        function packagingBomMaterialFormForRole(role) {
+            if (role === 'container') {
+                return (PACKAGE_STYLE_FORMS[packagingBomPackageStyle] || ['other'])[0];
+            }
+            return ({ closure: 'cap_lid', label: 'label', secondary: 'carton_case', other: 'other' })[role] || 'other';
+        }
+
+        function packagingBomCreateMaterialUrl(role) {
+            const productId = Number(document.getElementById('packaging_bom_product_id')?.value || 0);
+            const form = packagingBomMaterialFormForRole(role);
+            const component = (PACKAGE_STYLE_REQUIREMENTS[packagingBomPackageStyle] || {})[role]
+                || packagingRoleLabel(role).toLowerCase();
+            const productName = packagingBomSku.base_product_name || packagingBomSku.product_name || 'Product';
+            const size = formatProductNumber(packagingBomSku.unit_size, 3);
+            const unit = packagingBomSku.unit_measure || '';
+            const params = new URLSearchParams({
+                view: 'packaging',
+                create: form,
+                return_product_id: String(productId),
+                name_hint: `${productName} ${size} ${unit} ${component}`.replace(/\s+/g, ' ').trim()
+            });
+            if (['container', 'label'].includes(role) && Number(packagingBomSku.unit_size || 0) > 0) {
+                params.set('capacity_value', String(packagingBomSku.unit_size));
+                params.set('capacity_unit', String(packagingBomSku.unit_measure || 'ml'));
+            }
+            return `ingredients.html?${params.toString()}`;
+        }
+
+        function rememberPackagingBomDraft() {
+            const productId = Number(document.getElementById('packaging_bom_product_id')?.value || 0);
+            if (!productId) return;
+            const rows = Array.from(document.querySelectorAll('#packagingBomRows tr')).map(row => ({
+                required_role: row.dataset.requiredRole || '',
+                ingredient_id: Number(row.querySelector('[data-pack-bom="ingredient"]')?.value || 0),
+                quantity: row.querySelector('[data-pack-bom="quantity"]')?.value || '',
+                coverage: row.querySelector('[data-pack-bom="coverage"]')?.value || '',
+                waste: row.querySelector('[data-pack-bom="waste"]')?.value || '0'
+            }));
+            sessionStorage.setItem(`packagingBomDraft:${productId}`, JSON.stringify(rows));
         }
 
         function packageStyleLabel(value) {
@@ -1149,19 +1183,38 @@
 
         function syncPackagingBomUsageControl(row) {
             if (!row) return;
+            const materialSelect = row.querySelector('[data-pack-bom="ingredient"]');
+            const hasMaterial = Boolean(materialSelect?.value);
             const unit = row.querySelector('[data-pack-bom="unit"]')?.textContent || '';
             const isRoll = isRollPackagingUnit(unit);
             const quantityInput = row.querySelector('[data-pack-bom="quantity"]');
+            const coverageInput = row.querySelector('[data-pack-bom="coverage"]');
+            const wasteInput = row.querySelector('[data-pack-bom="waste"]');
             const directWrap = row.querySelector('[data-pack-bom="direct-usage"]');
             const rollWrap = row.querySelector('[data-pack-bom="roll-usage"]');
             const directHelp = row.querySelector('[data-pack-bom="direct-help"]');
+            [quantityInput, coverageInput, wasteInput].forEach(input => {
+                if (input) input.disabled = !hasMaterial;
+            });
+            if (!hasMaterial) {
+                if (quantityInput) {
+                    quantityInput.required = false;
+                    quantityInput.value = '';
+                }
+                if (coverageInput) coverageInput.value = '';
+                directWrap?.classList.remove('hidden');
+                rollWrap?.classList.add('hidden');
+                if (directHelp) directHelp.textContent = 'Select or create this component first';
+                const preview = row.querySelector('[data-pack-bom="direct-preview"]');
+                if (preview) preview.textContent = '';
+                return;
+            }
             directWrap?.classList.toggle('hidden', isRoll);
             rollWrap?.classList.toggle('hidden', !isRoll);
             if (quantityInput) quantityInput.required = !isRoll;
             if (directHelp) directHelp.textContent = `${unit || 'unit'} per finished product`;
 
             if (isRoll) {
-                const coverageInput = row.querySelector('[data-pack-bom="coverage"]');
                 const quantity = Number(quantityInput?.value || 0);
                 if (coverageInput && !coverageInput.value && quantity > 0) {
                     coverageInput.value = formatProductNumber(1 / quantity, 3);
@@ -3097,6 +3150,7 @@
                 packagingBomPackageStyle = normalizePackageStyle(sku.base_unit || '');
                 packagingBomRequiresBottleSet = Boolean(PACKAGE_STYLE_REQUIREMENTS[packagingBomPackageStyle]);
                 packagingBomPrimaryContainerId = Number(sku.primary_container_id || 0);
+                packagingBomSku = sku;
                 if (!skuHasConfiguredPackage(sku)) {
                     showToast('Choose the SKU package style and its actual primary package first.', 'info', 7000);
                     await editSku(productId);
@@ -3136,9 +3190,20 @@
                         `${suggestion.set_name} matches ${sku.unit_size} ${sku.unit_measure}. Applying it replaces this SKU's current packaging lines; you can edit them before saving.`;
                 }
 
-                currentItems.forEach(item => addPackagingBomRow(item));
-                const nextRequiredRole = packagingBomNextMissingRole();
-                if (nextRequiredRole) addPackagingBomRow({}, nextRequiredRole);
+                // Package Style is the source of truth. Render every required role
+                // even when no compatible inventory material exists yet.
+                const remainingItems = [...currentItems];
+                const requiredRoles = PACKAGE_STYLE_REQUIREMENTS[packagingBomPackageStyle] || {};
+                Object.keys(requiredRoles).forEach(role => {
+                    const itemIndex = remainingItems.findIndex(item =>
+                        String(item.packaging_role || '') === role
+                        || (role === 'container' && Number(item.ingredient_id || 0) === packagingBomPrimaryContainerId)
+                    );
+                    const item = itemIndex >= 0 ? remainingItems.splice(itemIndex, 1)[0] : {};
+                    addPackagingBomRow(item, role);
+                });
+                remainingItems.forEach(item => addPackagingBomRow(item));
+                restorePackagingBomDraft(productId);
                 refreshPackagingBomEmptyState();
                 updatePackagingBomReadinessMessage();
                 document.getElementById('packagingBomModal').showModal();
@@ -3170,26 +3235,90 @@
             }
         }
 
+        function restorePackagingBomDraft(productId) {
+            const storageKey = `packagingBomDraft:${Number(productId || 0)}`;
+            let draftRows = [];
+            try {
+                draftRows = JSON.parse(sessionStorage.getItem(storageKey) || '[]');
+            } catch (_) {
+                draftRows = [];
+            }
+
+            draftRows.forEach(saved => {
+                if (!Number(saved.ingredient_id || 0)) return;
+                let row = saved.required_role
+                    ? document.querySelector(`#packagingBomRows tr[data-required-role="${saved.required_role}"]`)
+                    : null;
+                if (!row) {
+                    row = Array.from(document.querySelectorAll('#packagingBomRows tr')).find(candidate =>
+                        Number(candidate.querySelector('[data-pack-bom="ingredient"]')?.value || 0) === Number(saved.ingredient_id)
+                    );
+                }
+                if (!row) {
+                    const material = packagingBomMaterials.find(candidate => Number(candidate.id) === Number(saved.ingredient_id));
+                    if (material) {
+                        addPackagingBomRow({
+                            ingredient_id: material.id,
+                            quantity_per_unit: saved.quantity,
+                            waste_percent: saved.waste,
+                            unit: material.unit_of_measure
+                        });
+                    }
+                    return;
+                }
+                const select = row.querySelector('[data-pack-bom="ingredient"]');
+                if (select && Array.from(select.options).some(option => Number(option.value) === Number(saved.ingredient_id))) {
+                    select.value = String(saved.ingredient_id);
+                    const quantity = row.querySelector('[data-pack-bom="quantity"]');
+                    const coverage = row.querySelector('[data-pack-bom="coverage"]');
+                    const waste = row.querySelector('[data-pack-bom="waste"]');
+                    if (quantity) quantity.value = saved.quantity || quantity.value;
+                    if (coverage) coverage.value = saved.coverage || coverage.value;
+                    if (waste) waste.value = saved.waste ?? waste.value;
+                    onPackagingBomMaterialChange(select);
+                }
+            });
+
+            const params = new URLSearchParams(window.location.search);
+            const preferredMaterialId = Number(params.get('select_material_id') || 0);
+            if (preferredMaterialId) {
+                const material = packagingBomMaterials.find(candidate => Number(candidate.id) === preferredMaterialId);
+                const role = String(material?.packaging_role || '');
+                const row = role ? document.querySelector(`#packagingBomRows tr[data-required-role="${role}"]`) : null;
+                const select = row?.querySelector('[data-pack-bom="ingredient"]');
+                if (select && Array.from(select.options).some(option => Number(option.value) === preferredMaterialId)) {
+                    select.value = String(preferredMaterialId);
+                    const quantity = row.querySelector('[data-pack-bom="quantity"]');
+                    if (quantity && !Number(quantity.value || 0)) quantity.value = '1';
+                    onPackagingBomMaterialChange(select);
+                }
+            }
+            sessionStorage.removeItem(storageKey);
+        }
+
         function addPackagingBomRow(item = {}, requestedRole = '') {
             const tbody = document.getElementById('packagingBomRows');
             if (!tbody) return;
             const selectedIds = new Set(Array.from(tbody.querySelectorAll('[data-pack-bom="ingredient"]'))
                 .map(select => select.value)
                 .filter(Boolean));
-            const requiredRole = item.ingredient_id ? '' : (requestedRole || packagingBomNextMissingRole());
+            const requiredRole = requestedRole || '';
+            const requiredDefinitions = PACKAGE_STYLE_REQUIREMENTS[packagingBomPackageStyle] || {};
+            const isRequiredRole = Boolean(requiredRole && Object.prototype.hasOwnProperty.call(requiredDefinitions, requiredRole));
             const isPrimaryContainer = packagingBomPrimaryContainerId > 0
                 && Number(item.ingredient_id || 0) === packagingBomPrimaryContainerId;
             const rowMaterials = packagingBomMaterials.filter(material => {
                 const id = Number(material.id || 0);
                 if (isPrimaryContainer) return id === packagingBomPrimaryContainerId;
                 if (id === packagingBomPrimaryContainerId) return false;
-                return !requiredRole || String(material.packaging_role || '') === requiredRole;
+                const role = String(material.packaging_role || '');
+                if (requiredRole) return role === requiredRole;
+                if (Number(item.ingredient_id || 0) === id) return true;
+                return !Object.prototype.hasOwnProperty.call(requiredDefinitions, role);
             });
             const availableForNewRow = rowMaterials.filter(material => !selectedIds.has(String(material.id)));
-            if (!item.ingredient_id && !availableForNewRow.length) {
-                const component = (PACKAGE_STYLE_REQUIREMENTS[packagingBomPackageStyle] || {})[requiredRole]
-                    || 'compatible optional packaging';
-                showToast(`No unused ${component} material is available. Create it in Packaging Materials first.`, 'info', 7000);
+            if (!item.ingredient_id && !isRequiredRole && !availableForNewRow.length) {
+                showToast('No unused optional packaging material is available.', 'info', 5000);
                 return;
             }
             const rowId = ++packagingBomRowCounter;
@@ -3202,15 +3331,28 @@
             const initialCoverage = Number(item.quantity_per_unit) > 0
                 ? formatProductNumber(1 / Number(item.quantity_per_unit), 3)
                 : '';
-            const requestedLabel = (PACKAGE_STYLE_REQUIREMENTS[packagingBomPackageStyle] || {})[requiredRole]
+            const requestedLabel = requiredDefinitions[requiredRole]
                 || 'compatible optional packaging';
+            const createMaterialUrl = isRequiredRole ? packagingBomCreateMaterialUrl(requiredRole) : '';
             const tr = document.createElement('tr');
             tr.id = `packagingBomRow_${rowId}`;
+            if (isRequiredRole) tr.dataset.requiredRole = requiredRole;
             tr.innerHTML = `
                 <td>
+                    <div class="flex items-center justify-between gap-2 mb-1.5">
+                        <span class="text-xs font-semibold text-base-content/70">${escapeHtml(requiredRole ? packagingRoleLabel(requiredRole) : 'Optional packaging')}</span>
+                        ${isRequiredRole ? '<span class="badge badge-warning badge-xs">Required</span>' : '<span class="badge badge-ghost badge-xs">Optional</span>'}
+                    </div>
                     <select class="select select-bordered select-sm w-full ${isPrimaryContainer ? 'bg-base-200' : ''}" data-pack-bom="ingredient" onchange="onPackagingBomMaterialChange(this)" required ${isPrimaryContainer ? 'disabled' : ''}>
                         <option value="">Select ${escapeHtml(requestedLabel)}…</option>${options}
                     </select>
+                    ${isRequiredRole && !item.ingredient_id && availableForNewRow.length === 0 ? `
+                        <div class="mt-2 rounded-lg border border-warning/40 bg-warning/10 p-2 text-xs">
+                            <p class="font-medium text-warning-content">No compatible ${escapeHtml(requestedLabel)} found.</p>
+                            <a class="btn btn-warning btn-xs mt-2" href="${escapeAttr(createMaterialUrl)}" onclick="rememberPackagingBomDraft()">
+                                <i class="fas fa-plus"></i>Create ${escapeHtml(requestedLabel)}
+                            </a>
+                        </div>` : ''}
                 </td>
                 <td class="min-w-[18rem]">
                     <div data-pack-bom="direct-usage">
@@ -3237,7 +3379,9 @@
                 <td class="font-mono text-xs" data-pack-bom="unit">${escapeHtml(item.unit || '—')}</td>
                 <td>${isPrimaryContainer
                     ? '<span class="badge badge-info badge-sm">Primary</span>'
-                    : `<button type="button" class="btn btn-ghost btn-xs text-error" onclick="removePackagingBomRow(${rowId})" title="Remove"><i class="fas fa-times"></i></button>`}</td>`;
+                    : (isRequiredRole
+                        ? '<span class="badge badge-warning badge-outline badge-sm">Required</span>'
+                        : `<button type="button" class="btn btn-ghost btn-xs text-error" onclick="removePackagingBomRow(${rowId})" title="Remove"><i class="fas fa-times"></i></button>`)}</td>`;
             tbody.appendChild(tr);
             onPackagingBomMaterialChange(tr.querySelector('[data-pack-bom="ingredient"]'));
             refreshPackagingBomEmptyState();
@@ -3324,21 +3468,21 @@
             });
             const addButton = document.getElementById('addPackagingBomRowBtn');
             if (addButton) {
-                const blankRowExists = selects.some(select => !select.value);
-                const nextRole = packagingBomNextMissingRole();
+                const requiredDefinitions = PACKAGE_STYLE_REQUIREMENTS[packagingBomPackageStyle] || {};
+                const blankOptionalRowExists = Array.from(document.querySelectorAll('#packagingBomRows tr'))
+                    .some(row => !row.dataset.requiredRole && !row.querySelector('[data-pack-bom="ingredient"]')?.value);
                 const candidates = packagingBomMaterials.filter(material => {
                     const id = String(material.id || '');
                     if (!id || Number(id) === packagingBomPrimaryContainerId || selectedIds.has(id)) return false;
-                    return !nextRole || String(material.packaging_role || '') === nextRole;
+                    return !Object.prototype.hasOwnProperty.call(requiredDefinitions, String(material.packaging_role || ''));
                 });
-                const component = (PACKAGE_STYLE_REQUIREMENTS[packagingBomPackageStyle] || {})[nextRole] || '';
-                addButton.disabled = blankRowExists || candidates.length === 0;
-                addButton.innerHTML = `<i class="fas fa-plus text-primary"></i>${nextRole ? `Add ${escapeHtml(component)}` : 'Add optional packaging'}`;
-                addButton.title = blankRowExists
-                    ? 'Choose the material on the unfinished row first'
+                addButton.disabled = blankOptionalRowExists || candidates.length === 0;
+                addButton.innerHTML = '<i class="fas fa-plus text-primary"></i>Add optional packaging';
+                addButton.title = blankOptionalRowExists
+                    ? 'Choose or remove the unfinished optional packaging row first'
                     : (candidates.length === 0
-                        ? `No unused ${component || 'compatible optional packaging'} material is available`
-                        : (nextRole ? `Add the required ${component}` : 'Add an optional carton or secondary component'));
+                        ? 'No unused optional packaging material is available'
+                        : 'Add an optional label, carton, wrap, or secondary component');
             }
         }
 
@@ -3394,6 +3538,7 @@
                     : Number(row.querySelector('[data-pack-bom="quantity"]')?.value || 0);
                 const waste = Number(row.querySelector('[data-pack-bom="waste"]')?.value || 0);
                 if (!ingredientId) {
+                    if (row.dataset.requiredRole) continue;
                     showToast('Select a packaging material for every row.', 'warning');
                     row.querySelector('[data-pack-bom="ingredient"]')?.focus();
                     return;
@@ -3537,6 +3682,11 @@
             try {
                 await Promise.all([loadPackagingContainerOptions(), loadPackagingSets(), loadMilkTypeOptions()]);
                 await loadData();
+                const pageParams = new URLSearchParams(window.location.search);
+                const requestedPackagingBomId = Number(pageParams.get('open_packaging_bom') || 0);
+                if (requestedPackagingBomId > 0) {
+                    await openPackagingBom(requestedPackagingBomId);
+                }
                 if (window.location.hash === '#packaging-sets') {
                     document.getElementById('packaging-sets')?.scrollIntoView({ behavior: 'smooth' });
                 }

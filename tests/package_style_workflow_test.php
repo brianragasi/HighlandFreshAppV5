@@ -28,10 +28,17 @@ $checks = [
         str_contains($sources['products'], 'skuHasConfiguredPackage')
         && str_contains($sources['products'], 'Set package first')
         && str_contains($sources['product_api'], 'Choose the SKU package style and actual primary package'),
-    'BOM choices are narrowed to the next compatible component' =>
+    'Package style renders every required BOM role before material matching' =>
         str_contains($sources['products'], 'filterPackagingBomMaterials')
-        && str_contains($sources['products'], 'packagingBomNextMissingRole')
-        && str_contains($sources['products'], 'No unused ${component} material is available'),
+        && str_contains($sources['products'], 'Object.keys(requiredRoles).forEach(role =>')
+        && str_contains($sources['products'], 'addPackagingBomRow(item, role)')
+        && str_contains($sources['products'], 'No compatible ${escapeHtml(requestedLabel)} found.')
+        && str_contains($sources['products'], 'packagingBomCreateMaterialUrl(requiredRole)'),
+    'Creating a missing component returns to the same SKU BOM' =>
+        str_contains($sources['ingredients'], "materialPageParams.get('return_product_id')")
+        && str_contains($sources['ingredients'], 'open_packaging_bom=')
+        && str_contains($sources['products'], "pageParams.get('open_packaging_bom')")
+        && str_contains($sources['products'], "params.get('select_material_id')"),
     'Blank BOM row cannot be mistaken for the primary package' =>
         str_contains($sources['products'], 'packagingBomPrimaryContainerId > 0')
         && str_contains($sources['products'], 'Number(item.ingredient_id || 0) === packagingBomPrimaryContainerId'),

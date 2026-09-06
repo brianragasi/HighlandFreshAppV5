@@ -676,7 +676,8 @@
         let currentPage = 1;
         let searchTimeout = null;
         let categories = [];
-        const materialWorkspace = new URLSearchParams(window.location.search).get('view') === 'packaging'
+        const materialPageParams = new URLSearchParams(window.location.search);
+        const materialWorkspace = materialPageParams.get('view') === 'packaging'
             ? 'packaging'
             : 'raw';
         let packagingCategoryId = null;
@@ -1734,6 +1735,12 @@
                 if (response.success) {
                     showToast(response.message || (recordId ? 'Ingredient updated successfully' : 'Ingredient created successfully'), 'success', 9000);
                     closeModal();
+                    const returnProductId = Number(materialPageParams.get('return_product_id') || 0);
+                    const createdMaterialId = Number(response.data?.ingredient?.id || 0);
+                    if (!recordId && materialWorkspace === 'packaging' && returnProductId > 0 && createdMaterialId > 0) {
+                        window.location.href = `products.html?open_packaging_bom=${encodeURIComponent(returnProductId)}&select_material_id=${encodeURIComponent(createdMaterialId)}`;
+                        return;
+                    }
                     if (!recordId) currentPage = 1;
                     loadData();
                 } else {
@@ -1785,6 +1792,18 @@
             activeNav?.classList.remove('hover:bg-base-200');
             await loadCategories();
             loadData();
+            const requestedForm = materialPageParams.get('create') || '';
+            if (packagingMode && Object.prototype.hasOwnProperty.call(PACKAGING_FORMS, requestedForm)) {
+                openModal(null, requestedForm);
+                const nameHint = materialPageParams.get('name_hint') || '';
+                const capacityValue = Number(materialPageParams.get('capacity_value') || 0);
+                const capacityUnit = materialPageParams.get('capacity_unit') || '';
+                if (nameHint) document.getElementById('ingredient_name').value = nameHint;
+                if (capacityValue > 0) document.getElementById('packaging_capacity_value').value = String(capacityValue);
+                if (capacityUnit && Array.from(document.getElementById('packaging_capacity_unit').options).some(option => option.value === capacityUnit)) {
+                    document.getElementById('packaging_capacity_unit').value = capacityUnit;
+                }
+            }
         });
     </script>
 </body>

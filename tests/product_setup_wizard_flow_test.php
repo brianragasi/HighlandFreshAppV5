@@ -31,7 +31,7 @@ $checks = [
         str_contains($sources['products_page'], 'of 4 setup steps complete')
         && str_contains($sources['products_page'], 'Add package size')
         && str_contains($sources['products_page'], 'Create recipe')
-        && str_contains($sources['products_page'], 'Add packaging'),
+        && str_contains($sources['products_page'], 'Required component / material'),
     'Reusable packaging sets persist and copy into SKU BOMs' =>
         str_contains($sources['sets_helper'], 'CREATE TABLE IF NOT EXISTS packaging_sets')
         && str_contains($sources['sets_helper'], 'CREATE TABLE IF NOT EXISTS packaging_set_items')
