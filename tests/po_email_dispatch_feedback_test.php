@@ -7,6 +7,7 @@ $poApi = file_get_contents($root . '/api/purchasing/purchase_orders.php');
 $poPage = file_get_contents($root . '/html/purchasing/purchase_orders.html');
 $smtpDiagnostics = file_get_contents($root . '/api/admin/smtp_diagnostics.php');
 $adminDashboard = file_get_contents($root . '/html/admin/dashboard.html');
+$liveMailSync = file_get_contents($root . '/.github/scripts/sync_live_mail_env.py');
 
 $checks = [
     'GM approval explains that email is attempted immediately' =>
@@ -26,8 +27,15 @@ $checks = [
         && str_contains($poApi, "\$order['email_attempts']"),
     'Purchasing can see persistent email result and attempt history' =>
         str_contains($poPage, 'Email attempt history')
-        && str_contains($poPage, 'Email not sent.')
-        && str_contains($poPage, 'Email sent to'),
+        && str_contains($poPage, 'Email not sent:')
+        && str_contains($poPage, 'Email sent to')
+        && str_contains($poPage, 'attempt.error_message'),
+    'Expected SMTP failures keep the useful message instead of becoming generic 502 errors' =>
+        str_contains($poApi, "'status' => 424")
+        && str_contains($poApi, "Mailer::describeFailure")
+        && !str_contains($poApi, "'status' => 502"),
+    'Failed final-PO attempts refresh the detail and remain visibly retryable' =>
+        str_contains($poPage, "await viewPODetail(id).catch(() => {})"),
     'Old misleading GM success wording is removed' =>
         !str_contains($gmPage, 'Purchasing can now send it to the supplier.'),
     'SMTP diagnostics require GM/Admin authentication' =>
@@ -36,6 +44,12 @@ $checks = [
         str_contains($smtpDiagnostics, "RateLimiter::check('smtp_test:user:'")
         && !str_contains($smtpDiagnostics, "'username' => SMTP_USERNAME")
         && !str_contains($smtpDiagnostics, "'password' => SMTP_PASSWORD"),
+    'SMTP diagnostics preserve actionable dependency errors' =>
+        str_contains($smtpDiagnostics, '424')
+        && !str_contains($smtpDiagnostics, 'Response::error(\'The SMTP test failed. Check the server error log for the technical detail.\', 502)'),
+    'GoogieHost deployment keeps Gmail on implicit SSL port 465' =>
+        str_contains($liveMailSync, '"SMTP_PORT": "465"')
+        && str_contains($liveMailSync, '"SMTP_ENCRYPTION": "ssl"'),
     'Admin dashboard exposes an explicit live email test' =>
         str_contains($adminDashboard, 'testEmailService(this)')
         && str_contains($adminDashboard, "api.post('/admin/smtp_diagnostics.php'"),

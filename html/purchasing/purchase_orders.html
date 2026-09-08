@@ -2742,7 +2742,7 @@
                                     ${po.supplier_phone ? `<div><span class="text-base-content/50">Phone:</span> ${escapeHtml(po.supplier_phone)}</div>` : ''}
                                     ${po.supplier_email ? `<div><span class="text-base-content/50">Email:</span> ${escapeHtml(po.supplier_email)}</div>` : ''}
                                     ${po.sent_to_supplier_at ? `<div class="md:col-span-2 text-success font-medium"><i class="fas fa-circle-check mr-1"></i>Email sent to ${escapeHtml(po.supplier_email_sent_to || po.supplier_email || '-')} on ${formatDateTime(po.sent_to_supplier_at)}</div>` : ''}
-                                    ${po.last_send_error ? `<div class="md:col-span-2 text-error font-medium"><i class="fas fa-triangle-exclamation mr-1"></i>Email not sent. Check the supplier address or internet connection, then use Email Final PO.</div>` : ''}
+                                    ${po.last_send_error ? `<div class="md:col-span-2 text-error font-medium"><i class="fas fa-triangle-exclamation mr-1"></i>Email not sent: ${escapeHtml(po.last_send_error)} The PO remains Approved and can be retried.</div>` : ''}
                                     ${po.supplier_terms ? `<div><span class="text-base-content/50">Terms:</span> ${escapeHtml(po.supplier_terms)}</div>` : ''}
                                     ${po.supplier_address ? `<div class="md:col-span-2"><span class="text-base-content/50">Address:</span> ${escapeHtml(po.supplier_address)}</div>` : ''}
                                 </div>
@@ -2753,7 +2753,7 @@
                                             ${po.email_attempts.map(attempt => `
                                                 <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-1 rounded-lg bg-base-100 border border-base-300 px-3 py-2 text-xs">
                                                     <span class="break-all">${escapeHtml(attempt.recipient_email || '-')}</span>
-                                                    <span class="font-medium ${attempt.status === 'sent' ? 'text-success' : 'text-error'}">${attempt.status === 'sent' ? 'Sent' : 'Failed'} · ${escapeHtml(formatDateTime(attempt.sent_at || attempt.attempted_at))}</span>
+                                                    <span class="font-medium ${attempt.status === 'sent' ? 'text-success' : 'text-error'}">${attempt.status === 'sent' ? 'Sent' : 'Failed'} · ${escapeHtml(formatDateTime(attempt.sent_at || attempt.attempted_at))}${attempt.error_message ? ` · ${escapeHtml(attempt.error_message)}` : ''}</span>
                                                 </div>
                                             `).join('')}
                                         </div>
@@ -3195,7 +3195,13 @@
                 const response = await PurchasingService.markPOOrdered(id);
                 showToast(response?.message || 'Final PO emailed to supplier', 'success');
                 viewPODetail(id);
-            } catch (e) { showToast(Object.values(e?.errors || {})[0] || e?.message || 'The PO email could not be sent', 'error'); }
+            } catch (e) {
+                const message = e?.errors?.message || e?.message || 'The PO email could not be sent';
+                showToast(message, 'error');
+                // Reload the approved PO so its newly recorded failure reason
+                // and attempt history are visible without closing the detail.
+                await viewPODetail(id).catch(() => {});
+            }
             finally { markOrderedInFlight.delete(id); }
         }
 

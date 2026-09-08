@@ -20,8 +20,8 @@ if len(GMAIL_APP_PASSWORD) != 16:
 
 MAIL_SETTINGS = {
     "SMTP_HOST": "smtp.gmail.com",
-    "SMTP_PORT": "587",
-    "SMTP_ENCRYPTION": "tls",
+    "SMTP_PORT": "465",
+    "SMTP_ENCRYPTION": "ssl",
     "SMTP_VERIFY_PEER": "true",
     "SMTP_USERNAME": "ragasibrian2@gmail.com",
     "SMTP_FROM_EMAIL": "ragasibrian2@gmail.com",

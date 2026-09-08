@@ -29,8 +29,14 @@ function smtpReadiness(): array
     if (SMTP_PASSWORD === '') {
         $issues[] = 'SMTP_PASSWORD is not configured.';
     }
-    if (SMTP_ENCRYPTION !== 'tls') {
-        $issues[] = 'Production Gmail SMTP should use STARTTLS.';
+    if (!in_array(SMTP_ENCRYPTION, ['tls', 'ssl'], true)) {
+        $issues[] = 'Production Gmail SMTP should use STARTTLS (587) or SSL (465).';
+    }
+    if (SMTP_ENCRYPTION === 'tls' && SMTP_PORT !== 587) {
+        $issues[] = 'Gmail STARTTLS should use port 587.';
+    }
+    if (SMTP_ENCRYPTION === 'ssl' && SMTP_PORT !== 465) {
+        $issues[] = 'Gmail implicit SSL should use port 465.';
     }
 
     return [
@@ -54,7 +60,7 @@ if ($method !== 'POST') {
 
 $readiness = smtpReadiness();
 if (!$readiness['configured']) {
-    Response::error('SMTP is not fully configured. Review the reported configuration issues.', 503, $readiness['issues']);
+    Response::error('SMTP is not fully configured. Review the reported configuration issues.', 424, $readiness['issues']);
 }
 
 $db = Database::getInstance()->getConnection();
@@ -101,13 +107,13 @@ try {
 
     $message = $error->getMessage();
     if (stripos($message, 'connection failed') !== false || stripos($message, 'timed out') !== false) {
-        Response::error('The live host could not reach Gmail SMTP. GoogieHost may be blocking outbound port 587.', 502);
+        Response::error('The live host could not reach Gmail SMTP. Try SSL on port 465 if STARTTLS on port 587 is restricted.', 424);
     }
     if (stripos($message, 'expected 235') !== false) {
-        Response::error('Gmail rejected the SMTP login. Verify the email address and 16-character App Password.', 502);
+        Response::error('Gmail rejected the SMTP login. Verify the email address and 16-character App Password.', 424);
     }
     if (stripos($message, 'TLS') !== false || stripos($message, 'crypto') !== false) {
-        Response::error('The live host could not establish a verified TLS connection to Gmail SMTP.', 502);
+        Response::error('The live host could not establish a verified TLS connection to Gmail SMTP.', 424);
     }
-    Response::error('The SMTP test failed. Check the server error log for the technical detail.', 502);
+    Response::error('The SMTP test failed. Check the server error log for the technical detail.', 424);
 }

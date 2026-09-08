@@ -980,20 +980,25 @@ function sendApprovedPurchaseOrderToSupplier(PDO $db, int $poId, int $actorId): 
         );
     } catch (Throwable $emailError) {
         error_log('PO email failed for PO ' . $poId . ': ' . $emailError->getMessage());
-        $isNotConfigured = stripos($emailError->getMessage(), 'not configured') !== false;
-        $storedError = $isNotConfigured ? 'Email service is not configured.' : 'Supplier email delivery failed.';
-        recordPurchaseOrderEmailFailure($db, $poId, $attemptId, $storedError);
+        $failure = Mailer::describeFailure($emailError);
+        recordPurchaseOrderEmailFailure($db, $poId, $attemptId, $failure['summary']);
         logAudit($actorId, 'PO_EMAIL_FAILED', 'purchase_orders', $poId,
             ['status' => 'approved'],
-            ['recipient_email' => $recipientEmail, 'attempt_id' => $attemptId]
+            [
+                'recipient_email' => $recipientEmail,
+                'attempt_id' => $attemptId,
+                'reason_code' => $failure['code'],
+            ]
         );
 
         return [
             'ok' => false,
-            'status' => 502,
-            'message' => $isNotConfigured
-                ? 'The PO is approved, but email is not configured. Purchasing can retry after email setup.'
-                : 'The PO is approved, but the supplier email failed. Check the address or connection and retry.',
+            // This is an expected downstream-delivery failure, not an API
+            // crash. 424 preserves the safe business message through the
+            // global response sanitizer and keeps the PO retryable.
+            'status' => 424,
+            'message' => $failure['message'],
+            'reason_code' => $failure['code'],
             'supplier_email' => $recipientEmail,
             'can_retry' => true,
         ];
@@ -2971,7 +2976,7 @@ function handlePut($db, $action, $currentUser) {
             if (empty($supplierDelivery['ok'])) {
                 Response::error(
                     $supplierDelivery['message'] ?? 'The supplier email could not be sent.',
-                    (int) ($supplierDelivery['status'] ?? 502),
+                    (int) ($supplierDelivery['status'] ?? 424),
                     $supplierDelivery
                 );
             }

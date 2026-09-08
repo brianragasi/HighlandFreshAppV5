@@ -51,8 +51,9 @@ class Mailer {
         if ($port < 1 || $port > 65535) {
             throw new Exception('SMTP port is invalid.');
         }
-        if (!in_array(SMTP_ENCRYPTION, ['', 'tls'], true)) {
-            throw new Exception('SMTP encryption must be tls or empty.');
+        $encryption = strtolower(trim((string) SMTP_ENCRYPTION));
+        if (!in_array($encryption, ['', 'tls', 'ssl'], true)) {
+            throw new Exception('SMTP encryption must be tls, ssl, or empty.');
         }
         if (!filter_var($to, FILTER_VALIDATE_EMAIL) || preg_match('/[\r\n]/', $to)) {
             throw new Exception('Recipient email address is invalid.');
@@ -77,8 +78,12 @@ class Mailer {
         ];
         $context = stream_context_create($contextOptions);
 
+        // Port 587 normally uses STARTTLS (tcp://); port 465 uses implicit
+        // TLS (ssl://). Shared hosts often permit one while restricting the
+        // other, so supporting both gives deployments a safe alternative.
+        $transport = $encryption === 'ssl' ? 'ssl' : 'tcp';
         $socket = @stream_socket_client(
-            "tcp://{$host}:{$port}",
+            "{$transport}://{$host}:{$port}",
             $errno,
             $errstr,
             8,
@@ -99,7 +104,7 @@ class Mailer {
         self::sendCommand($socket, "EHLO " . gethostname(), 250);
 
         // STARTTLS
-        if (SMTP_ENCRYPTION === 'tls') {
+        if ($encryption === 'tls') {
             self::sendCommand($socket, "STARTTLS", 220);
             $crypto = stream_socket_enable_crypto($socket, true, STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT);
             if (!$crypto) {
@@ -200,11 +205,84 @@ class Mailer {
     }
 
     /**
+     * Convert a technical SMTP exception into a safe, actionable category.
+     * Raw server responses remain in the PHP error log; callers may persist
+     * and show these summaries without exposing credentials or SMTP details.
+     */
+    public static function describeFailure(Throwable $error): array {
+        $message = (string) $error->getMessage();
+
+        if (stripos($message, 'not configured') !== false
+            || stripos($message, 'SMTP username is not') !== false
+            || stripos($message, 'SMTP sender email') !== false
+            || stripos($message, 'SMTP host is invalid') !== false
+            || stripos($message, 'SMTP port is invalid') !== false
+            || stripos($message, 'SMTP encryption must') !== false) {
+            return [
+                'code' => 'smtp_not_configured',
+                'summary' => 'Email service configuration needs attention.',
+                'message' => 'The PO is still Approved. Ask an administrator to check Email Service settings, then retry Email Final PO.',
+            ];
+        }
+
+        if (stripos($message, 'connection failed') !== false
+            || stripos($message, 'timed out') !== false
+            || stripos($message, 'empty response') !== false) {
+            return [
+                'code' => 'smtp_connection_failed',
+                'summary' => 'The live server could not reach the email service.',
+                'message' => 'The PO is still Approved. The live server could not reach the email service. Ask an administrator to run the Email Service Test, then retry.',
+            ];
+        }
+
+        if (stripos($message, 'expected 235') !== false
+            || preg_match('/\b(534|535)\b/', $message)) {
+            return [
+                'code' => 'smtp_authentication_failed',
+                'summary' => 'The email service rejected the configured login.',
+                'message' => 'The PO is still Approved. The email login was rejected. Ask an administrator to verify the Gmail account and App Password, then retry.',
+            ];
+        }
+
+        if (stripos($message, 'TLS') !== false
+            || stripos($message, 'crypto') !== false
+            || stripos($message, 'certificate') !== false) {
+            return [
+                'code' => 'smtp_encryption_failed',
+                'summary' => 'The secure email connection could not be established.',
+                'message' => 'The PO is still Approved. The live server could not establish a secure email connection. Ask an administrator to run the Email Service Test, then retry.',
+            ];
+        }
+
+        if (stripos($message, 'Recipient email address is invalid') !== false
+            || stripos($message, 'recipient rejected') !== false) {
+            return [
+                'code' => 'smtp_recipient_rejected',
+                'summary' => 'The supplier email address was rejected.',
+                'message' => 'The PO is still Approved. Check the supplier email address, correct it if needed, then retry Email Final PO.',
+            ];
+        }
+
+        return [
+            'code' => 'smtp_delivery_failed',
+            'summary' => 'Supplier email delivery failed.',
+            'message' => 'The PO is still Approved. Supplier email delivery failed. Ask an administrator to run the Email Service Test, then retry.',
+        ];
+    }
+
+    /**
      * Send SMTP command and check response
      */
     private static function sendCommand($socket, $command, $expectedCode) {
         fwrite($socket, $command . "\r\n");
-        return self::readResponse($socket, $expectedCode);
+        try {
+            return self::readResponse($socket, $expectedCode);
+        } catch (Throwable $error) {
+            if (str_starts_with($command, 'RCPT TO:')) {
+                throw new Exception('SMTP recipient rejected: ' . $error->getMessage(), 0, $error);
+            }
+            throw $error;
+        }
     }
 
     /**
