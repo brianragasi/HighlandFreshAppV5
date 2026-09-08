@@ -82,17 +82,7 @@ class Mailer {
         // TLS (ssl://). Shared hosts often permit one while restricting the
         // other, so supporting both gives deployments a safe alternative.
         $transport = $encryption === 'ssl' ? 'ssl' : 'tcp';
-        $socket = @stream_socket_client(
-            "{$transport}://{$host}:{$port}",
-            $errno,
-            $errstr,
-            8,
-            STREAM_CLIENT_CONNECT,
-            $context
-        );
-        if (!$socket) {
-            throw new Exception("SMTP connection failed: {$errstr} ({$errno})");
-        }
+        $socket = self::openSmtpSocket($host, $port, $transport, $context);
 
         // I/O timeout per read/write (seconds)
         stream_set_timeout($socket, 12);
@@ -202,6 +192,42 @@ class Mailer {
 
         fclose($socket);
         return true;
+    }
+
+    /** Retry unreachable hostname routes using freshly resolved IPv4 addresses.
+     * This runs before authentication or message submission, so retrying cannot
+     * duplicate an email. The original hostname remains the TLS peer identity.
+     */
+    private static function openSmtpSocket($host, $port, $transport, $context) {
+        $socket = @stream_socket_client("{$transport}://{$host}:{$port}", $errno, $errstr, 8, STREAM_CLIENT_CONNECT, $context);
+        if ($socket) {
+            return $socket;
+        }
+        $initialError = "{$errstr} ({$errno})";
+        $unreachable = in_array((int) $errno, [101, 113, 10051, 10065], true)
+            || stripos($errstr, 'unreachable') !== false
+            || stripos($errstr, 'No route to host') !== false;
+        if (!$unreachable || !function_exists('gethostbynamel')) {
+            throw new Exception("SMTP connection failed: {$initialError}");
+        }
+
+        $addresses = @gethostbynamel($host) ?: [];
+        $addresses = array_values(array_unique(array_filter($addresses, static function ($address) {
+            return filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false;
+        })));
+        $failures = [];
+        // Bound additional connection waits; never disable certificate checks
+        // or replace the configured hostname with a permanent Gmail IP.
+        foreach (array_slice($addresses, 0, 2) as $address) {
+            $socket = @stream_socket_client("{$transport}://{$address}:{$port}", $errno, $errstr, 4, STREAM_CLIENT_CONNECT, $context);
+            if ($socket) {
+                error_log('SMTP connected using IPv4 fallback');
+                return $socket;
+            }
+            $failures[] = "{$errstr} ({$errno})";
+        }
+        $detail = $failures ? implode('; ', $failures) : 'no IPv4 address resolved';
+        throw new Exception("SMTP connection failed: hostname route {$initialError}; IPv4 fallback failed: {$detail}");
     }
 
     /**
