@@ -474,7 +474,8 @@
                 <!-- Section: Stock Levels -->
                 <fieldset id="stockPlanningSection" class="border border-base-300 rounded-xl p-4">
                     <legend class="text-sm font-semibold px-2 text-base-content/70">Stock Levels</legend>
-                    <p class="text-xs text-base-content/50 mb-3">Controls when reorder alerts fire. All values in the ingredient's unit of measure.</p>
+                    <p class="text-xs text-base-content/50 mb-3">Controls when reorder alerts fire. All values are entered by you in the ingredient's unit of measure.</p>
+                    <div id="stockPlanningRouteNotice" class="hidden alert alert-info mb-3 py-2 text-xs" role="status" aria-live="polite"></div>
                     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                         <div class="form-control">
                             <label class="label py-1"><span class="label-text font-medium">Minimum Stock</span></label>
@@ -487,7 +488,7 @@
                         <div class="form-control">
                             <label class="label py-1"><span class="label-text font-medium">Reorder Point</span></label>
                             <div class="join">
-                                <input type="number" id="reorder_point" class="input input-bordered join-item w-full" step="0.001" min="0" value="0">
+                                <input type="number" id="reorder_point" class="input input-bordered join-item w-full" step="0.001" min="0" placeholder="Enter level">
                                 <span class="btn btn-ghost join-item no-animation text-xs ingredient-unit-badge">units</span>
                             </div>
                             <label class="label py-0.5"><span class="label-text-alt text-warning/80 text-xs">Triggers Stock Validation. Must be at least Minimum Stock.</span></label>
@@ -495,7 +496,7 @@
                         <div class="form-control">
                             <label class="label py-1"><span class="label-text font-medium">Restocking Target</span></label>
                             <div class="join">
-                                <input type="number" id="maximum_stock" class="input input-bordered join-item w-full" step="0.001" min="0" value="0">
+                                <input type="number" id="maximum_stock" class="input input-bordered join-item w-full" step="0.001" min="0" placeholder="Enter target">
                                 <span class="btn btn-ghost join-item no-animation text-xs ingredient-unit-badge">units</span>
                             </div>
                             <label class="label py-0.5"><span class="label-text-alt text-base-content/50 text-xs">Target after restocking. Must be greater than Reorder Point.</span></label>
@@ -506,7 +507,7 @@
                                 <input type="number" id="lead_time_days" class="input input-bordered join-item w-full" value="7" min="1">
                                 <span class="btn btn-ghost join-item no-animation text-xs">days</span>
                             </div>
-                            <label class="label py-0.5"><span class="label-text-alt text-base-content/50 text-xs">Days from order to delivery</span></label>
+                            <label class="label py-0.5"><span class="label-text-alt text-base-content/50 text-xs">Suggested default: 7 days. Change it to the supplier's normal lead time.</span></label>
                         </div>
                     </div>
                 </fieldset>
@@ -518,9 +519,9 @@
                         <label class="label pt-0">
                             <span class="label-text font-medium">Do we currently have physical stock of this material? *</span>
                         </label>
-                        <select id="initial_stock_status" class="select select-bordered" required>
+                        <select id="initial_stock_status" class="select select-bordered" required onchange="handleInitialStockStatusChange()">
                             <option value="">Choose the real situation</option>
-                            <option value="purchase_required">No stock — send the restocking target directly to Purchasing</option>
+                            <option value="purchase_required">No stock — I will enter the exact target Purchasing should source</option>
                             <option value="opening_stock">Yes — ask Warehouse to count and record opening stock</option>
                         </select>
                         <div class="mt-3 rounded-lg border border-base-300 bg-base-100 p-3 text-xs text-base-content/70 space-y-1">
@@ -740,6 +741,25 @@
             });
             const label = document.getElementById('materialAdvancedToggleText');
             if (label) label.textContent = materialAdvancedVisible ? 'Hide planning & storage settings' : 'Show planning & storage settings';
+        }
+
+        function handleInitialStockStatusChange() {
+            const route = document.getElementById('initial_stock_status')?.value || '';
+            const notice = document.getElementById('stockPlanningRouteNotice');
+
+            if (materialWorkspace === 'packaging' && route) {
+                toggleMaterialAdvancedSettings(true);
+            }
+
+            if (!notice) return;
+            notice.classList.toggle('hidden', !route);
+            if (route === 'purchase_required') {
+                notice.innerHTML = '<span><strong>Purchasing quantity:</strong> The Restocking Target you enter below becomes the initial quantity sent to Purchasing. No quantity is filled automatically.</span>';
+            } else if (route === 'opening_stock') {
+                notice.innerHTML = '<span><strong>Existing stock:</strong> These levels control future alerts only. Warehouse—not Admin—will enter the physical opening quantity.</span>';
+            } else {
+                notice.textContent = '';
+            }
         }
 
         function applyPackagingFormSelection() {
@@ -1456,11 +1476,12 @@
                 document.getElementById('unit_of_measure').value = 'pcs';
                 updateUnitBadges();
                 document.getElementById('minimum_stock').value = 0;
-                document.getElementById('reorder_point').value = 100;
-                document.getElementById('maximum_stock').value = 500;
+                document.getElementById('reorder_point').value = '';
+                document.getElementById('maximum_stock').value = '';
                 document.getElementById('is_perishable').value = '0';
                 document.getElementById('storage_location').value = 'Dry Storage';
             }
+            handleInitialStockStatusChange();
             document.getElementById('formModal').showModal();
         }
 
@@ -1587,6 +1608,10 @@
             const reorder = Number(reorderInput.value);
             const maximum = Number(maximumInput.value);
 
+            if (materialWorkspace === 'packaging' && !materialAdvancedVisible) {
+                toggleMaterialAdvancedSettings(true);
+            }
+
             if (reorder <= 0) {
                 const message = 'Reorder Point must be greater than zero.';
                 reorderInput.setCustomValidity(message);
@@ -1620,9 +1645,15 @@
         document.getElementById('dataForm').addEventListener('submit', async (e) => {
             e.preventDefault();
 
+            const recordId = document.getElementById('recordId').value;
+            const initialStockStatus = document.getElementById('initial_stock_status').value;
+            if (!recordId && !initialStockStatus) {
+                showToast('Choose whether physical stock already exists for this material', 'error');
+                document.getElementById('initial_stock_status').focus();
+                return;
+            }
             if (!validateIngredientStockLevels()) return;
 
-            const recordId = document.getElementById('recordId').value;
             const categoryId = document.getElementById('category_id').value || null;
             const unitOfMeasure = document.getElementById('unit_of_measure').value;
             const physicalState = getSelectedPhysicalState();
@@ -1712,12 +1743,7 @@
                 is_active: document.getElementById('is_active').value
             };
             if (!recordId) {
-                formData.initial_stock_status = document.getElementById('initial_stock_status').value;
-                if (!formData.initial_stock_status) {
-                    showToast('Choose whether physical stock already exists for this material', 'error');
-                    document.getElementById('initial_stock_status').focus();
-                    return;
-                }
+                formData.initial_stock_status = initialStockStatus;
             }
 
             try {

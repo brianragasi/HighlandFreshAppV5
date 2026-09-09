@@ -46,6 +46,14 @@ $checks = [
         str_contains($sources['page'], 'function syncExpiryHandlingForCategory()')
         && str_contains($sources['api'], 'function ingredientCategoryIsPackaging')
         && str_contains($sources['api'], 'SET i.is_perishable = 0'),
+    'Packaging onboarding never invents an initial purchasing quantity' =>
+        !str_contains($sources['page'], "document.getElementById('reorder_point').value = 100")
+        && !str_contains($sources['page'], "document.getElementById('maximum_stock').value = 500")
+        && str_contains($sources['page'], 'onchange="handleInitialStockStatusChange()"')
+        && str_contains($sources['page'], 'No quantity is filled automatically.'),
+    'No-stock onboarding requires a positive explicit target on the server' =>
+        str_contains($sources['api'], "if (\$initialStockRoute === 'purchase_required' && \$initialTarget <= 0.0005)")
+        && str_contains($sources['api'], 'Enter a restocking target greater than zero so Purchasing receives a quantity to source'),
     'Database update classifies existing measurement units' =>
         str_contains($sources['migration'], 'ADD COLUMN IF NOT EXISTS physical_state')
         && str_contains($sources['migration'], "THEN 'liquid'")
