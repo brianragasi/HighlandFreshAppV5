@@ -46,13 +46,23 @@
         return String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
     }
 
+    function isMeasurementOnly(value) {
+        return /^\d+(?:\.\d+)?\s*(?:m[lL]|[lL]|[gG]|[kK][gG])$/.test(String(value || '').trim());
+    }
+
     function name(item, options) {
         const opts = options || {};
         const base = String(firstValue(item, ['product_name', 'name', 'description']) || opts.fallback || 'Unknown product').trim();
         const variant = String(firstValue(item, ['variant', 'product_variant']) || '').trim();
         const sizeText = size(item);
         const normalizedSize = normalized(sizeText);
-        const variantIsOnlySize = variant && normalized(variant) === normalizedSize;
+        // A variant describes a meaningful option (for example, "Low Sugar"),
+        // never another package measurement. This also shields old snapshots
+        // affected by the 250 -> 25ml / 500 -> 5ml formatter bug.
+        const variantIsOnlySize = variant && (
+            normalized(variant) === normalizedSize
+            || (sizeText && isMeasurementOnly(variant))
+        );
         const parts = [];
 
         if (variant && !variantIsOnlySize && !normalized(base).includes(normalized(variant))) {

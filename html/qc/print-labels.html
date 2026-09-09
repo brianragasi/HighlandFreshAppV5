@@ -9,7 +9,7 @@
     <!-- Tailwind + DaisyUI (pre-built, no CDN runtime) -->
     <link rel="stylesheet" href="../../css/tailwind.css">
 
-    <!-- JsBarcode for generating barcodes (self-hosted) -->
+    <!-- Self-hosted CODE128 renderer. Compact tokens keep bars wide enough for phones. -->
     <script src="../../js/vendor/JsBarcode.all.min.js"></script>
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -212,22 +212,22 @@
             overflow: hidden;
             padding: 0.15rem 0;
         }
-        /* Force JsBarcode SVG to stay inside the card */
-        .pl-label-card .barcode-svg,
-        .pl-label-card svg.barcode-svg {
-            display: block;
+        /* The encoded value is intentionally short. That gives CODE128 wide,
+           high-contrast modules and generous quiet zones for phone cameras. */
+        .pl-label-card .barcode-svg {
+            display: block !important;
             width: 100% !important;
             max-width: 100% !important;
             height: auto !important;
-            max-height: 52px;
+            max-height: 54px;
             margin: 0 auto;
-            overflow: hidden;
+            overflow: visible;
         }
         .pl-label-card--small .barcode-svg {
-            max-height: 32px;
+            max-height: 30px;
         }
         .pl-label-card--large .barcode-svg {
-            max-height: 64px;
+            max-height: 68px;
         }
         .pl-label-card__serial-text {
             flex: 0 0 auto;
@@ -373,9 +373,10 @@
                 -webkit-print-color-adjust: exact;
             }
             .pl-label-card .barcode-svg {
-                max-width: 100% !important;
                 width: 100% !important;
                 height: auto !important;
+                print-color-adjust: exact;
+                -webkit-print-color-adjust: exact;
             }
 
             @page {
@@ -570,7 +571,7 @@
                     </button>
                     <div>
                         <h1 class="text-lg font-bold">Print Barcode Labels</h1>
-                        <p class="text-xs text-base-content/60">Generate and print labels for released batches</p>
+                        <p class="text-xs text-base-content/60">Generate phone-scannable CODE128 labels for released batches</p>
                     </div>
                 </div>
                 <div class="flex items-center gap-2">
@@ -659,8 +660,8 @@
                             <i class="fas fa-fingerprint"></i>
                             <div>
                                 <strong class="block text-base-content mb-0.5">Unique unit serialization</strong>
-                                Each label includes the batch and SKU (e.g. <code class="text-xs">BATCH-…-FM250-0001</code>).
-                                Different package sizes cannot receive the same unit identity.
+                                The barcode uses a compact batch, SKU, and unit identity (e.g. <code class="text-xs">HF4-62-11-0001</code>)
+                                so phone cameras can read wider bars. Different package sizes cannot receive the same unit identity.
                             </div>
                         </div>
 
@@ -697,7 +698,7 @@
     <script src="../../js/config/api.js"></script>
     <script src="../../js/config/auth.js?v=20260814-3"></script>
     <script src="../../js/security/role-guard.js" data-allowed-roles="qc_officer,general_manager"></script>
-    <script src="../../js/utils/product-display.js?v=20260903-sku1"></script>
+    <script src="../../js/utils/product-display.js?v=20260909-sizefix1"></script>
 
     <script>
         let currentBatch = null;
@@ -749,16 +750,24 @@
             return 1;
         }
 
-        /** Barcode seed identifies both the production batch and packaged SKU. */
+        /**
+         * Compact CODE128 seed: batch ID + product ID. The full descriptive
+         * batch code remains printed on the label, but is not forced into bars.
+         */
         function getBaseBarcode(batch, sku = currentSku) {
-            const b = (batch?.barcode || batch?.batch_code || '').toString().trim();
-            if (!b || !sku) return '';
-            return `${b}-${ProductDisplay.barcodeToken(sku)}`.replace(/\s+/g, '');
+            const batchId = Number(batch?.id || 0);
+            const productId = Number(sku?.product_id || 0);
+            if (batchId > 0 && productId > 0) return `HF4-${batchId}-${productId}`;
+
+            // Legacy fallback for incomplete historical records.
+            const batchCode = (batch?.barcode || batch?.batch_code || '').toString().trim();
+            if (!batchCode || !sku) return '';
+            return `${batchCode}-${ProductDisplay.barcodeToken(sku)}`.replace(/\s+/g, '');
         }
 
         /**
          * Unique serialized unit ID for bottle index (1-based).
-         * e.g. BATCH-20260712-0039-0001 … 0095
+         * e.g. HF4-62-11-0001 … HF4-62-11-0095
          */
         function buildUnitSerial(batch, sku, unitIndex, total) {
             const base = getBaseBarcode(batch, sku);
@@ -959,8 +968,8 @@
         function getSizeConfig() {
             const size = document.getElementById('labelSize').value;
             const sizes = {
-                large: { key: 'large', width: '4in', height: '3in', barcodeHeight: 56, fontSize: 13 },
-                medium: { key: 'medium', width: '3in', height: '2in', barcodeHeight: 42, fontSize: 11 },
+                large: { key: 'large', width: '4in', height: '3in', barcodeHeight: 58, fontSize: 13 },
+                medium: { key: 'medium', width: '3in', height: '2in', barcodeHeight: 44, fontSize: 11 },
                 small: { key: 'small', width: '2in', height: '1.15in', barcodeHeight: 28, fontSize: 9 }
             };
             return sizes[size] || sizes.medium;
@@ -995,7 +1004,6 @@
                 container.appendChild(more);
             }
 
-            // Barcodes: keep bar width modest so SVG scales into card via CSS max-width
             renderBarcodesIn(container, sizeConfig);
 
             // Sequence strip (first / middle / last samples)
@@ -1044,6 +1052,9 @@
             const product = ProductDisplay.name(sku);
             const skuCode = sku.product_code || (sku.product_id ? `SKU-${sku.product_id}` : '');
             const batchCode = batch.batch_code || '—';
+            const batchShort = batchCode === '—'
+                ? batchCode
+                : `#${String(batchCode).split('-').filter(Boolean).pop()}`;
             const brandSize = sizeConfig.key === 'large' ? '0.95rem' : sizeConfig.key === 'medium' ? '0.8rem' : '0.65rem';
             const titleSize = sizeConfig.key === 'large' ? '0.95rem' : sizeConfig.key === 'medium' ? '0.8rem' : '0.6rem';
 
@@ -1054,7 +1065,7 @@
                         <div class="pl-label-card__title" style="font-size:${titleSize}; margin:0;">${escapeHtml(product)}</div>
                         ${skuCode ? `<div style="font-size:0.42rem;text-align:center;color:#6b7280;">${escapeHtml(skuCode)}</div>` : ''}
                         <div class="pl-label-card__barcode-wrap">
-                            <svg class="barcode-svg" data-serial="${escapeAttr(unitSerial)}" preserveAspectRatio="xMidYMid meet"></svg>
+                            <svg class="barcode-svg" data-serial="${escapeAttr(unitSerial)}" role="img" aria-label="Serialized product barcode"></svg>
                         </div>
                         <div class="pl-label-card__serial-text" style="font-size:0.45rem;">${escapeHtml(unitSerial)}</div>
                         <div class="pl-label-card__foot" style="margin-top:0.1rem;">EXP ${escapeHtml(expDate)}</div>
@@ -1070,15 +1081,15 @@
                             </div>
                             <div style="text-align:right;min-width:0;max-width:42%;">
                                 <div style="font-size:0.5rem;color:#9ca3af;text-transform:uppercase;letter-spacing:0.04em;">Batch</div>
-                                <div style="font-size:0.55rem;font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(batchCode)}</div>
+                                <div title="${escapeAttr(batchCode)}" style="font-size:0.65rem;font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:800;white-space:nowrap;">${escapeHtml(batchShort)}</div>
                             </div>
                         </div>
                         <div class="pl-label-card__title" style="font-size:${titleSize};">${escapeHtml(product)}</div>
                         ${skuCode ? `<div style="font-size:0.5rem;text-align:center;color:#6b7280;margin-top:-0.15rem;">SKU ${escapeHtml(skuCode)}</div>` : ''}
                         <div class="pl-label-card__barcode-wrap">
-                            <svg class="barcode-svg" data-serial="${escapeAttr(unitSerial)}" preserveAspectRatio="xMidYMid meet"></svg>
+                            <svg class="barcode-svg" data-serial="${escapeAttr(unitSerial)}" role="img" aria-label="Serialized product barcode"></svg>
                             <div class="pl-label-card__serial-text">${escapeHtml(unitSerial)}</div>
-                            <div style="font-size:0.5rem;color:#9ca3af;text-align:center;">Unit ${unitIndex} of ${total}</div>
+                            <div title="${escapeAttr(batchCode)}" style="font-size:0.48rem;color:#6b7280;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;">${escapeHtml(batchCode)} · Unit ${unitIndex} of ${total}</div>
                         </div>
                         <div class="pl-label-card__meta">
                             <div><span style="color:#6b7280;">MFG</span> <strong>${escapeHtml(mfgDate)}</strong></div>
@@ -1123,7 +1134,7 @@
 
             renderBarcodesIn(container, sizeConfig);
 
-            // Print after barcodes paint
+            // Barcode rendering is synchronous; allow one paint before print.
             setTimeout(() => {
                 window.print();
                 // Restore lighter preview after print dialog closes
@@ -1132,8 +1143,7 @@
         }
 
         function renderBarcodesIn(root, sizeConfig) {
-            const barWidth = sizeConfig.key === 'small' ? 1 : sizeConfig.key === 'medium' ? 1.2 : 1.35;
-            const barHeight = sizeConfig.key === 'small' ? 28 : sizeConfig.key === 'medium' ? 40 : 52;
+            const barWidth = sizeConfig.key === 'small' ? 1.8 : sizeConfig.key === 'medium' ? 2.2 : 2.5;
             root.querySelectorAll('.barcode-svg').forEach(svg => {
                 const code = svg.getAttribute('data-serial');
                 if (!code) return;
@@ -1141,22 +1151,17 @@
                     JsBarcode(svg, code, {
                         format: 'CODE128',
                         width: barWidth,
-                        height: barHeight,
-                        displayValue: false, // serial shown as separate text (avoids wide layout)
-                        margin: 2,
+                        height: sizeConfig.barcodeHeight,
+                        displayValue: false,
+                        margin: sizeConfig.key === 'small' ? 8 : 12,
                         background: '#ffffff',
-                        lineColor: '#111111'
+                        lineColor: '#000000'
                     });
-                    // Explicit attributes so CSS can scale without intrinsic overflow
                     svg.removeAttribute('width');
                     svg.removeAttribute('height');
                     svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-                    svg.style.maxWidth = '100%';
-                    svg.style.width = '100%';
-                    svg.style.height = 'auto';
-                    svg.style.display = 'block';
                 } catch (e) {
-                    console.warn('JsBarcode failed for', code, e);
+                    console.warn('CODE128 generation failed for', code, e);
                 }
             });
         }

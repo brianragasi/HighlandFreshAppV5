@@ -537,7 +537,7 @@
                 <div class="card-body p-4">
                     <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
                         <div class="form-control">
-                            <input type="text" id="searchDR" placeholder="Search DR number..."
+                            <input type="text" id="searchDR" placeholder="Search DR, order, or customer..."
                                 class="input input-bordered input-sm" onkeyup="filterDRs()">
                         </div>
                         <div class="form-control">
@@ -1151,7 +1151,11 @@
                 <i class="fas fa-check-circle text-success text-2xl"></i>
                 <p class="font-medium" id="pickScannedCode"></p>
             </div>
-            <p class="text-sm text-base-content/60 mt-3 text-center">Position barcode within the camera view</p>
+            <div id="pickCameraStatus" class="alert alert-info mt-3 py-2 text-sm" role="status" aria-live="polite">
+                <i class="fas fa-spinner fa-spin"></i>
+                <span id="pickCameraStatusText">Starting camera…</span>
+            </div>
+            <p class="text-sm text-base-content/60 mt-3 text-center">Fit the complete horizontal barcode inside the guide and hold the phone steady.</p>
             <div class="modal-action">
                 <button type="button" class="btn" onclick="pickCloseCamera()">
                     <i class="fas fa-times"></i> Close
@@ -1170,7 +1174,8 @@
     <script src="../../../js/ui/dialogs.js"></script>
     <script src="../../../js/security/role-guard.js" data-allowed-roles="warehouse_fg,general_manager"></script>
     <script src="../../../js/utils/units.js?v=20260712"></script>
-    <script src="../../../js/utils/product-display.js?v=20260903-sku1"></script>
+    <script src="../../../js/utils/product-display.js?v=20260909-sizefix1"></script>
+    <script src="../../../js/utils/lookup-normalization.js?v=20260908-1"></script>
     <script src="../../../js/warehouse/fg.service.js"></script>
 
     <script>
@@ -1183,6 +1188,7 @@
         let pickScannedItems = [];
         let pickCurrentScan = null;
         let pickHtml5QrCode = null;
+        let pickCameraHintTimer = null;
         let pickEditIndex = -1; // -1 = new scan, >=0 = editing existing row
 
         // ==================== PICKING MODAL FUNCTIONS ====================
@@ -1285,7 +1291,8 @@
         }
 
         async function pickScanBarcode() {
-            const barcode = document.getElementById('pickBarcodeInput').value.trim();
+            const input = document.getElementById('pickBarcodeInput');
+            const barcode = LookupNormalization.barcode(input.value);
             if (!barcode) { showToast('Please enter a barcode', 'warning'); return; }
 
             try {
@@ -1294,6 +1301,53 @@
 
                 const resultDiv = document.getElementById('pickScanResult');
                 const contentDiv = document.getElementById('pickScanResultContent');
+
+                if (pickCurrentScan?.type === 'inventory_choices') {
+                    const candidates = Array.isArray(pickCurrentScan.items) ? pickCurrentScan.items : [];
+                    const outstandingProductIds = new Set(
+                        (pickModalDR?.items || [])
+                            .filter(item => pickGetRemainingQty(item.product_id) > 0)
+                            .map(item => String(item.product_id))
+                    );
+                    const eligible = pickModalDR?.id
+                        ? candidates.filter(item => outstandingProductIds.has(String(item.product_id)))
+                        : [];
+                    const eligibleProductIds = new Set(eligible.map(item => String(item.product_id)));
+
+                    if (eligible.length > 0 && eligibleProductIds.size === 1) {
+                        // Several lots of the one remaining SKU are already FIFO-ordered by the API.
+                        pickCurrentScan = eligible[0];
+                        showToast(`Batch matched ${ProductDisplay.name(pickCurrentScan)}.`, 'info');
+                    } else {
+                        const choices = eligibleProductIds.size > 1 ? eligible : candidates;
+                        const noOutstandingMatch = Boolean(pickModalDR?.id) && eligible.length === 0;
+                        const title = noOutstandingMatch
+                            ? 'This batch is not needed on this ticket'
+                            : 'Choose the physical package size';
+                        const guidance = noOutstandingMatch
+                            ? 'Its matching order line is complete, or the product is not part of this customer order.'
+                            : 'This batch contains more than one packaged SKU. Select the item you are holding.';
+                        const buttons = noOutstandingMatch ? '' : choices.map(item => `
+                            <button type="button" class="btn btn-outline btn-sm justify-start h-auto py-2"
+                                onclick="pickScanInventoryChoice(${Number(item.id)})">
+                                <span class="text-left">
+                                    <span class="block font-semibold">${escapeHtml(ProductDisplay.name(item))}</span>
+                                    <span class="block text-xs opacity-70">SKU ${escapeHtml(item.product_sku || `PKG-${item.id}`)} · ${pickGetRemainingQty(item.product_id)} remaining</span>
+                                </span>
+                            </button>`).join('');
+
+                        contentDiv.className = `rounded-lg p-4 border-2 ${noOutstandingMatch ? 'border-warning bg-warning/10' : 'border-info bg-info/5'}`;
+                        contentDiv.innerHTML = `
+                            <div class="font-bold mb-1">${escapeHtml(title)}</div>
+                            <div class="text-sm text-base-content/70 mb-3">${escapeHtml(guidance)}</div>
+                            ${buttons ? `<div class="grid gap-2">${buttons}</div>` : ''}`;
+                        resultDiv.classList.remove('hidden');
+                        pickCurrentScan = null;
+                        input.value = '';
+                        showToast(title, noOutstandingMatch ? 'warning' : 'info');
+                        return;
+                    }
+                }
 
                 if (pickCurrentScan && pickCurrentScan.type === 'delivery_receipt') {
                     contentDiv.className = 'rounded-lg p-4 bg-info/10 border-2 border-info';
@@ -1392,8 +1446,28 @@
 
             } catch (error) {
                 console.error('Scan error:', error);
-                showToast('Failed to lookup barcode', 'error');
+                const message = error?.response?.data?.message || error?.message ||
+                    'No inventory item matches that barcode.';
+                const resultDiv = document.getElementById('pickScanResult');
+                const contentDiv = document.getElementById('pickScanResultContent');
+                contentDiv.className = 'rounded-lg p-4 bg-error/10 border-2 border-error';
+                contentDiv.innerHTML = `
+                    <div class="text-center">
+                        <i class="fas fa-exclamation-circle text-error text-3xl mb-2"></i>
+                        <p class="font-semibold">Barcode could not be resolved</p>
+                        <p class="text-sm text-base-content/60">${escapeHtml(message)}</p>
+                    </div>`;
+                resultDiv.classList.remove('hidden');
+                input.value = '';
+                input.focus();
+                showToast(message, 'error');
             }
+        }
+
+        function pickScanInventoryChoice(inventoryId) {
+            const input = document.getElementById('pickBarcodeInput');
+            input.value = `PKG-${inventoryId}`;
+            pickScanBarcode();
         }
 
         function pickAddToRelease() {
@@ -1912,21 +1986,53 @@
 
         // ---- Camera Scanner ----
 
+        function setPickCameraStatus(message, tone = 'info', icon = 'fa-camera') {
+            const status = document.getElementById('pickCameraStatus');
+            const text = document.getElementById('pickCameraStatusText');
+            if (!status || !text) return;
+            status.className = `alert alert-${tone} mt-3 py-2 text-sm`;
+            status.querySelector('i').className = `fas ${icon}`;
+            text.textContent = message;
+        }
+
+        function pickCameraStartMessage(error) {
+            const name = String(error?.name || '');
+            const message = String(error?.message || error || '');
+            if (!window.isSecureContext && !['localhost', '127.0.0.1'].includes(location.hostname)) {
+                return 'Phone camera access requires HTTPS. Open the secure https:// site and try again.';
+            }
+            if (name === 'NotAllowedError' || /permission|denied/i.test(message)) {
+                return 'Camera permission was denied. Allow camera access in the browser site settings, then reopen the scanner.';
+            }
+            if (name === 'NotFoundError' || /not found|no camera/i.test(message)) {
+                return 'No usable camera was found on this device.';
+            }
+            if (name === 'NotReadableError' || /could not start|in use/i.test(message)) {
+                return 'The camera is busy in another app. Close that app, then reopen the scanner.';
+            }
+            return `Camera could not start: ${message || 'unknown camera error'}`;
+        }
+
         async function pickOpenCamera() {
             const modal = document.getElementById('pickCameraModal');
             modal.showModal();
             await new Promise(resolve => setTimeout(resolve, 100));
 
             document.getElementById('pickScanFeedback').classList.add('hidden');
+            clearTimeout(pickCameraHintTimer);
+            setPickCameraStatus('Requesting camera access…', 'info', 'fa-spinner fa-spin');
 
             try {
+                if (!navigator.mediaDevices?.getUserMedia) {
+                    throw new Error('This browser does not provide camera access here. Use HTTPS and a current browser.');
+                }
                 pickHtml5QrCode = new Html5Qrcode("pickCameraPreview");
                 await pickHtml5QrCode.start(
                     { facingMode: "environment" },
                     {
                         fps: 10,
-                        qrbox: { width: 250, height: 100 },
-                        aspectRatio: 1.0,
+                        // Compact CODE128 labels fit this phone-friendly guide.
+                        qrbox: { width: 280, height: 140 },
                         formatsToSupport: [
                             Html5QrcodeSupportedFormats.CODE_128,
                             Html5QrcodeSupportedFormats.EAN_13,
@@ -1937,25 +2043,49 @@
                     (decodedText) => {
                         document.getElementById('pickScanFeedback').classList.remove('hidden');
                         document.getElementById('pickScannedCode').textContent = decodedText;
+                        clearTimeout(pickCameraHintTimer);
+                        setPickCameraStatus('Barcode recognized. Checking inventory…', 'success', 'fa-circle-check');
                         document.getElementById('pickBarcodeInput').value = decodedText;
                         setTimeout(() => { pickCloseCamera(); pickScanBarcode(); }, 500);
                     },
                     () => {}
                 );
+                setPickCameraStatus('Camera ready. Aim at the complete horizontal barcode.', 'info', 'fa-camera');
+                pickCameraHintTimer = setTimeout(() => {
+                    setPickCameraStatus(
+                        'No code detected yet. Move closer, avoid glare, and keep both ends of the barcode inside the guide.',
+                        'warning',
+                        'fa-lightbulb'
+                    );
+                }, 8000);
             } catch (err) {
                 console.error('Failed to start camera:', err);
-                showToast('Failed to access camera. Please check permissions.', 'error');
-                pickCloseCamera();
+                const message = pickCameraStartMessage(err);
+                setPickCameraStatus(message, 'error', 'fa-triangle-exclamation');
+                showToast(message, 'error');
+                if (pickHtml5QrCode) {
+                    try { pickHtml5QrCode.clear(); } catch (_) {}
+                    pickHtml5QrCode = null;
+                }
             }
         }
 
         async function pickCloseCamera() {
+            clearTimeout(pickCameraHintTimer);
             if (pickHtml5QrCode) {
                 try { await pickHtml5QrCode.stop(); pickHtml5QrCode.clear(); } catch (_) {}
                 pickHtml5QrCode = null;
             }
             document.getElementById('pickCameraModal').close();
         }
+
+        document.getElementById('pickCameraModal').addEventListener('close', () => {
+            clearTimeout(pickCameraHintTimer);
+            if (pickHtml5QrCode) {
+                pickHtml5QrCode.stop().catch(() => {});
+                pickHtml5QrCode = null;
+            }
+        });
 
         // ==================== END PICKING MODAL ====================
 
@@ -2200,7 +2330,7 @@
 
                 await loadDeliveryReceipts();
                 await loadApprovedOrders();
-                await openPickingModal(pickId);
+                goToPickItems(pickId);
 
             } catch (error) {
                 console.error('Error creating picking ticket:', error);
@@ -2278,8 +2408,8 @@
 
                 if (dr.status === 'preparing' || dr.status === 'picking') {
                     actions += `
-                        <button class="btn btn-xs btn-info" onclick="goToPickItems(${dr.id})" title="Pick Items (Scan Barcodes)">
-                            <i class="fas fa-barcode"></i> Pick
+                        <button class="btn btn-xs btn-info" onclick="goToPickItems(${dr.id})" title="Open this ticket in the dedicated barcode scanner">
+                            <i class="fas fa-barcode"></i> Open Scanner
                         </button>`;
                 }
 
@@ -2342,14 +2472,19 @@
         }
 
         function filterDRs() {
-            const search = document.getElementById('searchDR').value.toLowerCase();
+            const search = document.getElementById('searchDR').value;
             const status = document.getElementById('statusFilter').value;
             const from = document.getElementById('fromDate').value;
             const to = document.getElementById('toDate').value;
 
             let filtered = deliveryReceipts.filter(dr => {
-                const matchSearch = !search || dr.dr_number.toLowerCase().includes(search) ||
-                    (dr.customer_name && dr.customer_name.toLowerCase().includes(search));
+                const matchSearch = LookupNormalization.matches([
+                    dr.dr_number,
+                    dr.order_number,
+                    dr.customer_name,
+                    dr.delivery_address,
+                    dr.sub_location
+                ], search);
                 const matchStatus = !status || dr.status === status;
                 const matchFrom = !from || new Date(dr.created_at) >= new Date(from);
                 const matchTo = !to || new Date(dr.created_at) <= new Date(to + 'T23:59:59');
@@ -3216,7 +3351,12 @@
         }
 
         function goToPickItems(drId) {
-            openPickingModal(drId);
+            const pickingTicketId = Number(drId);
+            if (!Number.isInteger(pickingTicketId) || pickingTicketId <= 0) {
+                showToast('Unable to open the scanner because the picking ticket is invalid.', 'error');
+                return;
+            }
+            window.location.href = `dispatch.html?pick=${encodeURIComponent(pickingTicketId)}`;
         }
 
         function goToDispatch(drNumber) {
@@ -3226,7 +3366,7 @@
         function goToPickItemsFromModal() {
             if (!currentDR) return;
             document.getElementById('drDetailsModal').close();
-            openPickingModal(currentDR.id);
+            goToPickItems(currentDR.id);
         }
 
         function printCurrentDR() {

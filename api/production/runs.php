@@ -2074,9 +2074,14 @@ try {
                                 $pUnitMeasure = $pItem['unit_measure'] ?? 'ml';
                                 $pQty = (int) $pItem['quantity'];
 
-                                // Auto-generate variant from size when empty
+                                // Keep legacy snapshots populated when no semantic variant was supplied.
+                                // Do not trim a zero-decimal integer string: that turned 250 into 25
+                                // and 500 into 5 in historical packaging_run_items rows.
                                 if (($pVariant === null || $pVariant === '') && $pSizeMl > 0) {
-                                    $pVariant = rtrim(rtrim(number_format($pSizeMl, 0, '.', ''), '0'), '.') . ($pUnitMeasure ?: 'ml');
+                                    $sizeLabel = abs($pSizeMl - round($pSizeMl)) < 0.000001
+                                        ? (string) (int) round($pSizeMl)
+                                        : rtrim(rtrim(number_format($pSizeMl, 3, '.', ''), '0'), '.');
+                                    $pVariant = $sizeLabel . ($pUnitMeasure ?: 'ml');
                                 }
 
                                 $pkgItemStmt->execute([

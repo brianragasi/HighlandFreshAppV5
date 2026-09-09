@@ -13,6 +13,8 @@
 
 require_once dirname(dirname(__DIR__)) . '/bootstrap.php';
 require_once __DIR__ . '/inventory_helpers.php';
+require_once dirname(dirname(__DIR__)) . '/helpers/lookup_normalization.php';
+require_once dirname(dirname(__DIR__)) . '/helpers/finished_goods_barcode.php';
 
 // Require Warehouse FG role
 $currentUser = Auth::requireRole(['warehouse_fg', 'general_manager']);
@@ -82,7 +84,7 @@ function handleGet($db, $action) {
             break;
             
         case 'lookup_barcode':
-            $barcode = getParam('barcode');
+            $barcode = hfNormalizeBarcodeLookup(getParam('barcode'));
             if (!$barcode) {
                 Response::error('Barcode required', 400);
             }
@@ -111,12 +113,16 @@ function handleGet($db, $action) {
                 break;
             }
             
-            // Look up inventory by barcode or batch_code (any prefix accepted)
-            // PKG-{id} codes are synthetic (not stored), so also match by fgi.id
+            // SKU/product codes and PKG-{inventory id} identify one packaged SKU.
+            // A production batch can legitimately contain several package sizes,
+            // so batch matches must return every candidate instead of LIMIT 1.
             $pkgId = null;
             if (preg_match('/^PKG-(\d+)$/i', $barcode, $m)) {
                 $pkgId = (int)$m[1];
             }
+            $compactLabel = hfParseCompactFinishedGoodsLabel($barcode);
+            $compactBatchId = (int) ($compactLabel['batch_id'] ?? 0);
+            $compactProductId = (int) ($compactLabel['product_id'] ?? 0);
 
             $stmt = $db->prepare("
                 SELECT
@@ -135,22 +141,144 @@ function handleGet($db, $action) {
                 LEFT JOIN products p ON fgi.product_id = p.id
                 LEFT JOIN chiller_locations cl ON fgi.chiller_id = cl.id
                 LEFT JOIN production_batches pb ON fgi.batch_id = pb.id
-                WHERE (fgi.barcode = ? OR pb.barcode = ? OR pb.batch_code = ? OR fgi.id = ?)
+                WHERE (
+                    fgi.barcode = ? OR p.product_code = ? OR pb.barcode = ? OR pb.batch_code = ? OR fgi.id = ?
+                    OR (? > 0 AND fgi.batch_id = ? AND fgi.product_id = ?)
+                )
                   AND fgi.status = 'available'
                   AND (
                       COALESCE(fgi.boxes_available, 0) > 0
                       OR COALESCE(fgi.pieces_available, 0) > 0
                       OR COALESCE(fgi.quantity_available, 0) > 0
                   )
-                LIMIT 1
+                ORDER BY COALESCE(fgi.expiry_date, pb.expiry_date) ASC, fgi.id ASC
+                LIMIT 50
             ");
-            $stmt->execute([$barcode, $barcode, $barcode, $pkgId ?? 0]);
-            $item = $stmt->fetch();
+            $stmt->execute([
+                $barcode,
+                $barcode,
+                $barcode,
+                $barcode,
+                $pkgId ?? 0,
+                $compactBatchId,
+                $compactBatchId,
+                $compactProductId,
+            ]);
+            $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-            if (!$item) {
-                Response::error('Barcode not found in inventory. Ensure stock exists and is available.', 404);
+            if ($compactLabel) {
+                // Do not allow an unrelated ordinary barcode match to win over
+                // the exact batch and product carried by the compact label.
+                $items = array_values(array_filter($items, static function (array $candidate) use ($compactLabel) {
+                    return (int) ($candidate['batch_id'] ?? 0) === $compactLabel['batch_id']
+                        && (int) ($candidate['product_id'] ?? 0) === $compactLabel['product_id'];
+                }));
+                foreach ($items as &$compactItem) {
+                    $compactItem['serialized_unit_number'] = $compactLabel['sequence'];
+                    $compactItem['scanned_barcode'] = $barcode;
+                }
+                unset($compactItem);
             }
 
+            // QC prints one serialized label per finished unit. Its value adds
+            // both the SKU token and unit sequence to the batch barcode, so it
+            // cannot match the unsuffixed database values above. Resolve that
+            // exact printed format back to one batch + SKU inventory row.
+            if (!$items) {
+                $serializedStmt = $db->prepare("
+                    SELECT
+                        fgi.*,
+                        p.product_name,
+                        p.variant,
+                        p.unit_size as size_value,
+                        p.unit_measure as size_unit,
+                        p.product_code as product_sku,
+                        p.pieces_per_box,
+                        cl.chiller_name,
+                        COALESCE(pb.batch_code, CONCAT('PKG-', fgi.id)) as batch_code,
+                        pb.barcode as production_barcode,
+                        pb.manufacturing_date,
+                        pb.expiry_date as batch_expiry_date
+                    FROM finished_goods_inventory fgi
+                    JOIN products p ON fgi.product_id = p.id
+                    JOIN production_batches pb ON fgi.batch_id = pb.id
+                    LEFT JOIN chiller_locations cl ON fgi.chiller_id = cl.id
+                    WHERE (
+                        UPPER(?) LIKE CONCAT(REPLACE(UPPER(COALESCE(NULLIF(TRIM(pb.barcode), ''), pb.batch_code)), ' ', ''), '-%')
+                        OR UPPER(?) LIKE CONCAT(REPLACE(UPPER(pb.batch_code), ' ', ''), '-%')
+                    )
+                      AND fgi.status = 'available'
+                      AND (
+                          COALESCE(fgi.boxes_available, 0) > 0
+                          OR COALESCE(fgi.pieces_available, 0) > 0
+                          OR COALESCE(fgi.quantity_available, 0) > 0
+                      )
+                    ORDER BY COALESCE(fgi.expiry_date, pb.expiry_date) ASC, fgi.id ASC
+                    LIMIT 50
+                ");
+                $serializedStmt->execute([$barcode, $barcode]);
+                foreach ($serializedStmt->fetchAll(PDO::FETCH_ASSOC) as $candidate) {
+                    $unitSequence = hfMatchSerializedQcLabel(
+                        $barcode,
+                        $candidate['production_barcode'] ?? null,
+                        $candidate['batch_code'] ?? null,
+                        $candidate['product_sku'] ?? null,
+                        (int) ($candidate['product_id'] ?? 0)
+                    );
+                    if ($unitSequence === null) {
+                        continue;
+                    }
+
+                    $printedUnitCount = max(0, (int) ($candidate['quantity'] ?? 0));
+                    if ($printedUnitCount > 0 && $unitSequence > $printedUnitCount) {
+                        continue;
+                    }
+
+                    $candidate['serialized_unit_number'] = $unitSequence;
+                    $candidate['scanned_barcode'] = $barcode;
+                    $items = [$candidate];
+                    break;
+                }
+            }
+
+            if (!$items) {
+                Response::error('Barcode not found in inventory. Scan the full QC label and ensure its batch has been received by Finished Goods.', 404);
+            }
+
+            // Prefer a true inventory/SKU identifier. If several FIFO lots exist
+            // for that SKU, the first expiring lot is the correct candidate.
+            $normalizedBarcode = strtoupper($barcode);
+            $specificItems = array_values(array_filter($items, static function (array $candidate) use ($normalizedBarcode, $pkgId) {
+                return ($pkgId && (int)$candidate['id'] === $pkgId)
+                    || strtoupper(trim((string)($candidate['barcode'] ?? ''))) === $normalizedBarcode
+                    || strtoupper(trim((string)($candidate['product_sku'] ?? ''))) === $normalizedBarcode;
+            }));
+            if ($specificItems) {
+                $item = $specificItems[0];
+                $item['type'] = 'inventory_item';
+                Response::success($item, 'SKU inventory found');
+                break;
+            }
+
+            $productIds = array_values(array_unique(array_map(
+                static fn(array $candidate) => (int)$candidate['product_id'],
+                $items
+            )));
+            if (count($productIds) > 1) {
+                foreach ($items as &$candidate) {
+                    $candidate['type'] = 'inventory_item';
+                }
+                unset($candidate);
+                Response::success([
+                    'type' => 'inventory_choices',
+                    'lookup_code' => $barcode,
+                    'items' => $items,
+                ], 'This production batch contains multiple packaged SKUs');
+                break;
+            }
+
+            // Multiple lots of the same SKU are not ambiguous: use FIFO order.
+            $item = $items[0];
             $item['type'] = 'inventory_item';
             Response::success($item, 'Item found');
             break;
