@@ -204,30 +204,44 @@ class Mailer {
             return $socket;
         }
         $initialError = "{$errstr} ({$errno})";
-        $unreachable = in_array((int) $errno, [101, 113, 10051, 10065], true)
+        $routeFailure = in_array((int) $errno, [101, 110, 111, 113, 10051, 10060, 10061, 10065], true)
             || stripos($errstr, 'unreachable') !== false
-            || stripos($errstr, 'No route to host') !== false;
-        if (!$unreachable || !function_exists('gethostbynamel')) {
+            || stripos($errstr, 'No route to host') !== false
+            || stripos($errstr, 'refused') !== false
+            || stripos($errstr, 'timed out') !== false;
+        if (!$routeFailure) {
             throw new Exception("SMTP connection failed: {$initialError}");
         }
 
-        $addresses = @gethostbynamel($host) ?: [];
+        $addresses = function_exists('gethostbynamel') ? (@gethostbynamel($host) ?: []) : [];
         $addresses = array_values(array_unique(array_filter($addresses, static function ($address) {
             return filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false;
         })));
+        $targets = [];
+        foreach (array_slice($addresses, 0, 2) as $address) {
+            $targets[] = ['label' => 'resolved IPv4 route', 'address' => $address];
+        }
+        // GoogieHost may reject a hairpin connection from its PHP worker back
+        // to the server's public address even though the same SMTP service is
+        // listening locally. Keep the configured hostname as the TLS peer/SNI
+        // identity while using loopback only as a bounded final route.
+        if (str_ends_with(strtolower((string) $host), '.googiehost.com')) {
+            $targets[] = ['label' => 'server-local relay', 'address' => '127.0.0.1'];
+        }
         $failures = [];
         // Bound additional connection waits; never disable certificate checks
         // or replace the configured hostname with a permanent Gmail IP.
-        foreach (array_slice($addresses, 0, 2) as $address) {
+        foreach ($targets as $target) {
+            $address = $target['address'];
             $socket = @stream_socket_client("{$transport}://{$address}:{$port}", $errno, $errstr, 4, STREAM_CLIENT_CONNECT, $context);
             if ($socket) {
-                error_log('SMTP connected using IPv4 fallback');
+                error_log('SMTP connected using ' . $target['label']);
                 return $socket;
             }
-            $failures[] = "{$errstr} ({$errno})";
+            $failures[] = $target['label'] . " {$errstr} ({$errno})";
         }
-        $detail = $failures ? implode('; ', $failures) : 'no IPv4 address resolved';
-        throw new Exception("SMTP connection failed: hostname route {$initialError}; IPv4 fallback failed: {$detail}");
+        $detail = $failures ? implode('; ', $failures) : 'no alternate route was available';
+        throw new Exception("SMTP connection failed: hostname route {$initialError}; alternate routes failed: {$detail}");
     }
 
     /**

@@ -50,6 +50,19 @@ function smtpReadiness(): array
     ];
 }
 
+function safeSmtpTransportDetail(Throwable $error): string
+{
+    $message = trim(preg_replace('/\s+/', ' ', (string) $error->getMessage()));
+    if (!str_starts_with($message, 'SMTP connection failed:')) {
+        return '';
+    }
+
+    // Connection error text contains route outcomes only. Still redact any
+    // resolved addresses before returning it to the authenticated admin UI.
+    $message = preg_replace('/\b(?:\d{1,3}\.){3}\d{1,3}\b/', '[resolved IPv4]', $message);
+    return substr($message, 0, 500);
+}
+
 if ($method === 'GET') {
     Response::success(smtpReadiness(), 'SMTP configuration inspected. No email was sent.');
 }
@@ -114,7 +127,10 @@ try {
 
     $message = $error->getMessage();
     if (stripos($message, 'connection failed') !== false || stripos($message, 'timed out') !== false) {
-        Response::error('The live host could not reach the configured SMTP server. Verify its hostname, port, and the hosting provider\'s outbound-mail policy.', 424);
+        $detail = safeSmtpTransportDetail($error);
+        $summary = 'The live host could not connect to ' . SMTP_HOST . ':' . SMTP_PORT
+            . ' using ' . strtoupper(SMTP_ENCRYPTION) . '.';
+        Response::error($summary . ($detail !== '' ? ' Server detail: ' . $detail : ''), 424);
     }
     if (stripos($message, 'expected 235') !== false) {
         Response::error('The configured SMTP server rejected the login. Verify the mailbox address and password.', 424);

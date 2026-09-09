@@ -6,6 +6,7 @@ $gmApi = file_get_contents($root . '/api/admin/gm_approvals.php');
 $poApi = file_get_contents($root . '/api/purchasing/purchase_orders.php');
 $poPage = file_get_contents($root . '/html/purchasing/purchase_orders.html');
 $smtpDiagnostics = file_get_contents($root . '/api/admin/smtp_diagnostics.php');
+$mailerSource = file_get_contents($root . '/api/config/mailer.php');
 $adminDashboard = file_get_contents($root . '/html/admin/dashboard.html');
 $liveMailSync = file_get_contents($root . '/.github/scripts/sync_live_mail_env.py');
 $deployWorkflow = file_get_contents($root . '/.github/workflows/deploy.yml');
@@ -50,6 +51,14 @@ $checks = [
     'SMTP diagnostics preserve actionable dependency errors' =>
         str_contains($smtpDiagnostics, '424')
         && !str_contains($smtpDiagnostics, 'Response::error(\'The SMTP test failed. Check the server error log for the technical detail.\', 502)'),
+    'SMTP diagnostics expose safe route detail without resolved addresses' =>
+        str_contains($smtpDiagnostics, 'safeSmtpTransportDetail')
+        && str_contains($smtpDiagnostics, "'[resolved IPv4]'")
+        && str_contains($smtpDiagnostics, "' Server detail: '"),
+    'GoogieHost SMTP can use a certificate-verified server-local route' =>
+        str_contains($mailerSource, "'server-local relay'")
+        && str_contains($mailerSource, "'address' => '127.0.0.1'")
+        && str_contains($mailerSource, 'str_ends_with(strtolower((string) $host), \'.googiehost.com\')'),
     'GoogieHost outbound mail uses the provider-assigned authenticated relay' =>
         str_contains($liveMailSync, '"SMTP_HOST": "cloud3.googiehost.com"')
         && str_contains($liveMailSync, '"SMTP_PORT": "465"')
