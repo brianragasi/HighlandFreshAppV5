@@ -194,14 +194,21 @@ define('PASSWORD_MAX_LENGTH', 128);
 define('RATE_LIMIT_SET_PASSWORD_ATTEMPTS', 5); // Max attempts per window
 define('RATE_LIMIT_SET_PASSWORD_WINDOW', 900); // 15 minutes in seconds
 
-// Email / SMTP Settings (Gmail)
-define('SMTP_HOST', envOrDefault('SMTP_HOST', 'smtp.gmail.com'));
-define('SMTP_PORT', (int) envOrDefault('SMTP_PORT', 587));
-define('SMTP_USERNAME', envOrDefault('SMTP_USERNAME', $isInfinityFree ? 'ragasibrian2@gmail.com' : 'highlandfreshdairy@gmail.com'));
+// Outbound email / SMTP. GoogieHost requires its account-local authenticated
+// relay; other deployments retain Gmail-compatible defaults.
+$defaultSmtpHost = $isGoogieHost ? 'cloud3.googiehost.com' : 'smtp.gmail.com';
+$defaultSmtpPort = $isGoogieHost ? 465 : 587;
+$defaultSmtpEncryption = $isGoogieHost ? 'ssl' : 'tls';
+$defaultSmtpUsername = $isGoogieHost
+    ? 'notifications@highlandfresh.whf.bz'
+    : ($isInfinityFree ? 'ragasibrian2@gmail.com' : 'highlandfreshdairy@gmail.com');
+define('SMTP_HOST', envOrDefault('SMTP_HOST', $defaultSmtpHost));
+define('SMTP_PORT', (int) envOrDefault('SMTP_PORT', $defaultSmtpPort));
+define('SMTP_USERNAME', envOrDefault('SMTP_USERNAME', $defaultSmtpUsername));
 define('SMTP_PASSWORD', envOrDefault('SMTP_PASSWORD', ''));
-define('SMTP_FROM_EMAIL', envOrDefault('SMTP_FROM_EMAIL', $isInfinityFree ? 'ragasibrian2@gmail.com' : 'highlandfreshdairy@gmail.com'));
+define('SMTP_FROM_EMAIL', envOrDefault('SMTP_FROM_EMAIL', $defaultSmtpUsername));
 define('SMTP_FROM_NAME', envOrDefault('SMTP_FROM_NAME', 'Highland Fresh Dairy'));
-define('SMTP_ENCRYPTION', envOrDefault('SMTP_ENCRYPTION', 'tls'));
+define('SMTP_ENCRYPTION', envOrDefault('SMTP_ENCRYPTION', $defaultSmtpEncryption));
 define('SMTP_VERIFY_PEER', filter_var(
     envOrDefault('SMTP_VERIFY_PEER', $isProductionHost ? 'true' : 'false'),
     FILTER_VALIDATE_BOOLEAN

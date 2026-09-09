@@ -13,20 +13,26 @@ SERVER = os.environ["FTP_SERVER"]
 USERNAME = os.environ["FTP_USERNAME"]
 FTP_PASSWORD = os.environ["FTP_PASSWORD"]
 GMAIL_APP_PASSWORD = os.environ["GMAIL_APP_PASSWORD"].replace(" ", "")
+GOOGIEHOST_SMTP_PASSWORD = os.environ["GOOGIEHOST_SMTP_PASSWORD"].strip()
 REMOTE_ENV = ".env"
 
 if len(GMAIL_APP_PASSWORD) != 16:
     raise SystemExit("GMAIL_APP_PASSWORD must contain exactly 16 characters")
+if not GOOGIEHOST_SMTP_PASSWORD:
+    raise SystemExit("GOOGIEHOST_SMTP_PASSWORD must not be empty")
 
 MAIL_SETTINGS = {
-    "SMTP_HOST": "smtp.gmail.com",
+    # Outbound application messages use the authenticated relay assigned by
+    # GoogieHost support. The Gmail account below remains the separate,
+    # read-only POP3 inbox used to import customer purchase orders.
+    "SMTP_HOST": "cloud3.googiehost.com",
     "SMTP_PORT": "465",
     "SMTP_ENCRYPTION": "ssl",
     "SMTP_VERIFY_PEER": "true",
-    "SMTP_USERNAME": "ragasibrian2@gmail.com",
-    "SMTP_FROM_EMAIL": "ragasibrian2@gmail.com",
+    "SMTP_USERNAME": "notifications@highlandfresh.whf.bz",
+    "SMTP_FROM_EMAIL": "notifications@highlandfresh.whf.bz",
     "SMTP_FROM_NAME": '"Highland Fresh Dairy"',
-    "SMTP_PASSWORD": GMAIL_APP_PASSWORD,
+    "SMTP_PASSWORD": GOOGIEHOST_SMTP_PASSWORD,
     "ORDER_MAILBOX_ENABLED": "true",
     "ORDER_MAILBOX_HOST": "pop.gmail.com",
     "ORDER_MAILBOX_PORT": "995",

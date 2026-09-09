@@ -30,13 +30,13 @@ function smtpReadiness(): array
         $issues[] = 'SMTP_PASSWORD is not configured.';
     }
     if (!in_array(SMTP_ENCRYPTION, ['tls', 'ssl'], true)) {
-        $issues[] = 'Production Gmail SMTP should use STARTTLS (587) or SSL (465).';
+        $issues[] = 'Production SMTP should use STARTTLS (587) or implicit SSL (465).';
     }
     if (SMTP_ENCRYPTION === 'tls' && SMTP_PORT !== 587) {
-        $issues[] = 'Gmail STARTTLS should use port 587.';
+        $issues[] = 'STARTTLS should normally use port 587.';
     }
     if (SMTP_ENCRYPTION === 'ssl' && SMTP_PORT !== 465) {
-        $issues[] = 'Gmail implicit SSL should use port 465.';
+        $issues[] = 'Implicit SSL should normally use port 465.';
     }
 
     return [
@@ -107,13 +107,13 @@ try {
 
     $message = $error->getMessage();
     if (stripos($message, 'connection failed') !== false || stripos($message, 'timed out') !== false) {
-        Response::error('The live host could not reach Gmail SMTP. Try SSL on port 465 if STARTTLS on port 587 is restricted.', 424);
+        Response::error('The live host could not reach the configured SMTP server. Verify its hostname, port, and the hosting provider\'s outbound-mail policy.', 424);
     }
     if (stripos($message, 'expected 235') !== false) {
-        Response::error('Gmail rejected the SMTP login. Verify the email address and 16-character App Password.', 424);
+        Response::error('The configured SMTP server rejected the login. Verify the mailbox address and password.', 424);
     }
     if (stripos($message, 'TLS') !== false || stripos($message, 'crypto') !== false) {
-        Response::error('The live host could not establish a verified TLS connection to Gmail SMTP.', 424);
+        Response::error('The live host could not establish a verified TLS connection to the configured SMTP server.', 424);
     }
     Response::error('The SMTP test failed. Check the server error log for the technical detail.', 424);
 }

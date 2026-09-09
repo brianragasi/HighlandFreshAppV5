@@ -8,6 +8,7 @@ $poPage = file_get_contents($root . '/html/purchasing/purchase_orders.html');
 $smtpDiagnostics = file_get_contents($root . '/api/admin/smtp_diagnostics.php');
 $adminDashboard = file_get_contents($root . '/html/admin/dashboard.html');
 $liveMailSync = file_get_contents($root . '/.github/scripts/sync_live_mail_env.py');
+$deployWorkflow = file_get_contents($root . '/.github/workflows/deploy.yml');
 
 $checks = [
     'GM approval explains that email is attempted immediately' =>
@@ -47,9 +48,18 @@ $checks = [
     'SMTP diagnostics preserve actionable dependency errors' =>
         str_contains($smtpDiagnostics, '424')
         && !str_contains($smtpDiagnostics, 'Response::error(\'The SMTP test failed. Check the server error log for the technical detail.\', 502)'),
-    'GoogieHost deployment keeps Gmail on implicit SSL port 465' =>
-        str_contains($liveMailSync, '"SMTP_PORT": "465"')
-        && str_contains($liveMailSync, '"SMTP_ENCRYPTION": "ssl"'),
+    'GoogieHost outbound mail uses the provider-assigned authenticated relay' =>
+        str_contains($liveMailSync, '"SMTP_HOST": "cloud3.googiehost.com"')
+        && str_contains($liveMailSync, '"SMTP_PORT": "465"')
+        && str_contains($liveMailSync, '"SMTP_ENCRYPTION": "ssl"')
+        && str_contains($liveMailSync, '"SMTP_USERNAME": "notifications@highlandfresh.whf.bz"')
+        && str_contains($liveMailSync, '"SMTP_PASSWORD": GOOGIEHOST_SMTP_PASSWORD'),
+    'Customer-order POP3 remains separate from outbound GoogieHost SMTP' =>
+        str_contains($liveMailSync, '"ORDER_MAILBOX_HOST": "pop.gmail.com"')
+        && str_contains($liveMailSync, '"ORDER_MAILBOX_PASSWORD": GMAIL_APP_PASSWORD'),
+    'Deployment reads the GoogieHost mailbox password only from a repository secret' =>
+        str_contains($deployWorkflow, 'GOOGIEHOST_SMTP_PASSWORD: ${{ secrets.GOOGIEHOST_SMTP_PASSWORD }}')
+        && !str_contains($liveMailSync, 'SMTP_PASSWORD = "'),
     'Admin dashboard exposes an explicit live email test' =>
         str_contains($adminDashboard, 'testEmailService(this)')
         && str_contains($adminDashboard, "api.post('/admin/smtp_diagnostics.php'"),

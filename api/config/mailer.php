@@ -2,7 +2,7 @@
 /**
  * Highland Fresh System - SMTP Email Helper
  *
- * Lightweight SMTP mailer using PHP sockets for Gmail.
+ * Lightweight provider-neutral SMTP mailer using PHP sockets.
  * No external dependencies required.
  *
  * @package HighlandFresh
@@ -18,7 +18,7 @@ if (!defined('HIGHLAND_FRESH')) {
 class Mailer {
 
     /**
-     * Send an email via SMTP (Gmail)
+     * Send an email via authenticated SMTP.
      *
      * @param string $to        Recipient email
      * @param string $subject   Email subject
@@ -37,7 +37,7 @@ class Mailer {
         $fromName = SMTP_FROM_NAME;
 
         if (empty($password)) {
-            throw new Exception('SMTP password (Gmail App Password) is not configured. Set SMTP_PASSWORD environment variable.');
+            throw new Exception('SMTP password is not configured. Set the SMTP_PASSWORD environment variable.');
         }
         if (!filter_var($username, FILTER_VALIDATE_EMAIL) || preg_match('/[\r\n]/', $username)) {
             throw new Exception('SMTP username is not a valid email address.');
