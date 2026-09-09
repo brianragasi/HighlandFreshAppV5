@@ -61,8 +61,8 @@ $checks = [
         && str_contains($mailerSource, 'str_ends_with(strtolower((string) $host), \'.googiehost.com\')'),
     'GoogieHost outbound mail uses the provider-assigned authenticated relay' =>
         str_contains($liveMailSync, '"SMTP_HOST": "cloud3.googiehost.com"')
-        && str_contains($liveMailSync, '"SMTP_PORT": "465"')
-        && str_contains($liveMailSync, '"SMTP_ENCRYPTION": "ssl"')
+        && str_contains($liveMailSync, '"SMTP_PORT": "587"')
+        && str_contains($liveMailSync, '"SMTP_ENCRYPTION": "tls"')
         && str_contains($liveMailSync, '"SMTP_USERNAME": "notifications@highlandfresh.whf.bz"')
         && str_contains($liveMailSync, '"SMTP_PASSWORD": GOOGIEHOST_SMTP_PASSWORD'),
     'Customer-order POP3 remains separate from outbound GoogieHost SMTP' =>
