@@ -42,7 +42,9 @@ $checks = [
     'SMTP diagnostics require GM/Admin authentication' =>
         str_contains($smtpDiagnostics, "Auth::requireRole(['general_manager', 'admin'])"),
     'SMTP diagnostics are rate limited and avoid exposing credentials' =>
-        str_contains($smtpDiagnostics, "RateLimiter::check('smtp_test:user:'")
+        str_contains($smtpDiagnostics, 'RateLimiter::check($rateLimitKey, 5, 600)')
+        && str_contains($smtpDiagnostics, "'smtp_test:v2:user:'")
+        && str_contains($smtpDiagnostics, '\' minute\' . ($retryMinutes === 1 ? \'.\' : \'s.\')')
         && !str_contains($smtpDiagnostics, "'username' => SMTP_USERNAME")
         && !str_contains($smtpDiagnostics, "'password' => SMTP_PASSWORD"),
     'SMTP diagnostics preserve actionable dependency errors' =>

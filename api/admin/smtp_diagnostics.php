@@ -74,10 +74,17 @@ if (!filter_var($recipient, FILTER_VALIDATE_EMAIL)) {
     Response::error('Your GM/Admin account needs a valid email address before an SMTP test can be sent.', 422);
 }
 
-$limit = RateLimiter::check('smtp_test:user:' . $userId, 3, 3600);
+$rateLimitKey = 'smtp_test:v2:user:' . $userId;
+$limit = RateLimiter::check($rateLimitKey, 5, 600);
 if (!$limit['allowed']) {
-    header('Retry-After: ' . (int) $limit['retryAfter']);
-    Response::error('SMTP test limit reached. Try again after the rate-limit window resets.', 429);
+    $retryAfter = max(1, (int) $limit['retryAfter']);
+    $retryMinutes = max(1, (int) ceil($retryAfter / 60));
+    header('Retry-After: ' . $retryAfter);
+    Response::error(
+        'SMTP test limit reached. Try again in about ' . $retryMinutes
+        . ' minute' . ($retryMinutes === 1 ? '.' : 's.'),
+        429
+    );
 }
 
 try {
