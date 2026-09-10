@@ -7,6 +7,7 @@
 
 require_once __DIR__ . '/../bootstrap.php';
 require_once __DIR__ . '/../helpers/recipe_production_readiness.php';
+require_once __DIR__ . '/../helpers/sellable_expiry_policy.php';
 
 Auth::requireRole(['general_manager', 'admin']);
 
@@ -164,7 +165,7 @@ function resolveProductMaster(PDO $conn, $data) {
             'category' => $category,
             'milk_type_id' => ($milkTypeId !== null && $milkTypeId !== '') ? (int) $milkTypeId : null,
             'milk_type_name' => $milkTypeName,
-            'shelf_life_days' => (int) ($base['default_shelf_life_days'] ?? 7),
+            'shelf_life_days' => (int) ($base['default_shelf_life_days'] ?? HF_MIN_FINISHED_PRODUCT_SHELF_LIFE_DAYS),
             'description_product' => $base['description'] ?? null,
             'base_product_is_active' => (int) ($base['is_active'] ?? 1),
             'skus' => $skus,
@@ -203,7 +204,7 @@ function resolveProductMaster(PDO $conn, $data) {
             'category' => $category,
             'milk_type_id' => ($milkTypeId !== null && $milkTypeId !== '') ? (int) $milkTypeId : null,
             'milk_type_name' => $p['milk_type_name'] ?? null,
-            'shelf_life_days' => (int) ($p['default_shelf_life_days'] ?? $p['shelf_life_days'] ?? 7),
+            'shelf_life_days' => (int) ($p['default_shelf_life_days'] ?? $p['shelf_life_days'] ?? HF_MIN_FINISHED_PRODUCT_SHELF_LIFE_DAYS),
             'description_product' => null,
             'skus' => [],
         ], null];
@@ -444,7 +445,7 @@ function enrichRecipeRow(PDO $conn, array $recipe) {
             $recipe['product_type_display'] = $bp['category'];
             $recipe['milk_type_id'] = $bp['milk_type_id'] !== null ? (int) $bp['milk_type_id'] : $recipe['milk_type_id'];
             $recipe['milk_type_name'] = $bp['milk_type_name'] ?: ($recipe['milk_type_name'] ?? null);
-            $recipe['shelf_life_days_product'] = (int) ($bp['default_shelf_life_days'] ?? 7);
+            $recipe['shelf_life_days_product'] = (int) ($bp['default_shelf_life_days'] ?? HF_MIN_FINISHED_PRODUCT_SHELF_LIFE_DAYS);
 
             $skuStmt = $conn->prepare("
                 SELECT id, product_code, product_name, variant, unit_size, unit_measure, is_active

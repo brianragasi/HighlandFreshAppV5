@@ -19,6 +19,7 @@ require_once dirname(__DIR__) . '/config/ccp_standards.php';
 require_once dirname(__DIR__) . '/helpers/pack_uom.php';
 require_once dirname(__DIR__) . '/helpers/recipe_production_readiness.php';
 require_once dirname(__DIR__) . '/helpers/qc_count_discrepancy.php';
+require_once dirname(__DIR__) . '/helpers/sellable_expiry_policy.php';
 require_once __DIR__ . '/helpers/yield_helpers.php';
 
 // Require Production role
@@ -1959,7 +1960,7 @@ try {
                                         NULLIF(p.shelf_life_days, 0),
                                         NULLIF(mr.shelf_life_days, 0),
                                         NULLIF(bp.default_shelf_life_days, 0),
-                                        7
+                                        " . HF_MIN_FINISHED_PRODUCT_SHELF_LIFE_DAYS . "
                                     ) AS days
                                     FROM master_recipes mr
                                     LEFT JOIN products p ON p.id = mr.product_id
@@ -1968,13 +1969,18 @@ try {
                                     LIMIT 1
                                 ");
                                 $slStmt->execute([(int) $run['recipe_id']]);
-                                $expiryDays = (int) ($slStmt->fetchColumn() ?: 7);
+                                $expiryDays = (int) ($slStmt->fetchColumn() ?: HF_MIN_FINISHED_PRODUCT_SHELF_LIFE_DAYS);
                             } catch (Throwable $e) {
-                                $expiryDays = 7;
+                                $expiryDays = HF_MIN_FINISHED_PRODUCT_SHELF_LIFE_DAYS;
                             }
                         }
-                        if ($expiryDays <= 0) {
-                            $expiryDays = 7;
+                        if ($expiryDays < HF_MIN_FINISHED_PRODUCT_SHELF_LIFE_DAYS) {
+                            throw new RuntimeException(
+                                'Production cannot create a finished batch with a shelf life inside the 7-day QC handling window. '
+                                . 'Update the product shelf life to at least '
+                                . HF_MIN_FINISHED_PRODUCT_SHELF_LIFE_DAYS
+                                . ' days.'
+                            );
                         }
 
                         $expiryDate = date('Y-m-d', strtotime("+{$expiryDays} days"));

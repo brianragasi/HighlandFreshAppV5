@@ -11,6 +11,7 @@
 
 require_once dirname(__DIR__) . '/bootstrap.php';
 require_once dirname(__DIR__) . '/helpers/recipe_production_readiness.php';
+require_once dirname(__DIR__) . '/helpers/sellable_expiry_policy.php';
 
 // Require Production or GM role
 $currentUser = Auth::requireRole(['production_staff', 'general_manager', 'qc_officer']);
@@ -238,7 +239,7 @@ try {
             $baseMilkLiters = getParam('base_milk_liters', 0);
             $expectedYield = getParam('expected_yield', 0);
             $yieldUnit = getParam('yield_unit', 'units');
-            $shelfLifeDays = getParam('shelf_life_days', 7);
+            $shelfLifeDays = getParam('shelf_life_days', HF_MIN_FINISHED_PRODUCT_SHELF_LIFE_DAYS);
             // HTST: 75°C (hold time is tracked in production_ccp_logs as seconds, not recipe minutes)
             $pasteurizationTemp = getParam('pasteurization_temp', 75);
             $pasteurizationTimeMins = getParam('pasteurization_time_mins', 15);
@@ -257,6 +258,8 @@ try {
             }
             if ($baseMilkLiters <= 0) $errors['base_milk_liters'] = 'Base milk liters must be greater than 0';
             if ($expectedYield <= 0) $errors['expected_yield'] = 'Expected yield must be greater than 0';
+            $shelfLifeError = hfFinishedProductShelfLifeError($shelfLifeDays);
+            if ($shelfLifeError !== null) $errors['shelf_life_days'] = $shelfLifeError;
             
             if (!empty($errors)) {
                 Response::validationError($errors);

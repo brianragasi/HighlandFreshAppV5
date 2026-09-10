@@ -7,6 +7,7 @@
 require_once __DIR__ . '/../bootstrap.php';
 require_once __DIR__ . '/../helpers/sku_packaging_bom.php';
 require_once __DIR__ . '/../helpers/product_pack_configuration.php';
+require_once __DIR__ . '/../helpers/sellable_expiry_policy.php';
 
 // Require GM/Admin role
 Auth::requireRole(['general_manager', 'admin']);
@@ -825,7 +826,8 @@ function validateProductNumericPayload(array &$data): void {
     }
     foreach ([
         'pieces_per_box' => ['Pieces per box', 1, 1000000],
-        'shelf_life_days' => ['Shelf life', 1, 3650],
+        'shelf_life_days' => ['Shelf life', HF_MIN_FINISHED_PRODUCT_SHELF_LIFE_DAYS, 3650],
+        'default_shelf_life_days' => ['Shelf life', HF_MIN_FINISHED_PRODUCT_SHELF_LIFE_DAYS, 3650],
     ] as $field => [$label, $minimum, $maximum]) {
         if (!array_key_exists($field, $data) || $data[$field] === '' || $data[$field] === null) {
             continue;
@@ -1018,7 +1020,7 @@ function createProduct($conn) {
                     $data['category'],
                     $data['milk_type_id'] ?? null,
                     $data['description'] ?? null,
-                    $data['shelf_life_days'] ?? 7,
+                    $data['shelf_life_days'] ?? HF_MIN_FINISHED_PRODUCT_SHELF_LIFE_DAYS,
                     $data['storage_temp_min'] ?? 2.00,
                     $data['storage_temp_max'] ?? 6.00,
                     $data['is_active'] ?? 1,
@@ -1050,7 +1052,7 @@ function createProduct($conn) {
             $data['unit_size'] ?? null,
             $data['unit_measure'] ?? 'ml',
             $data['primary_container_id'],
-            $data['shelf_life_days'] ?? 7,
+            $data['shelf_life_days'] ?? HF_MIN_FINISHED_PRODUCT_SHELF_LIFE_DAYS,
             $data['storage_temp_min'] ?? 2.00,
             $data['storage_temp_max'] ?? 6.00,
             $data['base_unit'] ?? 'piece',
@@ -1082,7 +1084,7 @@ function createProduct($conn) {
             $data['unit_size'] ?? null,
             $data['unit_measure'] ?? 'ml',
             $data['primary_container_id'],
-            $data['shelf_life_days'] ?? 7,
+            $data['shelf_life_days'] ?? HF_MIN_FINISHED_PRODUCT_SHELF_LIFE_DAYS,
             $data['storage_temp_min'] ?? 2.00,
             $data['storage_temp_max'] ?? 6.00,
             $data['base_unit'] ?? 'piece',
@@ -1114,6 +1116,7 @@ function createProduct($conn) {
 function updateBaseProduct($conn, $id) {
     $data = json_decode(file_get_contents('php://input'), true) ?: [];
     normalizeProductMilkType($conn, $data);
+    validateProductNumericPayload($data);
     $id = (int) $id;
     if ($id <= 0) {
         sendError('Base product ID required', 400);

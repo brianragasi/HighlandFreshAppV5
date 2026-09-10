@@ -7,6 +7,23 @@
  * must not be offered, promised as ready stock, or dispatched to a customer.
  */
 const HF_NEAR_EXPIRY_DAYS = 7;
+const HF_MIN_FINISHED_PRODUCT_SHELF_LIFE_DAYS = HF_NEAR_EXPIRY_DAYS + 1;
+
+if (!function_exists('hfFinishedProductShelfLifeError')) {
+    function hfFinishedProductShelfLifeError($value): ?string
+    {
+        $days = filter_var($value, FILTER_VALIDATE_INT);
+        if ($days === false || $days < HF_MIN_FINISHED_PRODUCT_SHELF_LIFE_DAYS) {
+            return 'Finished-product shelf life must be at least '
+                . HF_MIN_FINISHED_PRODUCT_SHELF_LIFE_DAYS
+                . ' days so it starts outside the '
+                . HF_NEAR_EXPIRY_DAYS
+                . '-day QC handling window.';
+        }
+
+        return null;
+    }
+}
 
 if (!function_exists('hfSellableExpirySql')) {
     function hfSellableExpirySql(string $column): string
