@@ -6,6 +6,7 @@
 
 require_once __DIR__ . '/../bootstrap.php';
 require_once __DIR__ . '/../helpers/sku_packaging_bom.php';
+require_once __DIR__ . '/../helpers/product_pack_configuration.php';
 
 // Require GM/Admin role
 Auth::requireRole(['general_manager', 'admin']);
@@ -1226,7 +1227,7 @@ function updateProduct($conn, $id) {
     // Check if product exists
     $checkStmt = $conn->prepare("
         SELECT id, product_code, product_name, category, variant, unit_size, unit_measure,
-               base_unit, base_product_id, primary_container_id
+               base_unit, box_unit, pieces_per_box, base_product_id, primary_container_id
         FROM products
         WHERE id = ?
     ");
@@ -1312,14 +1313,87 @@ function updateProduct($conn, $id) {
         }
     }
     
-    $params[] = $id;
-    $sql = "UPDATE products SET " . implode(', ', $updates) . " WHERE id = ?";
-    
-    $stmt = $conn->prepare($sql);
-    $stmt->execute($params);
-    syncSkuPrimaryContainer($conn, (int) $id, $primaryContainer);
-    
-    sendSuccess(['message' => 'Product updated successfully']);
+    $oldPiecesPerPack = max(1, (int) ($existing['pieces_per_box'] ?? 1));
+    $newPiecesPerPack = array_key_exists('pieces_per_box', $data)
+        ? max(1, (int) $data['pieces_per_box'])
+        : $oldPiecesPerPack;
+    $packSizeChanged = $newPiecesPerPack !== $oldPiecesPerPack;
+    $inventoryConversions = [];
+    $startedTransaction = false;
+
+    try {
+        if ($packSizeChanged) {
+            if (!$conn->inTransaction()) {
+                $conn->beginTransaction();
+                $startedTransaction = true;
+            }
+
+            $inventoryStmt = $conn->prepare("
+                SELECT id, boxes_available, pieces_available,
+                       quantity_boxes, quantity_pieces,
+                       quantity_available, remaining_quantity
+                FROM finished_goods_inventory
+                WHERE product_id = ?
+                FOR UPDATE
+            ");
+            $inventoryStmt->execute([(int) $id]);
+            foreach ($inventoryStmt->fetchAll(PDO::FETCH_ASSOC) as $inventoryRow) {
+                $baseTotal = hfProductPackBaseUnits($inventoryRow, $oldPiecesPerPack);
+                $inventoryConversions[] = [
+                    'id' => (int) $inventoryRow['id'],
+                    'split' => hfProductPackSplit($baseTotal, $newPiecesPerPack),
+                ];
+            }
+        }
+
+        $params[] = $id;
+        $sql = "UPDATE products SET " . implode(', ', $updates) . " WHERE id = ?";
+        $stmt = $conn->prepare($sql);
+        $stmt->execute($params);
+
+        if ($packSizeChanged && $inventoryConversions) {
+            $convertStmt = $conn->prepare("
+                UPDATE finished_goods_inventory
+                SET boxes_available = ?,
+                    pieces_available = ?,
+                    quantity_boxes = ?,
+                    quantity_pieces = ?,
+                    quantity_available = ?,
+                    remaining_quantity = ?,
+                    quantity = ?
+                WHERE id = ?
+            ");
+            foreach ($inventoryConversions as $conversion) {
+                $split = $conversion['split'];
+                $convertStmt->execute([
+                    $split['boxes'],
+                    $split['pieces'],
+                    $split['boxes'],
+                    $split['pieces'],
+                    $split['total'],
+                    $split['total'],
+                    $split['total'],
+                    $conversion['id'],
+                ]);
+            }
+        }
+
+        syncSkuPrimaryContainer($conn, (int) $id, $primaryContainer);
+        if ($startedTransaction) {
+            $conn->commit();
+        }
+    } catch (Throwable $e) {
+        if ($startedTransaction && $conn->inTransaction()) {
+            $conn->rollBack();
+        }
+        throw $e;
+    }
+
+    sendSuccess([
+        'message' => 'Product updated successfully',
+        'inventory_rows_repacked' => count($inventoryConversions),
+        'pieces_per_pack' => $newPiecesPerPack,
+    ]);
 }
 
 /**

@@ -61,9 +61,23 @@ try {
     }
 
     $user = null;
+    $emailIdentityAmbiguous = false;
+
+    // Historical imports may predate the current uniqueness guard. Never let an
+    // email login select an arbitrary account when more than one active user
+    // still owns that address.
+    if (filter_var($identifierKey, FILTER_VALIDATE_EMAIL)) {
+        $emailCountStmt = $db->prepare("
+            SELECT COUNT(*)
+            FROM users
+            WHERE LOWER(TRIM(email)) = ? AND is_active = 1
+        ");
+        $emailCountStmt->execute([$identifierKey]);
+        $emailIdentityAmbiguous = (int) $emailCountStmt->fetchColumn() !== 1;
+    }
 
     // Try login_identifier first (Phase 1 path)
-    if ($hasOnboardingColumns) {
+    if ($hasOnboardingColumns && !$emailIdentityAmbiguous) {
         $stmt = $db->prepare("
             SELECT id, username, password, role, is_active,
                    COALESCE(employee_id, '') as employee_id,
@@ -76,14 +90,16 @@ try {
                    COALESCE(must_change_password, 0) as must_change_password
             FROM users
             WHERE login_identifier = ? AND is_active = 1
-            LIMIT 1
+            LIMIT 2
         ");
         $stmt->execute([$identifierKey]);
-        $user = $stmt->fetch();
+        $identifierMatches = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $user = count($identifierMatches) === 1 ? $identifierMatches[0] : null;
+        $emailIdentityAmbiguous = count($identifierMatches) > 1;
     }
 
     // Fallback: try username (backward compatibility / migration window)
-    if (!$user) {
+    if (!$user && !$emailIdentityAmbiguous) {
         $selectFields = "id, username, password, role, is_active,
                    COALESCE(employee_id, '') as employee_id,
                    COALESCE(full_name, CONCAT(first_name, ' ', last_name)) as full_name,
@@ -120,7 +136,7 @@ try {
                        COALESCE(login_type, 'username') as login_type,
                        COALESCE(must_change_password, 0) as must_change_password
                 FROM users
-                WHERE LOWER(email) = ? AND is_active = 1
+                WHERE LOWER(TRIM(email)) = ? AND is_active = 1
                 LIMIT 1
             ");
             $stmt->execute([$identifierKey]);

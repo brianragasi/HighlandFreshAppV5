@@ -793,17 +793,26 @@
                         </select>
                     </div>
                     <div class="form-control">
-                        <label class="label"><span class="label-text">Box Unit</span></label>
+                        <label class="label"><span class="label-text">Dispatch Packing <span class="text-error">*</span></span></label>
+                        <select id="sku_edit_dispatch_pack_mode" class="select select-bordered" onchange="syncSkuEditDispatchPackControl()" required>
+                            <option value="individual">Individual units</option>
+                            <option value="packed">Packed in box / case / crate</option>
+                        </select>
+                    </div>
+                    <div class="form-control sku-edit-pack-detail">
+                        <label class="label"><span class="label-text">Pack Unit</span></label>
                         <select id="sku_edit_box_unit" class="select select-bordered">
                             <option value="box">Box</option>
                             <option value="case">Case</option>
                             <option value="crate">Crate</option>
                         </select>
                     </div>
-                    <div class="form-control">
-                        <label class="label"><span class="label-text">Pcs / Box</span></label>
+                    <div class="form-control sku-edit-pack-detail">
+                        <label class="label"><span class="label-text">Units per Pack</span></label>
                         <input type="number" id="sku_edit_pieces_per_box" class="input input-bordered" value="1"
-                            min="1" max="1000000" step="1" inputmode="numeric" />
+                            min="2" max="1000000" step="1" inputmode="numeric"
+                            onkeydown="return blockNegativeNumberKey(event)" />
+                        <label class="label py-0"><span class="label-text-alt">Existing FG stock is safely re-split while preserving its total units.</span></label>
                     </div>
                     <div class="form-control">
                         <label class="label"><span class="label-text">Selling Price (₱) <span class="text-error">*</span></span></label>
@@ -2371,6 +2380,8 @@
 
                 const baseUnit = row.querySelector('[name^="sku_base_unit_"]')?.value || '';
                 const containerSelect = row.querySelector('.sku-primary-container');
+                const dispatchPackMode = row.querySelector('.sku-dispatch-pack-mode');
+                const piecesPerBoxInput = row.querySelector('.sku-pieces-per-box');
                 if (!baseUnit) {
                     ok = false;
                     row.querySelector('[name^="sku_base_unit_"]')?.classList.add('select-error');
@@ -2388,6 +2399,23 @@
                     if (!firstBad) firstBad = containerSelect;
                 } else {
                     containerSelect?.classList.remove('select-error');
+                }
+
+                const packedForDispatch = dispatchPackMode?.value === 'packed';
+                const packSize = parseInt(piecesPerBoxInput?.value, 10);
+                if (!dispatchPackMode?.value) {
+                    ok = false;
+                    dispatchPackMode?.classList.add('select-error');
+                    if (!firstBad && dispatchPackMode) firstBad = dispatchPackMode;
+                } else {
+                    dispatchPackMode.classList.remove('select-error');
+                }
+                if (packedForDispatch && (!Number.isInteger(packSize) || packSize < 2)) {
+                    ok = false;
+                    piecesPerBoxInput?.classList.add('input-error');
+                    if (!firstBad && piecesPerBoxInput) firstBad = piecesPerBoxInput;
+                } else {
+                    piecesPerBoxInput?.classList.remove('input-error');
                 }
 
                 const size = parseFloat(sizeInput.value);
@@ -2424,7 +2452,7 @@
                 const suspiciousSelected = document.querySelector('#skuList .sku-primary-container option:checked[data-suspicious-capacity="1"]');
                 const msg = suspiciousSelected
                     ? 'This container has an unusually large liter value. Review it in Packaging Materials before using it on a product.'
-                    : 'Choose a package style and its actual primary package, then enter a valid price.';
+                    : 'Complete the package style, dispatch packing, size, and price for every SKU.';
                 if (typeof showToast === 'function') showToast(msg, 'error');
                 if (firstBad) {
                     firstBad.focus();
@@ -2445,6 +2473,23 @@
             const size = parseFloat(sizeInput?.value);
             const price = parseFloat(priceInput?.value);
             let ok = true;
+
+            const dispatchPackMode = document.getElementById('sku_edit_dispatch_pack_mode');
+            const piecesPerBoxInput = document.getElementById('sku_edit_pieces_per_box');
+            const packedForDispatch = dispatchPackMode?.value === 'packed';
+            const packSize = parseInt(piecesPerBoxInput?.value, 10);
+            if (!dispatchPackMode?.value) {
+                ok = false;
+                dispatchPackMode?.classList.add('select-error');
+            } else {
+                dispatchPackMode.classList.remove('select-error');
+            }
+            if (packedForDispatch && (!Number.isInteger(packSize) || packSize < 2)) {
+                ok = false;
+                piecesPerBoxInput?.classList.add('input-error');
+            } else {
+                piecesPerBoxInput?.classList.remove('input-error');
+            }
 
             const packageStyle = document.getElementById('sku_edit_base_unit')?.value || '';
             const isBottle = requiresPrimaryPackage(packageStyle);
@@ -2484,7 +2529,7 @@
             if (!ok) {
                 const msg = containerSelect?.selectedOptions?.[0]?.dataset?.suspiciousCapacity === '1'
                     ? 'Review this unusually large liter value in Packaging Materials before using the container.'
-                    : 'Price and Size must be greater than zero.';
+                    : 'Complete the package style, dispatch packing, size, and price.';
                 if (typeof showToast === 'function') showToast(msg, 'error');
             }
             return ok;
@@ -2516,6 +2561,23 @@
             if (measure) measure.disabled = isBottle;
             if (select) fillContainerSelect(select, select.value, packageStyle);
             if (isBottle) applySkuEditContainer();
+        }
+
+        function syncSkuEditDispatchPackControl() {
+            const mode = document.getElementById('sku_edit_dispatch_pack_mode')?.value || 'individual';
+            const packed = mode === 'packed';
+            const boxUnit = document.getElementById('sku_edit_box_unit');
+            const piecesPerBox = document.getElementById('sku_edit_pieces_per_box');
+            document.querySelectorAll('#skuEditModal .sku-edit-pack-detail').forEach(field => {
+                field.classList.toggle('opacity-50', !packed);
+            });
+            if (boxUnit) boxUnit.disabled = !packed;
+            if (piecesPerBox) {
+                piecesPerBox.disabled = !packed;
+                piecesPerBox.required = packed;
+                if (!packed) piecesPerBox.value = '1';
+                if (packed && (parseInt(piecesPerBox.value, 10) || 0) < 2) piecesPerBox.value = '';
+            }
         }
 
         /* ─────────── SKU Row Builder (empty or prefilled existing SKU) ─────────── */
@@ -2622,6 +2684,29 @@
                             <span class="label-text-alt text-error">Price must be greater than zero</span>
                         </label>
                     </div>
+                    <div class="form-control w-full min-w-0 lg:col-span-4 rounded-lg border border-base-300 bg-base-100 p-3 sku-dispatch-pack-panel">
+                        <label class="label py-0"><span class="label-text text-xs font-semibold">Dispatch Packing <span class="text-error">*</span></span></label>
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                            <select name="sku_dispatch_pack_mode_${idx}"
+                                class="select select-sm select-bordered w-full sku-field sku-dispatch-pack-mode"
+                                onchange="syncSkuRowDispatchPackControl(this.closest('.sku-row'))" required>
+                                <option value="">Choose packing</option>
+                                <option value="individual">Individual units</option>
+                                <option value="packed">Packed in box / case / crate</option>
+                            </select>
+                            <select name="sku_box_unit_${idx}"
+                                class="select select-sm select-bordered w-full sku-field sku-box-unit" disabled>
+                                <option value="box">Box</option>
+                                <option value="case">Case</option>
+                                <option value="crate">Crate</option>
+                            </select>
+                            <input type="number" name="sku_pieces_per_box_${idx}"
+                                class="input input-sm input-bordered w-full sku-field sku-pieces-per-box"
+                                placeholder="Units per box (e.g. 12)" min="2" max="1000000" step="1"
+                                inputmode="numeric" onkeydown="return blockNegativeNumberKey(event)" disabled />
+                        </div>
+                        <label class="label py-0"><span class="label-text-alt sku-dispatch-pack-help">Choose how Warehouse FG counts this SKU during dispatch.</span></label>
+                    </div>
                 </div>`;
             document.getElementById('skuList').appendChild(div);
 
@@ -2644,9 +2729,16 @@
                 const measureSel = div.querySelector(`[name="sku_unit_measure_${idx}"]`);
                 const baseUnitSel = div.querySelector(`[name="sku_base_unit_${idx}"]`);
                 const priceInput = div.querySelector(`[name="sku_selling_price_${idx}"]`);
+                const dispatchPackMode = div.querySelector(`[name="sku_dispatch_pack_mode_${idx}"]`);
+                const boxUnitSelect = div.querySelector(`[name="sku_box_unit_${idx}"]`);
+                const piecesPerBoxInput = div.querySelector(`[name="sku_pieces_per_box_${idx}"]`);
                 if (sizeInput) sizeInput.value = skuData.unit_size != null ? skuData.unit_size : '';
                 setSelectValue(measureSel, skuData.unit_measure, 'ml');
                 setSelectValue(baseUnitSel, skuData.base_unit, 'piece');
+                const existingPiecesPerBox = Math.max(1, parseInt(skuData.pieces_per_box, 10) || 1);
+                setSelectValue(dispatchPackMode, existingPiecesPerBox > 1 ? 'packed' : 'individual', 'individual');
+                setSelectValue(boxUnitSelect, skuData.box_unit, 'box');
+                if (piecesPerBoxInput) piecesPerBoxInput.value = existingPiecesPerBox > 1 ? existingPiecesPerBox : '';
                 if (priceInput) {
                     priceInput.value = skuData.selling_price != null && skuData.selling_price !== ''
                         ? skuData.selling_price
@@ -2654,6 +2746,7 @@
                 }
             }
             syncSkuRowContainerControl(div);
+            syncSkuRowDispatchPackControl(div);
 
             if (shouldFocus) {
                 requestAnimationFrame(() => {
@@ -2736,6 +2829,7 @@
             const undoBtn = el.querySelector('.sku-undo-btn');
             if (undoBtn) undoBtn.classList.add('hidden');
             syncSkuRowContainerControl(el);
+            syncSkuRowDispatchPackControl(el);
         }
 
         /** Active (not soft-deleted) SKU rows to create/update. */
@@ -2759,14 +2853,22 @@
                 const baseUnit = row.querySelector(`[name="sku_base_unit_${idx}"]`)?.value || '';
                 const primaryContainerId = parseInt(row.querySelector(`[name="sku_primary_container_id_${idx}"]`)?.value || '0', 10);
                 const sellingPrice = parseFloat(row.querySelector(`[name="sku_selling_price_${idx}"]`)?.value);
+                const dispatchPackMode = row.querySelector(`[name="sku_dispatch_pack_mode_${idx}"]`)?.value || '';
+                const boxUnit = row.querySelector(`[name="sku_box_unit_${idx}"]`)?.value || 'box';
+                const configuredPiecesPerBox = parseInt(row.querySelector(`[name="sku_pieces_per_box_${idx}"]`)?.value, 10);
                 if (!Number.isFinite(unitSize) || unitSize <= 0) return;
                 if (!baseUnit || (requiresPrimaryPackage(baseUnit) && !(primaryContainerId > 0))) return;
+                if (!dispatchPackMode) return;
+                const piecesPerBox = dispatchPackMode === 'packed' ? configuredPiecesPerBox : 1;
+                if (!Number.isInteger(piecesPerBox) || piecesPerBox < 1) return;
                 rows.push({
                     product_id: isExisting ? productId : null,
                     unit_size: unitSize,
                     unit_measure: unitMeasure,
                     base_unit: baseUnit,
                     primary_container_id: requiresPrimaryPackage(baseUnit) ? primaryContainerId : null,
+                    box_unit: dispatchPackMode === 'packed' ? boxUnit : 'box',
+                    pieces_per_box: piecesPerBox,
                     selling_price: Number.isFinite(sellingPrice) ? sellingPrice : 0,
                     unit_price: Number.isFinite(sellingPrice) ? sellingPrice : 0
                 });
@@ -2958,6 +3060,8 @@
                             unit_measure: row.unit_measure,
                             base_unit: row.base_unit,
                             primary_container_id: row.primary_container_id,
+                            box_unit: row.box_unit,
+                            pieces_per_box: row.pieces_per_box,
                             selling_price: row.selling_price,
                             unit_price: row.unit_price
                         };
@@ -2966,9 +3070,7 @@
                         } else {
                             await AdminService.createProduct({
                                 ...shared,
-                                base_product_id: baseProductId,
-                                box_unit: 'box',
-                                pieces_per_box: 1
+                                base_product_id: baseProductId
                             });
                         }
                     }
@@ -3007,8 +3109,8 @@
                             unit_measure: row.unit_measure,
                             base_unit: row.base_unit,
                             primary_container_id: row.primary_container_id,
-                            box_unit: 'box',
-                            pieces_per_box: 1,
+                            box_unit: row.box_unit,
+                            pieces_per_box: row.pieces_per_box,
                             shelf_life_days: shelfLife,
                             storage_temp_min: tempMin,
                             storage_temp_max: tempMax,
@@ -3076,8 +3178,11 @@
                     }
                     fillContainerSelect(document.getElementById('sku_edit_primary_container_id'), selectedContainerId, data.base_unit);
                     syncSkuEditContainerControl();
+                    const existingPiecesPerBox = Math.max(1, parseInt(data.pieces_per_box, 10) || 1);
+                    document.getElementById('sku_edit_dispatch_pack_mode').value = existingPiecesPerBox > 1 ? 'packed' : 'individual';
                     document.getElementById('sku_edit_box_unit').value = data.box_unit || 'box';
-                    document.getElementById('sku_edit_pieces_per_box').value = data.pieces_per_box || 1;
+                    document.getElementById('sku_edit_pieces_per_box').value = existingPiecesPerBox;
+                    syncSkuEditDispatchPackControl();
                     document.getElementById('sku_edit_selling_price').value = data.selling_price || data.unit_price || 0;
                     document.getElementById('sku_edit_product_code').value = data.product_code || '';
                     document.getElementById('skuEditModal').showModal();
@@ -3096,6 +3201,8 @@
                 return;
             }
 
+            const dispatchPackMode = document.getElementById('sku_edit_dispatch_pack_mode').value;
+
             const formData = {
                 unit_size: parseFloat(document.getElementById('sku_edit_unit_size').value),
                 unit_measure: document.getElementById('sku_edit_unit_measure').value,
@@ -3103,8 +3210,12 @@
                 primary_container_id: requiresPrimaryPackage(document.getElementById('sku_edit_base_unit').value)
                     ? parseInt(document.getElementById('sku_edit_primary_container_id').value, 10)
                     : null,
-                box_unit: document.getElementById('sku_edit_box_unit').value,
-                pieces_per_box: parseInt(document.getElementById('sku_edit_pieces_per_box').value) || 1,
+                box_unit: dispatchPackMode === 'packed'
+                    ? document.getElementById('sku_edit_box_unit').value
+                    : 'box',
+                pieces_per_box: dispatchPackMode === 'packed'
+                    ? parseInt(document.getElementById('sku_edit_pieces_per_box').value, 10)
+                    : 1,
                 selling_price: parseFloat(document.getElementById('sku_edit_selling_price').value),
                 unit_price: parseFloat(document.getElementById('sku_edit_selling_price').value)
             };
@@ -3119,7 +3230,7 @@
                     showToast(response.message || 'Failed to update', 'error');
                 }
             } catch (err) {
-                showToast('Failed to update SKU', 'error');
+                showToast(err?.message || 'Failed to update SKU', 'error');
             }
         }
 
@@ -3455,6 +3566,32 @@
             }
             if (measureSelect) measureSelect.disabled = isBottle || row.dataset.softDeleted === '1';
             if (isBottle) applySkuRowContainer(row);
+        }
+
+        function syncSkuRowDispatchPackControl(row) {
+            if (!row) return;
+            const mode = row.querySelector('.sku-dispatch-pack-mode')?.value || '';
+            const packed = mode === 'packed';
+            const locked = row.dataset.softDeleted === '1';
+            const boxUnit = row.querySelector('.sku-box-unit');
+            const piecesPerBox = row.querySelector('.sku-pieces-per-box');
+            const panel = row.querySelector('.sku-dispatch-pack-panel');
+            const help = row.querySelector('.sku-dispatch-pack-help');
+
+            panel?.classList.toggle('border-warning', mode === '');
+            if (boxUnit) boxUnit.disabled = locked || !packed;
+            if (piecesPerBox) {
+                piecesPerBox.disabled = locked || !packed;
+                piecesPerBox.required = packed && !locked;
+                if (!packed && mode === 'individual') piecesPerBox.value = '';
+            }
+            if (help) {
+                help.textContent = mode === 'packed'
+                    ? 'Enter the number of sellable units inside one selected pack.'
+                    : (mode === 'individual'
+                        ? 'Warehouse FG will dispatch this SKU as individual units.'
+                        : 'Choose how Warehouse FG counts this SKU during dispatch.');
+            }
         }
 
         function refreshPackagingBomMaterialChoices() {

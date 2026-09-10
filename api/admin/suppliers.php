@@ -232,6 +232,11 @@ function createSupplier($conn, $currentUser) {
     if (!empty($errors)) {
         sendValidationError($errors);
     }
+    $emailIdentityLock = hfAcquireEmailIdentityLock($conn, $data['email'] ?? null);
+    $emailError = hfValidateUserSupplierEmailOwnership($conn, $data['email'] ?? null);
+    if ($emailError !== null) {
+        sendValidationError(['email' => $emailError]);
+    }
     // A supplier can be accredited before its first ingredient is registered.
     // Purchasing only sees this supplier after an ingredient link is added.
     supplierCatalogValidateIngredientLinks($conn, $ingredientLinks, false, true);
@@ -281,10 +286,12 @@ function createSupplier($conn, $currentUser) {
         supplierCatalogSyncSupplier($conn, $newId, $ingredientLinks, (int) $currentUser['user_id']);
         supplierMroSyncSupplier($conn, $newId, $mroLinks, (int) $currentUser['user_id']);
         $conn->commit();
+        hfReleaseEmailIdentityLock($conn, $emailIdentityLock);
     } catch (Exception $e) {
         if ($conn->inTransaction()) {
             $conn->rollBack();
         }
+        hfReleaseEmailIdentityLock($conn, $emailIdentityLock);
         throw $e;
     }
     
@@ -332,6 +339,17 @@ function updateSupplier($conn, $id, $currentUser) {
     foreach (['phone', 'email'] as $contactField) {
         if (array_key_exists($contactField, $data)) {
             $data[$contactField] = $contactCheck['data'][$contactField];
+        }
+    }
+
+    $emailChanged = array_key_exists('email', $data)
+        && hfNormalizeIdentityEmail($data['email'] ?? null) !== hfNormalizeIdentityEmail($currentSupplier['email'] ?? null);
+    $emailIdentityLock = null;
+    if ($emailChanged) {
+        $emailIdentityLock = hfAcquireEmailIdentityLock($conn, $data['email'] ?? null);
+        $emailError = hfValidateUserSupplierEmailOwnership($conn, $data['email'] ?? null, null, (int) $id);
+        if ($emailError !== null) {
+            sendValidationError(['email' => $emailError]);
         }
     }
 
@@ -395,10 +413,12 @@ function updateSupplier($conn, $id, $currentUser) {
             supplierMroSyncSupplier($conn, (int) $id, $mroLinks, (int) $currentUser['user_id']);
         }
         $conn->commit();
+        hfReleaseEmailIdentityLock($conn, $emailIdentityLock);
     } catch (Exception $e) {
         if ($conn->inTransaction()) {
             $conn->rollBack();
         }
+        hfReleaseEmailIdentityLock($conn, $emailIdentityLock);
         throw $e;
     }
     

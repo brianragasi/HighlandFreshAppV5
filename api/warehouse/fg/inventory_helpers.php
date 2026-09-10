@@ -22,6 +22,72 @@ require_once dirname(__DIR__, 2) . '/helpers/pack_uom.php';
 if (!function_exists('fgInventoryEffectiveBaseUnits')) {
 
     /**
+     * Count the stock that physically occupies an active FG location.
+     *
+     * chiller_locations.current_count is a display/cache column. Inventory rows
+     * are the source of truth, so capacity decisions must never trust the cache.
+     */
+    function fgChillerAuthoritativeCount(PDO $db, $chillerId)
+    {
+        $stmt = $db->prepare("
+            SELECT COALESCE(SUM(GREATEST(
+                       COALESCE(fgi.quantity_available, 0),
+                       COALESCE(fgi.remaining_quantity, 0),
+                       (COALESCE(fgi.boxes_available, 0) * COALESCE(NULLIF(p.pieces_per_box, 0), 1))
+                           + COALESCE(fgi.pieces_available, 0)
+                   )), 0)
+            FROM finished_goods_inventory fgi
+            LEFT JOIN products p ON p.id = fgi.product_id
+            WHERE fgi.chiller_id = ?
+              AND fgi.status IN ('available', 'low_stock')
+        ");
+        $stmt->execute([(int)$chillerId]);
+        return max(0, (int)$stmt->fetchColumn());
+    }
+
+    /**
+     * Repair the cached occupancy after a stock or location mutation.
+     */
+    function fgSyncChillerCount(PDO $db, $chillerId)
+    {
+        $chillerId = (int)$chillerId;
+        if ($chillerId <= 0) {
+            return 0;
+        }
+
+        $count = fgChillerAuthoritativeCount($db, $chillerId);
+        $stmt = $db->prepare("
+            UPDATE chiller_locations
+            SET current_count = ?,
+                status = CASE
+                    WHEN status IN ('maintenance', 'offline') THEN status
+                    WHEN capacity > 0 AND ? >= capacity THEN 'full'
+                    ELSE 'available'
+                END
+            WHERE id = ?
+        ");
+        $stmt->execute([$count, $count, $chillerId]);
+        return $count;
+    }
+
+    /**
+     * Reductions always improve an over-capacity location and must be allowed.
+     * Only a positive change can be rejected for exceeding capacity.
+     */
+    function fgChillerAllowsQuantityChange($authoritativeCount, $difference, $capacity)
+    {
+        $current = max(0, (int)$authoritativeCount);
+        $change = (int)$difference;
+        $limit = (int)$capacity;
+        $projected = $current + $change;
+
+        if ($projected < 0) {
+            return false;
+        }
+        return $change <= 0 || $limit <= 0 || $projected <= $limit;
+    }
+
+    /**
      * Resolve total base units (bottles) from a finished_goods_inventory row.
      *
      * @param array $row Inventory row (optionally with pieces_per_box)
@@ -71,6 +137,14 @@ if (!function_exists('fgInventoryEffectiveBaseUnits')) {
     {
         $base = max(0, (int)$baseTotal);
         $ppb = max(1, (int)$piecesPerBox);
+        if ($ppb === 1) {
+            return [
+                'boxes' => 0,
+                'loose' => $base,
+                'base' => $base,
+                'pieces_per_box' => 1,
+            ];
+        }
         return [
             'boxes' => (int)floor($base / $ppb),
             'loose' => (int)($base % $ppb),
@@ -178,10 +252,15 @@ if (!function_exists('fgInventoryEffectiveBaseUnits')) {
             );
         }
 
+        if (!empty($row['chiller_id'])) {
+            fgSyncChillerCount($db, (int)$row['chiller_id']);
+        }
+
         return [
             'inventory_id' => $inventoryId,
             'product_id' => (int)$row['product_id'],
             'product_name' => $row['product_name'] ?? null,
+            'chiller_id' => !empty($row['chiller_id']) ? (int)$row['chiller_id'] : null,
             'pieces_per_box' => $ppb,
             'deducted' => $baseQty,
             'before_base' => $beforeBase,
@@ -330,11 +409,16 @@ if (!function_exists('fgInventoryEffectiveBaseUnits')) {
             $inventoryId,
         ]);
 
+        if (!empty($row['chiller_id'])) {
+            fgSyncChillerCount($db, (int)$row['chiller_id']);
+        }
+
         return [
             'inventory_id' => $inventoryId,
             'product_id' => (int)$row['product_id'],
             'product_name' => $row['product_name'] ?? null,
             'batch_id' => $row['batch_id'] ?? null,
+            'chiller_id' => !empty($row['chiller_id']) ? (int)$row['chiller_id'] : null,
             'pieces_per_box' => $ppb,
             'restocked' => $baseQty,
             'before_base' => $beforeBase,

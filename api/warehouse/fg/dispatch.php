@@ -15,6 +15,7 @@ require_once dirname(dirname(__DIR__)) . '/bootstrap.php';
 require_once __DIR__ . '/inventory_helpers.php';
 require_once dirname(dirname(__DIR__)) . '/helpers/lookup_normalization.php';
 require_once dirname(dirname(__DIR__)) . '/helpers/finished_goods_barcode.php';
+require_once dirname(dirname(__DIR__)) . '/helpers/sellable_expiry_policy.php';
 
 // Require Warehouse FG role
 $currentUser = Auth::requireRole(['warehouse_fg', 'general_manager']);
@@ -40,6 +41,8 @@ try {
 }
 
 function handleGet($db, $action) {
+    $sellableExpiry = hfSellableExpirySql('fgi.expiry_date');
+
     switch ($action) {
         case 'history':
             $fromDate = getParam('from_date');
@@ -146,6 +149,7 @@ function handleGet($db, $action) {
                     OR (? > 0 AND fgi.batch_id = ? AND fgi.product_id = ?)
                 )
                   AND fgi.status = 'available'
+                  AND {$sellableExpiry}
                   AND (
                       COALESCE(fgi.boxes_available, 0) > 0
                       OR COALESCE(fgi.pieces_available, 0) > 0
@@ -208,6 +212,7 @@ function handleGet($db, $action) {
                         OR UPPER(?) LIKE CONCAT(REPLACE(UPPER(pb.batch_code), ' ', ''), '-%')
                     )
                       AND fgi.status = 'available'
+                      AND {$sellableExpiry}
                       AND (
                           COALESCE(fgi.boxes_available, 0) > 0
                           OR COALESCE(fgi.pieces_available, 0) > 0
@@ -242,7 +247,10 @@ function handleGet($db, $action) {
             }
 
             if (!$items) {
-                Response::error('Barcode not found in inventory. Scan the full QC label and ensure its batch has been received by Finished Goods.', 404);
+                Response::error(
+                    'Barcode is not dispatchable. Scan the full QC label and confirm the batch is received in Finished Goods with more than 7 days before expiry.',
+                    404
+                );
             }
 
             // Prefer a true inventory/SKU identifier. If several FIFO lots exist
@@ -297,6 +305,7 @@ function handleGet($db, $action) {
                 FROM finished_goods_inventory fgi
                 LEFT JOIN production_batches pb ON fgi.batch_id = pb.id
                 WHERE fgi.id = ?
+                  AND {$sellableExpiry}
             ");
             $selectedStmt->execute([$inventoryId]);
             $selected = $selectedStmt->fetch();
@@ -314,7 +323,7 @@ function handleGet($db, $action) {
                 AND (fgi.boxes_available > 0 OR fgi.pieces_available > 0)
                 AND fgi.id != ?
                 AND pb.expiry_date < ?
-                AND pb.expiry_date >= CURDATE()
+                AND {$sellableExpiry}
                 ORDER BY pb.expiry_date ASC
                 LIMIT 1
             ");
@@ -374,6 +383,7 @@ function handleGet($db, $action) {
 
 function handlePost($db, $action, $currentUser) {
     $data = getRequestBody();
+    $sellableExpiry = hfSellableExpirySql('fgi.expiry_date');
     
     switch ($action) {
         case 'release':
@@ -402,7 +412,10 @@ function handlePost($db, $action, $currentUser) {
                 FROM finished_goods_inventory fgi
                 LEFT JOIN products p ON fgi.product_id = p.id
                 LEFT JOIN production_batches pb ON fgi.batch_id = pb.id
-                WHERE fgi.id = ? FOR UPDATE
+                WHERE fgi.id = ?
+                  AND fgi.status = 'available'
+                  AND {$sellableExpiry}
+                FOR UPDATE
             ");
             
             $db->beginTransaction();
@@ -412,7 +425,7 @@ function handlePost($db, $action, $currentUser) {
                 $inventory = $invStmt->fetch();
                 
                 if (!$inventory) {
-                    throw new Exception('Inventory item not found');
+                    throw new Exception('Inventory is unavailable for dispatch. Batches with 7 days or less before expiry are handled by QC.');
                 }
                 
                 // Effective base units (handles multi-unit + legacy columns)
@@ -669,13 +682,16 @@ function handlePost($db, $action, $currentUser) {
                         FROM finished_goods_inventory fgi 
                         LEFT JOIN products p ON fgi.product_id = p.id
                         LEFT JOIN production_batches pb ON fgi.batch_id = pb.id
-                        WHERE fgi.id = ? FOR UPDATE
+                        WHERE fgi.id = ?
+                          AND fgi.status = 'available'
+                          AND {$sellableExpiry}
+                        FOR UPDATE
                     ");
                     $invStmt->execute([$inventoryId]);
                     $inventory = $invStmt->fetch();
 
                     if (!$inventory) {
-                        throw new Exception("Inventory item $inventoryId not found");
+                        throw new Exception("Inventory item {$inventoryId} is unavailable for dispatch; near-expiry batches are handled by QC");
                     }
                     
                     // Validate product is on the DR

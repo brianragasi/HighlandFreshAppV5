@@ -95,6 +95,14 @@ const FinanceService = {
         return api.post('/finance/payables.php?action=record_payment', data, config);
     },
 
+    recordReceivingInvoiceNumber(rrId, invoiceNumber, explanation) {
+        return api.post('/finance/payables.php?action=record_rr_invoice_number', {
+            rr_id: rrId,
+            invoice_number: invoiceNumber,
+            explanation
+        });
+    },
+
     getSupplierPaymentFile(paymentId, kind) {
         return api.get(`/finance/payables.php?action=payment_file&id=${encodeURIComponent(paymentId)}&kind=${encodeURIComponent(kind)}`, {
             responseType: 'blob'

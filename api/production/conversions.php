@@ -39,6 +39,7 @@ ini_set('display_errors', 0);
 error_reporting(E_ALL);
 
 require_once dirname(__DIR__) . '/bootstrap.php';
+require_once dirname(__DIR__) . '/warehouse/fg/inventory_helpers.php';
 
 $currentUser = Auth::requireRole(['production_staff', 'general_manager', 'qc_officer']);
 
@@ -458,18 +459,16 @@ function cancelConversion($db, $currentUser)
             $isFG = $fgiCheck->fetch();
 
             if ($isFG) {
-                $restoreStmt = $db->prepare("
-                    UPDATE finished_goods_inventory
-                    SET quantity_available = quantity_available + ?,
-                        remaining_quantity = remaining_quantity + ?,
-                        status = 'available'
-                    WHERE id = ?
-                ");
-                $restoreStmt->execute([
-                    $conversion['source_quantity'],
-                    $conversion['source_quantity'],
-                    $conversion['source_inventory_id'],
-                ]);
+                $restock = fgInventoryRestockBaseUnits(
+                    $db,
+                    (int)$conversion['source_inventory_id'],
+                    (int)$conversion['source_quantity']
+                );
+                $db->prepare("UPDATE finished_goods_inventory SET status = 'available' WHERE id = ?")
+                   ->execute([(int)$conversion['source_inventory_id']]);
+                if (!empty($restock['chiller_id'])) {
+                    fgSyncChillerCount($db, (int)$restock['chiller_id']);
+                }
             } else {
                 $restoreStmt = $db->prepare("
                     UPDATE raw_milk_inventory

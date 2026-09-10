@@ -176,6 +176,10 @@ function handlePost($db, $action, $user) {
             requireActionRole($user, ['finance_officer', 'general_manager'], 'Access forbidden');
             recordPayment($db, $user);
             break;
+        case 'record_rr_invoice_number':
+            requireActionRole($user, ['finance_officer', 'general_manager'], 'Access forbidden');
+            recordMissingReceivingInvoiceNumber($db, $user);
+            break;
         default:
             Response::error('Invalid action', 400);
     }
@@ -286,6 +290,15 @@ function getPayablesList($db) {
     $rrReadyCountSelect = $hasReceivingReports
         ? "(SELECT COUNT(*) FROM receiving_reports WHERE po_id = po.id AND status IN ('verified', 'completed') AND COALESCE(NULLIF(TRIM(invoice_number), ''), '') <> '') as rr_ready_count,"
         : "0 as rr_ready_count,";
+    $rrVerifiedCountSelect = $hasReceivingReports
+        ? "(SELECT COUNT(*) FROM receiving_reports WHERE po_id = po.id AND status IN ('verified', 'completed')) as rr_verified_count,"
+        : "0 as rr_verified_count,";
+    $rrInvoiceCountSelect = $hasReceivingReports
+        ? "(SELECT COUNT(*) FROM receiving_reports WHERE po_id = po.id AND COALESCE(NULLIF(TRIM(invoice_number), ''), '') <> '') as rr_invoice_count,"
+        : "0 as rr_invoice_count,";
+    $rrMissingInvoiceCountSelect = $hasReceivingReports
+        ? "(SELECT COUNT(*) FROM receiving_reports WHERE po_id = po.id AND status IN ('verified', 'completed') AND COALESCE(NULLIF(TRIM(invoice_number), ''), '') = '') as rr_missing_invoice_count,"
+        : "0 as rr_missing_invoice_count,";
     $payableBalanceExpr = "(SELECT COALESCE(SUM(
         CASE
             WHEN po.status = 'partial_received' THEN IFNULL(quantity_received, 0)
@@ -400,6 +413,9 @@ function getPayablesList($db) {
             {$rrStatusSelect}
             {$rrCountSelect}
             {$rrReadyCountSelect}
+            {$rrVerifiedCountSelect}
+            {$rrInvoiceCountSelect}
+            {$rrMissingInvoiceCountSelect}
             CASE
                 WHEN po.payment_status != 'paid'
                      AND {$effectiveDueDateExpr} IS NOT NULL
@@ -685,6 +701,26 @@ function recordPayment($db, $user) {
             $reportReadyDate = substr((string) ($report['verified_at'] ?: $report['received_at']), 0, 10);
             if ($reportReadyDate > $releaseReadyDate) $releaseReadyDate = $reportReadyDate;
         }
+        foreach (array_values(array_unique($invoiceNumbers)) as $reportInvoice) {
+            $paidInvoiceStmt = $db->prepare("
+                SELECT other_po.po_number
+                FROM receiving_reports other_rr
+                JOIN purchase_orders other_po ON other_po.id = other_rr.po_id
+                JOIN po_payments other_payment ON other_payment.po_id = other_po.id
+                WHERE other_rr.supplier_id = ?
+                  AND other_rr.po_id <> ?
+                  AND LOWER(TRIM(other_rr.invoice_number)) = LOWER(TRIM(?))
+                  AND other_payment.confirmed_release = 1
+                ORDER BY other_payment.id DESC
+                LIMIT 1
+                FOR UPDATE
+            ");
+            $paidInvoiceStmt->execute([$po['supplier_id'], $poId, $reportInvoice]);
+            $alreadyPaidPo = $paidInvoiceStmt->fetchColumn();
+            if ($alreadyPaidPo) {
+                supplierPaymentFail($db, 'Supplier invoice ' . $reportInvoice . ' was already paid under PO ' . $alreadyPaidPo . '. Payment was stopped to prevent a duplicate disbursement.', 409);
+            }
+        }
         if ($releaseReadyDate && $paymentDate < $releaseReadyDate) {
             supplierPaymentFail($db, 'Payment date cannot be earlier than the latest verified receiving date', 400);
         }
@@ -749,6 +785,9 @@ function recordPayment($db, $user) {
         if (isset($_FILES['invoice_file']) && ($_FILES['invoice_file']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
             $newInvoiceFile = saveSupplierPaymentFile($_FILES['invoice_file'], 'invoice');
             if (!$newInvoiceFile) supplierPaymentFail($db, 'Attach a valid PDF, JPG, or PNG supplier invoice (maximum 5 MB)', 400);
+            if (count(array_values(array_unique($invoiceNumbers))) > 1 && ($newInvoiceFile['mime'] ?? '') !== 'application/pdf') {
+                supplierPaymentFail($db, 'This PO has multiple supplier invoices. Combine every invoice page into one PDF before payment.', 400, [$newInvoiceFile['path'] ?? null]);
+            }
             $invoiceEvidence = $newInvoiceFile;
         }
         if (!$invoiceEvidence) {
@@ -828,6 +867,96 @@ function recordPayment($db, $user) {
         'payment_amount' => $paymentAmount,
         'balance_due' => max($balanceDue - $paymentAmount, 0)
     ], 'Payment and supporting evidence recorded successfully');
+}
+
+function recordMissingReceivingInvoiceNumber($db, $user) {
+    $data = getParams();
+    $rrId = (int) ($data['rr_id'] ?? 0);
+    $invoiceNumber = trim((string) ($data['invoice_number'] ?? ''));
+    $explanation = trim((string) ($data['explanation'] ?? ''));
+
+    if ($rrId <= 0) Response::error('Receiving Report is required', 400);
+    if (!preg_match('/^[A-Za-z0-9][A-Za-z0-9 ._\/#-]{1,99}$/', $invoiceNumber)) {
+        Response::error('Enter a valid 2 to 100 character supplier invoice number', 400);
+    }
+    if (mb_strlen($explanation) < 5 || mb_strlen($explanation) > 500) {
+        Response::error('Explain why the invoice number is being recorded after receiving (5 to 500 characters)', 400);
+    }
+
+    $db->beginTransaction();
+    try {
+        $stmt = $db->prepare("
+            SELECT rr.id, rr.rr_number, rr.po_id, rr.supplier_id, rr.status, rr.invoice_number,
+                   po.po_number, po.status AS po_status, po.payment_status, po.approved_by, po.approved_at
+            FROM receiving_reports rr
+            JOIN purchase_orders po ON po.id = rr.po_id
+            WHERE rr.id = ?
+            FOR UPDATE
+        ");
+        $stmt->execute([$rrId]);
+        $report = $stmt->fetch();
+        if (!$report) supplierPaymentFail($db, 'Receiving Report not found', 404);
+        if (!in_array($report['po_status'], ['received', 'partial_received', 'closed'], true)
+            || empty($report['approved_by']) || empty($report['approved_at'])) {
+            supplierPaymentFail($db, 'Only an approved, received purchase order can receive late invoice details', 409);
+        }
+        if (!in_array($report['status'], ['verified', 'completed'], true)) {
+            supplierPaymentFail($db, 'Purchasing must verify this Receiving Report before Finance can complete its invoice details', 409);
+        }
+
+        $existingNumber = trim((string) ($report['invoice_number'] ?? ''));
+        if ($existingNumber !== '') {
+            if (strcasecmp($existingNumber, $invoiceNumber) === 0) {
+                $db->commit();
+                Response::success([
+                    'rr_id' => $rrId,
+                    'rr_number' => $report['rr_number'],
+                    'invoice_number' => $existingNumber
+                ], 'That invoice number is already recorded');
+            }
+            supplierPaymentFail($db, 'This Receiving Report already has an invoice number. Use a supervised correction workflow instead of replacing it.', 409);
+        }
+
+        $duplicateStmt = $db->prepare("
+            SELECT po.po_number
+            FROM receiving_reports other_rr
+            JOIN purchase_orders po ON po.id = other_rr.po_id
+            WHERE other_rr.supplier_id = ?
+              AND other_rr.po_id <> ?
+              AND LOWER(TRIM(other_rr.invoice_number)) = LOWER(TRIM(?))
+            ORDER BY other_rr.id DESC
+            LIMIT 1
+            FOR UPDATE
+        ");
+        $duplicateStmt->execute([$report['supplier_id'], $report['po_id'], $invoiceNumber]);
+        $duplicatePo = $duplicateStmt->fetchColumn();
+        if ($duplicatePo) {
+            supplierPaymentFail($db, 'That supplier invoice number is already linked to PO ' . $duplicatePo . '. Review it before paying either PO.', 409);
+        }
+
+        $db->prepare('UPDATE receiving_reports SET invoice_number = ?, updated_at = NOW() WHERE id = ?')
+            ->execute([$invoiceNumber, $rrId]);
+        logAudit($user['user_id'], 'RECORD_LATE_SUPPLIER_INVOICE', 'receiving_reports', $rrId,
+            ['invoice_number' => null],
+            [
+                'invoice_number' => $invoiceNumber,
+                'po_id' => (int) $report['po_id'],
+                'po_number' => $report['po_number'],
+                'reason' => $explanation,
+                'source' => 'finance_payables'
+            ]);
+        $db->commit();
+
+        Response::success([
+            'rr_id' => $rrId,
+            'rr_number' => $report['rr_number'],
+            'po_id' => (int) $report['po_id'],
+            'invoice_number' => $invoiceNumber
+        ], 'Supplier invoice number recorded. The audit trail was saved.');
+    } catch (Exception $e) {
+        if ($db->inTransaction()) $db->rollBack();
+        throw $e;
+    }
 }
 
 function isTruthy($value) {

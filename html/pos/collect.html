@@ -334,15 +334,18 @@
             <!-- Search Section -->
             <div class="card bg-base-100 border border-base-300 mb-6">
                 <div class="card-body p-4">
-                    <h3 class="font-bold mb-3">
+                    <h3 class="font-bold">
                         <i class="fas fa-search text-primary mr-2"></i>
-                        Search Delivery Receipt
+                        Find a customer payment
                     </h3>
+                    <p class="text-sm text-base-content/60 mb-3 ml-5">
+                        Paper DR missing? Search the saved delivery by customer, customer code, Sales Order, PO, or DR number.
+                    </p>
                     <div class="flex flex-col sm:flex-row gap-3">
                         <div class="flex-1">
                             <label class="input input-bordered flex items-center gap-2">
                                 <i class="fas fa-file-invoice text-base-content/40"></i>
-                                <input type="text" id="drSearch" placeholder="Enter DR Number (e.g., DR-20260201-0001)" 
+                                <input type="text" id="drSearch" placeholder="e.g., Metro Gaisano, GAISANO-CDO-001, SO-..., or DR-..."
                                     class="grow" onkeyup="handleDRSearch(event)">
                                 <button class="btn btn-ghost btn-sm" onclick="searchDR()">
                                     <i class="fas fa-search"></i>
@@ -352,7 +355,11 @@
                         <button class="btn btn-primary" onclick="searchDR()">
                             <i class="fas fa-search"></i> Search
                         </button>
+                        <button id="clearReceivableSearch" class="btn btn-ghost hidden" onclick="clearReceivableSearch()">
+                            Clear
+                        </button>
                     </div>
+                    <div id="receivableSearchStatus" class="alert alert-info py-2 px-3 mt-3 hidden"></div>
                 </div>
             </div>
 
@@ -460,6 +467,7 @@
                                 <div class="bg-base-200 rounded-lg p-3">
                                     <p class="font-mono font-bold text-lg" id="selectedDR">--</p>
                                     <p class="text-sm text-base-content/60" id="selectedCustomer">--</p>
+                                    <p class="text-xs text-base-content/60 mt-1" id="selectedDeliveryReference">--</p>
                                 </div>
 
                                 <!-- Balance Info -->
@@ -476,6 +484,10 @@
                                 <div id="pendingCheckNotice" class="alert alert-warning py-3 hidden">
                                     <i class="fas fa-clock"></i>
                                     <span>A check already covers part or all of this balance and is still pending for clearing.</span>
+                                </div>
+                                <div id="returnAdjustmentNotice" class="alert alert-success py-3 hidden">
+                                    <i class="fas fa-rotate-left"></i>
+                                    <span id="returnAdjustmentText"></span>
                                 </div>
 
                                 <!-- Payment Amount -->
@@ -661,6 +673,7 @@
         let outstandingList = [];
         let selectedDRData = null;
         let lastCollectionData = null;
+        let activeReceivableSearch = '';
 
         // Sidebar toggle
         function toggleSidebar() {
@@ -736,54 +749,66 @@
             }
         }
 
-        // Search for DR
+        // Find an unpaid delivered DR even when the paper copy is unavailable.
         async function searchDR() {
-            const drNumber = document.getElementById('drSearch').value.trim();
-            if (!drNumber) {
-                showToast('Please enter a DR number', 'warning');
+            const query = document.getElementById('drSearch').value.trim();
+            if (!query) {
+                showToast('Enter a customer, order, PO, or DR reference', 'warning');
                 return;
             }
 
             try {
-                const response = await POSService.searchByDR(drNumber);
-                if (response && response.data) {
-                    const dr = response.data;
-                    selectDR({
-                        ...dr,
-                        actual_balance: Number(dr.calculated_balance ?? (Number(dr.total_amount || 0) - Number(dr.amount_paid || 0))),
-                        pending_check_amount: Number(dr.pending_check_amount || 0),
-                        balance: Number(dr.collectible_balance ?? dr.calculated_balance ?? 0)
-                    });
-                } else {
-                    showToast('DR not found', 'error');
-                }
+                activeReceivableSearch = query;
+                await loadOutstanding(query);
             } catch (error) {
                 console.error('Search error:', error);
-                showToast('Failed to search DR', 'error');
+                showToast(error?.message || 'Failed to search receivables', 'error');
             }
         }
 
+        async function clearReceivableSearch() {
+            document.getElementById('drSearch').value = '';
+            activeReceivableSearch = '';
+            await loadOutstanding();
+            document.getElementById('drSearch').focus();
+        }
+
+        function mapReceivable(dr) {
+            return {
+                id: dr.id,
+                dr_number: dr.dr_number,
+                order_number: dr.order_number || '',
+                customer_po_number: dr.customer_po_number || '',
+                customer_name: dr.customer_name,
+                customer_code: dr.customer_code || '',
+                customer_type: dr.customer_type,
+                total_amount: parseFloat(dr.total_amount) || 0,
+                gross_shipped_amount: parseFloat(dr.gross_shipped_amount) || parseFloat(dr.total_amount) || 0,
+                returned_quantity: parseFloat(dr.returned_quantity) || 0,
+                return_adjustment: parseFloat(dr.return_adjustment) || 0,
+                pending_disposal_quantity: parseFloat(dr.pending_disposal_quantity) || 0,
+                amount_paid: parseFloat(dr.amount_paid) || 0,
+                actual_balance: parseFloat(dr.amount_due) || (parseFloat(dr.total_amount) - parseFloat(dr.amount_paid || 0)),
+                pending_check_amount: parseFloat(dr.pending_check_amount) || 0,
+                pending_collection_id: Number(dr.pending_collection_id || 0),
+                balance: Math.max(0, parseFloat(dr.collectible_balance ?? dr.amount_due) || 0),
+                due_date: dr.due_date || dr.delivered_at || dr.created_at,
+                delivered_at: dr.delivered_at || '',
+                days_overdue: parseInt(dr.days_outstanding) || 0
+            };
+        }
+
         // Load outstanding receivables
-        async function loadOutstanding() {
+        async function loadOutstanding(searchQuery = '') {
             try {
-                const response = await POSService.getOutstandingReceivables();
+                const response = searchQuery
+                    ? await POSService.searchReceivables(searchQuery)
+                    : await POSService.getOutstandingReceivables();
                 
                 if (response && response.data) {
                     // Map API response to expected format
                     const receivables = response.data.receivables || [];
-                    outstandingList = receivables.map(dr => ({
-                        id: dr.id,
-                        dr_number: dr.dr_number,
-                        customer_name: dr.customer_name,
-                        customer_type: dr.customer_type,
-                        total_amount: parseFloat(dr.total_amount) || 0,
-                        actual_balance: parseFloat(dr.amount_due) || (parseFloat(dr.total_amount) - parseFloat(dr.amount_paid || 0)),
-                        pending_check_amount: parseFloat(dr.pending_check_amount) || 0,
-                        pending_collection_id: Number(dr.pending_collection_id || 0),
-                        balance: Math.max(0, parseFloat(dr.collectible_balance ?? dr.amount_due) || 0),
-                        due_date: dr.due_date || dr.delivered_at || dr.created_at,
-                        days_overdue: parseInt(dr.days_outstanding) || 0
-                    }));
+                    outstandingList = receivables.map(mapReceivable);
                     
                     // Calculate summary from data
                     const totalOutstanding = outstandingList.reduce((sum, dr) => sum + dr.balance, 0);
@@ -791,19 +816,31 @@
                     const pendingCount = outstandingList.filter(dr => dr.balance > 0).length;
                     
                     // Update stats
-                    document.getElementById('totalOutstanding').textContent = formatCurrency(response.data.total_outstanding || totalOutstanding);
-                    document.getElementById('overdueCount').textContent = `${overdueCount} DRs`;
-                    document.getElementById('todayCollections').textContent = formatCurrency(response.data.today_collections || 0);
-                    document.getElementById('pendingDRs').textContent = pendingCount;
+                    if (!searchQuery) {
+                        document.getElementById('totalOutstanding').textContent = formatCurrency(response.data.total_outstanding || totalOutstanding);
+                        document.getElementById('overdueCount').textContent = `${overdueCount} DRs`;
+                        document.getElementById('todayCollections').textContent = formatCurrency(response.data.today_collections || 0);
+                        document.getElementById('pendingDRs').textContent = pendingCount;
+                    }
+
+                    const searchStatus = document.getElementById('receivableSearchStatus');
+                    const clearButton = document.getElementById('clearReceivableSearch');
+                    clearButton.classList.toggle('hidden', !searchQuery);
+                    searchStatus.classList.toggle('hidden', !searchQuery);
+                    if (searchQuery) {
+                        searchStatus.innerHTML = `<i class="fas fa-database"></i><span><strong>${outstandingList.length}</strong> unpaid delivered record(s) found for “${escapeHtml(searchQuery)}”. Select the matching delivery below; no paper DR is required.</span>`;
+                    }
                     
                     renderOutstandingTable();
                 } else {
                     // No data returned
                     outstandingList = [];
-                    document.getElementById('totalOutstanding').textContent = formatCurrency(0);
-                    document.getElementById('overdueCount').textContent = '0 DRs';
-                    document.getElementById('todayCollections').textContent = formatCurrency(0);
-                    document.getElementById('pendingDRs').textContent = '0';
+                    if (!searchQuery) {
+                        document.getElementById('totalOutstanding').textContent = formatCurrency(0);
+                        document.getElementById('overdueCount').textContent = '0 DRs';
+                        document.getElementById('todayCollections').textContent = formatCurrency(0);
+                        document.getElementById('pendingDRs').textContent = '0';
+                    }
                     renderOutstandingTable();
                 }
             } catch (error) {
@@ -841,8 +878,8 @@
                 tbody.innerHTML = `
                     <tr>
                         <td colspan="7" class="text-center py-10 text-base-content/60">
-                            <i class="fas fa-check-circle text-4xl mb-2 text-success opacity-30"></i>
-                            <p>No outstanding receivables</p>
+                            <i class="fas ${activeReceivableSearch ? 'fa-magnifying-glass' : 'fa-check-circle'} text-4xl mb-2 ${activeReceivableSearch ? 'text-info' : 'text-success'} opacity-30"></i>
+                            <p>${activeReceivableSearch ? `No unpaid delivered records match “${escapeHtml(activeReceivableSearch)}”` : 'No outstanding receivables'}</p>
                         </td>
                     </tr>
                 `;
@@ -873,12 +910,18 @@
 
                 return `
                     <tr class="cursor-pointer ${isOverdue && !isCoveredByPendingCheck ? 'is-overdue' : ''}" onclick="${isCoveredByPendingCheck ? `openPendingCheckReview(${dr.pending_collection_id})` : `selectDR(${drPayload})`}">
-                        <td><span class="dr-number">${drNum}</span></td>
+                        <td>
+                            <span class="dr-number">${drNum}</span>
+                            <div class="cell-customer-meta">${escapeHtml(dr.order_number || 'No linked Sales Order')} · Delivered ${formatDate(dr.delivered_at)}</div>
+                        </td>
                         <td>
                             <div class="cell-customer-name">${custName}</div>
-                            <div class="cell-customer-meta">${custType}</div>
+                            <div class="cell-customer-meta">${escapeHtml(dr.customer_code || custType)}</div>
                         </td>
-                        <td><span class="cell-money">${formatCurrency(dr.total_amount)}</span></td>
+                        <td>
+                            <span class="cell-money">${formatCurrency(dr.total_amount)}</span>
+                            ${dr.return_adjustment > 0 ? `<div class="text-xs text-success">Returns excluded: -${formatCurrency(dr.return_adjustment)}</div>` : ''}
+                        </td>
                         <td>
                             <span class="cell-money cell-money--balance ${isOverdue && !isCoveredByPendingCheck ? 'is-overdue' : ''}">${formatCurrency(dr.actual_balance)}</span>
                             ${dr.pending_check_amount > 0 ? `<div class="text-xs text-warning">Covered by ${formatCurrency(dr.pending_check_amount)} pending check</div>` : ''}
@@ -935,9 +978,21 @@
             // Populate data
             document.getElementById('selectedDR').textContent = dr.dr_number;
             document.getElementById('selectedCustomer').textContent = dr.customer_name;
+            document.getElementById('selectedDeliveryReference').textContent = `${dr.order_number || 'No linked Sales Order'} · Delivered ${formatDate(dr.delivered_at)}`;
             document.getElementById('drTotalAmount').textContent = formatCurrency(dr.total_amount);
             document.getElementById('drBalance').textContent = formatCurrency(dr.actual_balance);
             document.getElementById('pendingCheckNotice').classList.toggle('hidden', Number(dr.pending_check_amount || 0) <= 0);
+            const returnNotice = document.getElementById('returnAdjustmentNotice');
+            const returnAdjustment = Number(dr.return_adjustment || 0);
+            const pendingDisposal = Number(dr.pending_disposal_quantity || 0);
+            returnNotice.classList.toggle('hidden', returnAdjustment <= 0);
+            if (returnAdjustment > 0) {
+                const disposalText = pendingDisposal > 0
+                    ? ` ${pendingDisposal} unit(s) still await physical-disposal completion, but that internal approval will not charge the customer again.`
+                    : ' The internal return/disposal workflow will not change the customer balance again.';
+                document.getElementById('returnAdjustmentText').textContent =
+                    `${dr.returned_quantity} returned unit(s) (${formatCurrency(returnAdjustment)}) are already excluded. Collect ${formatCurrency(dr.total_amount)}, not ${formatCurrency(dr.gross_shipped_amount)}.${disposalText}`;
+            }
 
             // Set default payment amount to full balance
             document.getElementById('paymentAmount').value = parseFloat(dr.balance).toFixed(2);
@@ -1099,6 +1154,8 @@
                     };
                     showSuccessModal();
                     // Reload outstanding DRs after successful collection
+                    activeReceivableSearch = '';
+                    document.getElementById('drSearch').value = '';
                     loadOutstanding();
                 } else {
                     // Show actual error

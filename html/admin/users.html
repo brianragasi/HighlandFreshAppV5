@@ -630,7 +630,7 @@
                         <input type="email" id="email" name="email" class="input input-bordered"
                             maxlength="100" autocomplete="email" />
                         <label class="label">
-                            <span class="label-text-alt text-base-content/60" id="emailFieldHint">Needed only when sending an email invite.</span>
+                            <span class="label-text-alt text-base-content/60" id="emailFieldHint">Needed only for an email invite. It must not belong to another user or supplier.</span>
                         </label>
                     </div>
 
@@ -1522,9 +1522,15 @@
                 }
             } catch (error) {
                 console.error('Error saving user:', error);
-                const msg = error?.message || 'Failed to save user';
+                const firstFieldError = error?.errors && typeof error.errors === 'object'
+                    ? Object.values(error.errors)[0]
+                    : null;
+                const msg = firstFieldError || error?.message || 'Failed to save user';
                 showUserFormAlert(msg);
                 showToast(msg, 'error');
+                if (error?.errors?.email) {
+                    document.getElementById('email')?.focus();
+                }
             } finally {
                 const saveBtn = document.getElementById('saveBtn');
                 saveBtn.classList.remove('loading');

@@ -37,6 +37,7 @@ require_once __DIR__ . '/config/mailer.php';
 require_once __DIR__ . '/config/stock.php';
 require_once __DIR__ . '/config/rate_limiter.php';
 require_once __DIR__ . '/helpers/contact_validation.php';
+require_once __DIR__ . '/helpers/email_identity.php';
 require_once __DIR__ . '/helpers/numeric_validation.php';
 
 set_exception_handler(function (Throwable $error) {

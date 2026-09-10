@@ -355,15 +355,17 @@ const WarehouseFGService = {
     /**
      * Adjust inventory quantity (physical count discrepancy)
      * @param {number} inventoryId - Inventory item ID
-     * @param {number} newQuantity - New quantity
-     * @param {string} reason - Adjustment reason
+     * @param {number} physicalCount - Actual base-unit count found on the shelf
+     * @param {string} reasonCode - Controlled adjustment reason
+     * @param {string} reasonDetails - Required audit explanation
      */
-    async adjustInventory(inventoryId, newQuantity, reason) {
+    async adjustInventory(inventoryId, physicalCount, reasonCode, reasonDetails) {
         return await api.put(`${this.baseUrl}/inventory.php`, {
             action: 'adjust',
             id: inventoryId,
-            new_quantity: newQuantity,
-            reason
+            new_quantity: physicalCount,
+            reason_code: reasonCode,
+            reason_details: reasonDetails
         });
     },
 
@@ -635,7 +637,10 @@ const WarehouseFGService = {
      * @param {string} query - Search query
      */
     async searchCustomers(query) {
-        return await api.get(`${this.baseUrl}/customers.php`, { params: { action: 'search', q: query } });
+        const normalizedQuery = typeof LookupNormalization !== 'undefined'
+            ? LookupNormalization.text(query)
+            : String(query ?? '').replace(/\s+/g, ' ').trim();
+        return await api.get(`${this.baseUrl}/customers.php`, { params: { action: 'search', q: normalizedQuery } });
     },
 
     /**
@@ -687,8 +692,11 @@ const WarehouseFGService = {
      * @param {string} barcode - Product barcode (contains mfg date, expiry, batch info)
      */
     async lookupBatchByBarcode(barcode) {
+        const normalizedBarcode = typeof LookupNormalization !== 'undefined'
+            ? LookupNormalization.barcode(barcode)
+            : String(barcode ?? '').replace(/\s+/g, '');
         return await api.get(`${this.baseUrl}/dispatch.php`, {
-            params: { action: 'lookup_barcode', barcode }
+            params: { action: 'lookup_barcode', barcode: normalizedBarcode }
         });
     },
 

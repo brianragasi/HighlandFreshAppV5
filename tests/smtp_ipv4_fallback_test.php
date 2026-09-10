@@ -45,4 +45,19 @@ catch (\Exception $e) { check(count($calls) === 1 && str_contains($e->getMessage
 $calls = [];
 $responses = array_fill(0, 3, [101, 'Network is unreachable', false]);
 try { $method->invoke(null, 'smtp.gmail.com', 465, 'ssl', $context); throw new \RuntimeException('Expected unreachable rejection'); }
-catch (\Exception $e) { check(count($calls) === 3 && str_contains($e->getMessage(), 'IPv4 fallback failed'), 'retries are bounded and both route failures are logged'); }
+catch (\Exception $e) { check(count($calls) === 3 && str_contains($e->getMessage(), 'alternate routes failed'), 'retries are bounded and both route failures are logged'); }
+$calls = [];
+$responses = [
+    [111, 'Connection refused', false],
+    [111, 'Connection refused', false],
+    [111, 'Connection refused', false],
+    [0, '', 'local-relay-connected'],
+];
+$googieContext = stream_context_create(['ssl' => [
+    'peer_name' => 'cloud3.googiehost.com', 'verify_peer' => true,
+    'verify_peer_name' => true, 'SNI_enabled' => true,
+]]);
+check($method->invoke(null, 'cloud3.googiehost.com', 465, 'ssl', $googieContext) === 'local-relay-connected', 'GoogieHost can recover through its server-local relay');
+check($calls[3][0] === 'ssl://127.0.0.1:465'
+    && $calls[3][2]['ssl']['peer_name'] === 'cloud3.googiehost.com'
+    && $calls[3][2]['ssl']['verify_peer_name'], 'server-local route retains the public hostname certificate identity');

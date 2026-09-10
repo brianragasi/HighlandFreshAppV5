@@ -708,6 +708,88 @@
         <form method="dialog" class="modal-backdrop"><button>close</button></form>
     </dialog>
 
+    <!-- Physical count adjustment modal -->
+    <dialog id="stockAdjustmentModal" class="modal">
+        <div class="modal-box max-w-lg rounded-xl overflow-hidden p-0">
+            <div class="p-5 border-b border-[#eef2ef] flex items-start justify-between gap-4">
+                <div>
+                    <p class="text-xs font-semibold uppercase tracking-wider text-[#1f7a4d]">Finished Goods count</p>
+                    <h3 class="font-bold text-lg mt-1">Correct the recorded stock</h3>
+                    <p class="text-sm text-base-content/60 mt-1">Enter what you physically counted for this exact batch.</p>
+                </div>
+                <button type="button" class="btn btn-ghost btn-sm btn-square" onclick="stockAdjustmentModal.close()" aria-label="Close">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <form id="stockAdjustmentForm" class="p-5 space-y-4">
+                <div class="rounded-lg border border-[#dfe7e2] bg-[#f7faf8] p-3">
+                    <p id="adjustProduct" class="font-semibold">—</p>
+                    <div class="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-base-content/60">
+                        <span>Batch <strong id="adjustBatch" class="text-base-content">—</strong></span>
+                        <span>Location <strong id="adjustLocation" class="text-base-content">—</strong></span>
+                    </div>
+                </div>
+
+                <div class="alert alert-info py-3 text-sm items-start">
+                    <i class="fas fa-scale-balanced mt-0.5"></i>
+                    <span>Use this only to correct a physical-count difference. Expired or damaged goods must be reported to QC; stock transfers use <strong>Transfer</strong>.</span>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <label class="form-control">
+                        <span class="label-text font-medium mb-1">System on hand</span>
+                        <div class="input input-bordered bg-base-200 flex items-center gap-2">
+                            <strong id="adjustRecordedCount">0</strong>
+                            <span id="adjustRecordedUnit" class="text-base-content/60">units</span>
+                        </div>
+                    </label>
+                    <label class="form-control">
+                        <span class="label-text font-medium mb-1">Physical count <span class="text-error">*</span></span>
+                        <div class="join w-full">
+                            <input id="adjustPhysicalCount" type="number" min="0" max="100000000" step="1"
+                                class="input input-bordered join-item w-full" placeholder="Enter counted quantity" required>
+                            <span id="adjustPhysicalUnit" class="join-item px-3 border border-base-300 bg-base-200 flex items-center text-sm">units</span>
+                        </div>
+                    </label>
+                </div>
+
+                <div id="adjustVariance" class="rounded-lg border border-[#dfe7e2] px-3 py-2 text-sm text-base-content/60">
+                    Enter the physical count to calculate the variance.
+                </div>
+
+                <label class="form-control">
+                    <span class="label-text font-medium mb-1">Reason <span class="text-error">*</span></span>
+                    <select id="adjustReasonCode" class="select select-bordered" required>
+                        <option value="">Choose a reason…</option>
+                        <option value="physical_count">Physical count correction</option>
+                        <option value="receiving_entry">Receiving or encoding correction</option>
+                        <option value="other">Other count correction</option>
+                    </select>
+                </label>
+                <label class="form-control">
+                    <span class="label-text font-medium mb-1">Explanation <span class="text-error">*</span></span>
+                    <textarea id="adjustReasonDetails" class="textarea textarea-bordered" minlength="8" maxlength="500" rows="3"
+                        placeholder="Example: Recount found two bottles missing from this batch." required></textarea>
+                    <span class="label-text-alt text-base-content/50 mt-1">This explanation and the before/after quantities are saved in the inventory audit trail.</span>
+                </label>
+
+                <label class="label cursor-pointer justify-start gap-3 rounded-lg border border-[#dfe7e2] p-3">
+                    <input id="adjustCountConfirmed" type="checkbox" class="checkbox checkbox-success" required>
+                    <span class="label-text">I physically counted this exact product and batch.</span>
+                </label>
+                <div id="adjustmentError" class="alert alert-error py-2 text-sm hidden" role="alert"></div>
+
+                <div class="modal-action mt-2">
+                    <button type="button" class="btn btn-ghost" onclick="stockAdjustmentModal.close()">Cancel</button>
+                    <button id="saveStockAdjustmentButton" type="submit" class="btn bg-[#1f7a4d] border-[#1f7a4d] text-white hover:bg-[#155c3a]">
+                        <i class="fas fa-check"></i> Record adjustment
+                    </button>
+                </div>
+            </form>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+
     <!-- Toast Container -->
     <div id="toastContainer" class="toast toast-end toast-top z-50"></div>
 
@@ -717,12 +799,13 @@
     <script src="../../../js/config/auth.js?v=20260814-3"></script>
     <script src="../../../js/security/role-guard.js" data-allowed-roles="warehouse_fg,general_manager"></script>
     <script src="../../../js/utils/units.js?v=20260712"></script>
-    <script src="../../../js/utils/product-display.js?v=20260903-sku1"></script>
+    <script src="../../../js/utils/product-display.js?v=20260909-sizefix1"></script>
     <script src="../../../js/warehouse/fg.service.js"></script>
 
     <script>
         let inventory = [];
         let chillers = [];
+        let adjustmentItemId = null;
 
         // Sidebar toggle
         function toggleSidebar() {
@@ -1393,8 +1476,121 @@
 
         // Adjust stock
         function adjustStock(id) {
-            showToast('Stock adjustment feature coming soon', 'info');
+            const item = inventory.find(row => Number(row.id) === Number(id));
+            if (!item) return;
+
+            const state = getInventoryState(item);
+            if (state.key === 'expired') {
+                showToast('Expired stock must be reported to QC.', 'warning');
+                return;
+            }
+
+            adjustmentItemId = Number(item.id);
+            const recorded = getTotalPieces(item);
+            const baseUnit = String(PackUnits.baseUnit(item) || 'unit').replace(/_/g, ' ');
+            const unitLabel = PackUnits.pluralize(baseUnit, recorded === 1 ? 1 : 2);
+            document.getElementById('adjustProduct').textContent = ProductDisplay.name(item);
+            document.getElementById('adjustBatch').textContent = item.batch_code || '—';
+            document.getElementById('adjustLocation').textContent = item.chiller_name || 'Unassigned';
+            document.getElementById('adjustRecordedCount').textContent = recorded.toLocaleString();
+            document.getElementById('adjustRecordedUnit').textContent = unitLabel;
+            document.getElementById('adjustPhysicalUnit').textContent = baseUnit;
+            document.getElementById('adjustPhysicalCount').value = '';
+            document.getElementById('adjustPhysicalCount').placeholder = `Currently ${recorded.toLocaleString()}`;
+            document.getElementById('adjustReasonCode').value = '';
+            document.getElementById('adjustReasonDetails').value = '';
+            document.getElementById('adjustCountConfirmed').checked = false;
+            document.getElementById('adjustmentError').classList.add('hidden');
+            updateAdjustmentVariance();
+            document.getElementById('stockAdjustmentModal').showModal();
+            setTimeout(() => document.getElementById('adjustPhysicalCount').focus(), 50);
         }
+
+        function updateAdjustmentVariance() {
+            const item = inventory.find(row => Number(row.id) === Number(adjustmentItemId));
+            const panel = document.getElementById('adjustVariance');
+            if (!item || !panel) return;
+            const raw = document.getElementById('adjustPhysicalCount').value.trim();
+            const counted = Number(raw);
+            const recorded = getTotalPieces(item);
+            panel.className = 'rounded-lg border px-3 py-2 text-sm';
+            if (raw === '' || !Number.isSafeInteger(counted) || counted < 0) {
+                panel.classList.add('border-[#dfe7e2]', 'text-base-content/60');
+                panel.textContent = 'Enter the physical count to calculate the variance.';
+                return;
+            }
+            const variance = counted - recorded;
+            if (variance === 0) {
+                panel.classList.add('border-[#dfe7e2]', 'text-base-content/60');
+                panel.textContent = 'No difference — the physical count matches the system.';
+                return;
+            }
+            const unit = String(PackUnits.baseUnit(item) || 'unit').replace(/_/g, ' ');
+            panel.classList.add(
+                variance > 0 ? 'border-success/40' : 'border-warning/50',
+                variance > 0 ? 'bg-success/10' : 'bg-warning/10',
+                'text-base-content'
+            );
+            panel.innerHTML = `<strong>Variance ${variance > 0 ? '+' : ''}${variance.toLocaleString()} ${escapeHtml(PackUnits.pluralize(unit, Math.abs(variance)))}</strong><span class="block text-xs mt-0.5 opacity-70">The system balance will change from ${recorded.toLocaleString()} to ${counted.toLocaleString()}.</span>`;
+        }
+
+        document.getElementById('adjustPhysicalCount').addEventListener('input', updateAdjustmentVariance);
+
+        document.getElementById('stockAdjustmentForm').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const item = inventory.find(row => Number(row.id) === Number(adjustmentItemId));
+            if (!item) return;
+
+            const errorPanel = document.getElementById('adjustmentError');
+            const rawCount = document.getElementById('adjustPhysicalCount').value.trim();
+            const physicalCount = Number(rawCount);
+            const reasonCode = document.getElementById('adjustReasonCode').value;
+            const reasonDetails = document.getElementById('adjustReasonDetails').value.trim();
+            const recorded = getTotalPieces(item);
+            const showError = message => {
+                errorPanel.textContent = message;
+                errorPanel.classList.remove('hidden');
+            };
+            errorPanel.classList.add('hidden');
+
+            if (rawCount === '' || !Number.isSafeInteger(physicalCount) || physicalCount < 0) {
+                showError('Enter a valid whole-number physical count.');
+                return;
+            }
+            if (physicalCount === recorded) {
+                showError('The count matches the system, so no adjustment is needed.');
+                return;
+            }
+            if (!reasonCode || reasonDetails.length < 8) {
+                showError('Choose a reason and provide a clear explanation of at least 8 characters.');
+                return;
+            }
+            if (!document.getElementById('adjustCountConfirmed').checked) {
+                showError('Confirm that you physically counted this exact batch.');
+                return;
+            }
+
+            const button = document.getElementById('saveStockAdjustmentButton');
+            button.disabled = true;
+            button.classList.add('loading');
+            try {
+                const response = await WarehouseFGService.adjustInventory(
+                    item.id,
+                    physicalCount,
+                    reasonCode,
+                    reasonDetails
+                );
+                const variance = Number(response.data?.adjustment ?? (physicalCount - recorded));
+                document.getElementById('stockAdjustmentModal').close();
+                showToast(`Stock corrected from ${recorded.toLocaleString()} to ${physicalCount.toLocaleString()} (${variance > 0 ? '+' : ''}${variance.toLocaleString()}).`, 'success');
+                await loadInventory();
+            } catch (error) {
+                showError(error.message || 'The stock adjustment could not be recorded.');
+            } finally {
+                button.disabled = false;
+                button.classList.remove('loading');
+            }
+        });
 
         async function reportExpiredStockToQC(id) {
             const item = inventory.find(i => Number(i.id) === Number(id));

@@ -481,6 +481,7 @@
                     <select id="receiveChiller" class="select select-bordered w-full" required>
                         <option value="">Select chiller...</option>
                     </select>
+                    <div id="receiveCapacityHelp" class="text-xs text-base-content/60 mt-2"></div>
                 </div>
 
                 <!-- Notes -->
@@ -495,7 +496,7 @@
                 <!-- Actions -->
                 <div class="modal-action">
                     <button type="button" class="btn btn-ghost" onclick="receiveModal.close()">Cancel</button>
-                    <button type="submit" class="btn btn-success">
+                    <button type="submit" id="receiveSubmitButton" class="btn btn-success" disabled>
                         <i class="fas fa-check"></i> Confirm Put-Away
                     </button>
                 </div>
@@ -514,7 +515,7 @@
     <script src="../../../js/ui/live-refresh.js?v=20260820-1"></script>
     <script src="../../../js/security/role-guard.js" data-allowed-roles="warehouse_fg,general_manager"></script>
     <script src="../../../js/utils/units.js?v=20260712"></script>
-    <script src="../../../js/utils/product-display.js?v=20260903-sku1"></script>
+    <script src="../../../js/utils/product-display.js?v=20260909-sizefix1"></script>
     <script src="../../../js/warehouse/fg.service.js?v=20260718"></script>
 
     <script>
@@ -597,19 +598,85 @@
             try {
                 const response = await WarehouseFGService.getChillers();
                 chillers = response.data || [];
-                const select = document.getElementById('receiveChiller');
-                select.innerHTML = '<option value="">Select chiller...</option>';
-                chillers.filter(c => c.status === 'available' || c.is_active === 1).forEach(c => {
-                    const currentCount = c.current_count || 0;
-                    const available = c.capacity - currentCount;
-                    const isFull = available <= 0;
-                    const label = isFull
-                        ? `${c.chiller_name || c.name} (FULL — ${currentCount}/${c.capacity})`
-                        : `${c.chiller_name || c.name} (${available} available)`;
-                    select.innerHTML += `<option value="${c.id}" ${isFull ? 'disabled' : ''}>${label}</option>`;
-                });
+                const batchId = document.getElementById('receiveBatchId')?.value;
+                const selectedBatch = pendingBatches.find(batch => batch.id == batchId);
+                renderReceiveChillerOptions(selectedBatch || null);
             } catch (error) {
                 console.error('Failed to load chillers:', error);
+            }
+        }
+
+        function getBatchRequiredCapacity(batch) {
+            if (!batch) return 0;
+            const packagingTotal = (batch.packaging_lines || []).reduce(
+                (sum, line) => sum + Math.max(0, Number(line.quantity || 0)),
+                0
+            );
+            if (packagingTotal > 0) return packagingTotal;
+            return Math.max(0, Number(
+                batch.total_pieces
+                ?? batch.quantity_available
+                ?? batch.actual_yield
+                ?? batch.expected_yield
+                ?? 0
+            ));
+        }
+
+        function renderReceiveChillerOptions(batch) {
+            const select = document.getElementById('receiveChiller');
+            const help = document.getElementById('receiveCapacityHelp');
+            const submitButton = document.getElementById('receiveSubmitButton');
+            if (!select) return;
+
+            const required = getBatchRequiredCapacity(batch);
+            const previousValue = select.value;
+            select.replaceChildren();
+            const placeholder = document.createElement('option');
+            placeholder.value = '';
+            placeholder.textContent = required > 0
+                ? `Select a chiller for ${required.toLocaleString()} unit(s)...`
+                : 'Select chiller...';
+            select.appendChild(placeholder);
+
+            let fittingCount = 0;
+            chillers
+                .filter(c => Number(c.is_active) === 1 && !['maintenance', 'offline'].includes(String(c.status || '')))
+                .forEach(c => {
+                    const currentCount = Math.max(0, Number(c.current_count || 0));
+                    const capacity = Number(c.capacity || 0);
+                    const unlimited = capacity <= 0;
+                    const available = unlimited ? Number.POSITIVE_INFINITY : Math.max(0, capacity - currentCount);
+                    const cannotFit = required > 0 && !unlimited && available < required;
+                    const option = document.createElement('option');
+                    option.value = c.id;
+                    option.disabled = cannotFit;
+                    if (cannotFit) {
+                        option.textContent = `${c.chiller_name || c.name} — cannot fit (needs ${required.toLocaleString()}, ${available.toLocaleString()} available)`;
+                    } else if (unlimited) {
+                        option.textContent = `${c.chiller_name || c.name} (no capacity limit configured)`;
+                    } else {
+                        option.textContent = `${c.chiller_name || c.name} (${available.toLocaleString()} available after current stock)`;
+                    }
+                    select.appendChild(option);
+                    if (!cannotFit) fittingCount += 1;
+                });
+
+            if ([...select.options].some(option => option.value === previousValue && !option.disabled)) {
+                select.value = previousValue;
+            }
+            select.disabled = required > 0 && fittingCount === 0;
+            if (submitButton) {
+                submitButton.disabled = required <= 0 || fittingCount === 0;
+            }
+            if (help) {
+                help.className = fittingCount === 0 && required > 0
+                    ? 'text-xs text-error mt-2 font-medium'
+                    : 'text-xs text-base-content/60 mt-2';
+                help.textContent = required <= 0
+                    ? 'The released batch quantity could not be determined.'
+                    : fittingCount === 0
+                        ? `No available chiller can hold all ${required.toLocaleString()} unit(s). Free capacity or configure another chiller before receiving.`
+                        : `The entire batch needs ${required.toLocaleString()} unit(s). Chillers without enough room cannot be selected.`;
             }
         }
 
@@ -837,6 +904,7 @@
                 warnText.textContent = '';
             }
 
+            renderReceiveChillerOptions(batch);
             document.getElementById('receiveChiller').value = '';
             document.getElementById('receiveNotes').value = '';
             document.getElementById('receiveModal').showModal();
@@ -872,6 +940,7 @@
             } catch (error) {
                 console.error('Failed to receive batch:', error);
                 showToast(error?.response?.data?.message || error?.message || 'Failed to receive batch', 'error');
+                await loadChillers();
             }
         });
     </script>

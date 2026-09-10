@@ -35,7 +35,8 @@ for (const expectedText of [
     'Review the original request',
     'Order summary',
     'Price is per',
-    'Submit for GM Approval',
+    '<span>Release Order</span>',
+    'Send Credit Exception to GM',
     '<span>Resolve issue</span>',
     "activeImport.status === 'needs_customer_confirmation'",
     'sourceDocumentReady',
@@ -50,8 +51,8 @@ for (const expectedText of [
     }
 }
 
-if (!helper.includes("'status' => 'pending'")) {
-    throw new Error('Verified Customer PO orders must be returned as pending for GM approval.');
+if (!helper.includes("'status' => $orderStatus") || !helper.includes("'approval_required' => $creditExceeded")) {
+    throw new Error('Verified Customer PO orders must expose whether a credit exception requires GM approval.');
 }
 
 for (const removedText of [
@@ -59,6 +60,7 @@ for (const removedText of [
     'Submit it for General Manager approval next',
     'Verify &amp; Save',
     'Create Order &amp; Send to GM',
+    'Submit for GM Approval',
     'Record Customer Decision',
     'id="statusFilter"',
 ]) {

@@ -324,11 +324,11 @@
                 <div class="form-control mb-4">
                     <label class="label"><span class="label-text">Release Quantity</span></label>
                     <div class="flex gap-2 items-center">
-                        <div class="form-control flex-1">
+                        <div class="form-control flex-1" id="qtyBoxesField">
                             <label class="label py-0"><span class="label-text text-xs" id="qtyBoxesLabel">Packs</span></label>
                             <input type="number" id="qtyBoxes" class="input input-bordered w-full" min="0" value="0" onchange="calculateTotalReleasePieces(e)" oninput="calculateTotalReleasePieces(e)">
                         </div>
-                        <span class="self-end pb-3 text-lg font-bold">+</span>
+                        <span class="self-end pb-3 text-lg font-bold" id="qtyPackPlus">+</span>
                         <div class="form-control flex-1">
                             <label class="label py-0"><span class="label-text text-xs" id="qtyPiecesLabel">Loose</span></label>
                             <input type="number" id="qtyPieces" class="input input-bordered w-full" min="0" value="0" onchange="piecesAutoPack(e)" oninput="piecesAutoPack(e)">
@@ -1078,6 +1078,7 @@
             }
 
             const piecesPerBox = Math.max(1, parseInt(labels.piecesPerPack, 10) || 1);
+            const hasDispatchPack = piecesPerBox > 1;
             const suggestedTotal = Math.max(0, maxAllowed);
             const suggestedBoxes = piecesPerBox > 1 ? Math.floor(suggestedTotal / piecesPerBox) : 0;
             const suggestedPieces = piecesPerBox > 1 ? suggestedTotal % piecesPerBox : suggestedTotal;
@@ -1089,6 +1090,8 @@
             document.getElementById('qtyPiecesPerBoxLabel').textContent = packLine;
             document.getElementById('qtyBoxesLabel').textContent = labels.pack;
             document.getElementById('qtyPiecesLabel').textContent = labels.base;
+            document.getElementById('qtyBoxesField')?.classList.toggle('hidden', !hasDispatchPack);
+            document.getElementById('qtyPackPlus')?.classList.toggle('hidden', !hasDispatchPack);
             document.getElementById('qtyBoxes').value = suggestedBoxes;
             document.getElementById('qtyBoxes').max = Math.max(0, availableBoxes);
             document.getElementById('qtyPieces').value = suggestedPieces;

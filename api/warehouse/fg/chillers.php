@@ -44,13 +44,16 @@ function handleGet($db, $action) {
             $stmt = $db->prepare("
                 SELECT 
                     c.*,
-                    COALESCE((SELECT SUM(GREATEST(fi.quantity_available, 0)) 
-                              FROM finished_goods_inventory fi 
-                              JOIN products p ON fi.product_id = p.id
+                    COALESCE((SELECT SUM(GREATEST(
+                                          COALESCE(fi.quantity_available, 0),
+                                          COALESCE(fi.remaining_quantity, 0),
+                                          (COALESCE(fi.boxes_available, 0) * COALESCE(NULLIF(p.pieces_per_box, 0), 1))
+                                              + COALESCE(fi.pieces_available, 0)
+                                      ))
+                              FROM finished_goods_inventory fi
+                              LEFT JOIN products p ON p.id = fi.product_id
                               WHERE fi.chiller_id = c.id 
-                                AND fi.status = 'available' 
-                                AND fi.quantity_available > 0
-                                AND p.is_active = 1), 0) as current_count
+                                AND fi.status IN ('available', 'low_stock')), 0) as current_count
                 FROM chiller_locations c
                 WHERE c.is_active = 1
                 ORDER BY c.chiller_code
@@ -67,7 +70,17 @@ function handleGet($db, $action) {
             }
             
             $stmt = $db->prepare("
-                SELECT c.*
+                SELECT c.*,
+                       COALESCE((SELECT SUM(GREATEST(
+                                            COALESCE(fi.quantity_available, 0),
+                                            COALESCE(fi.remaining_quantity, 0),
+                                            (COALESCE(fi.boxes_available, 0) * COALESCE(NULLIF(p.pieces_per_box, 0), 1))
+                                                + COALESCE(fi.pieces_available, 0)
+                                        ))
+                                 FROM finished_goods_inventory fi
+                                 LEFT JOIN products p ON p.id = fi.product_id
+                                 WHERE fi.chiller_id = c.id
+                                   AND fi.status IN ('available', 'low_stock')), 0) AS current_count
                 FROM chiller_locations c
                 WHERE c.id = ? AND c.is_active = 1
             ");
@@ -105,7 +118,19 @@ function handleGet($db, $action) {
             $stmt = $db->prepare("
                 SELECT 
                     SUM(capacity) as total_capacity,
-                    SUM(current_count) as total_current,
+                    COALESCE((
+                        SELECT SUM(GREATEST(
+                                   COALESCE(fi.quantity_available, 0),
+                                   COALESCE(fi.remaining_quantity, 0),
+                                   (COALESCE(fi.boxes_available, 0) * COALESCE(NULLIF(p.pieces_per_box, 0), 1))
+                                       + COALESCE(fi.pieces_available, 0)
+                               ))
+                        FROM finished_goods_inventory fi
+                        JOIN chiller_locations occupied ON occupied.id = fi.chiller_id
+                        LEFT JOIN products p ON p.id = fi.product_id
+                        WHERE occupied.is_active = 1
+                          AND fi.status IN ('available', 'low_stock')
+                    ), 0) as total_current,
                     COUNT(*) as total_chillers,
                     SUM(CASE WHEN status = 'available' THEN 1 ELSE 0 END) as available,
                     SUM(CASE WHEN status = 'full' THEN 1 ELSE 0 END) as full,

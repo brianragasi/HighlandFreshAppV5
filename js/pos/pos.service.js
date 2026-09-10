@@ -309,6 +309,22 @@ const POSService = {
     },
 
     /**
+     * Recover an unpaid delivered DR when the customer cannot present its paper copy.
+     * Searches the digital source of truth by customer, customer code, order, PO, or DR.
+     * @param {string} query - Customer name/code, Sales Order, customer PO, or DR number
+     */
+    async searchReceivables(query) {
+        try {
+            return await api.get(`${this.baseUrl}/collections.php`, {
+                params: { action: 'outstanding', search: query, limit: 100 }
+            });
+        } catch (error) {
+            console.error('Error searching receivables:', error);
+            throw error;
+        }
+    },
+
+    /**
      * Get customer balance
      * @param {number} customerId - Customer ID
      */

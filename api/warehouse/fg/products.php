@@ -10,6 +10,7 @@
  */
 
 require_once dirname(dirname(__DIR__)) . '/bootstrap.php';
+require_once dirname(dirname(__DIR__)) . '/helpers/sellable_expiry_policy.php';
 
 // Allow access for warehouse, sales, and GM roles
 $currentUser = Auth::requireRole(['warehouse_fg', 'sales_custodian', 'general_manager', 'cashier']);
@@ -32,6 +33,8 @@ try {
 }
 
 function handleGet($db, $action) {
+    $fiSellableExpiry = hfSellableExpirySql('fi.expiry_date');
+
     switch ($action) {
         case 'list':
             $category = getParam('category');
@@ -177,7 +180,7 @@ function handleGet($db, $action) {
         case 'for_sale':
             // Products available for sale, aggregated by product SKU.
             // Authoritative sellable unit = BASE units (bottles/packs/pieces):
-            //   on_hand = SUM(quantity_available) for available, non-expired lots
+            //   on_hand = SUM(quantity_available) for lots outside the 7-day QC window
             //   reserved = SUM(quantity_ordered) on open sales orders
             //   available_qty = max(0, on_hand - reserved)
             // Pack config (pieces_per_box, base_unit, box_unit) is for UI conversion only.
@@ -210,7 +213,7 @@ function handleGet($db, $action) {
                     FROM finished_goods_inventory fi
                     WHERE fi.product_id IS NOT NULL
                       AND fi.status = 'available'
-                      AND (fi.expiry_date IS NULL OR fi.expiry_date >= CURDATE())
+                      AND {$fiSellableExpiry}
                       AND COALESCE(fi.quantity_available, 0) > 0
                     GROUP BY fi.product_id
                 ) stock ON stock.product_id = p.id

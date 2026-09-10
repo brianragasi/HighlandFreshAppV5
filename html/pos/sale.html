@@ -117,6 +117,20 @@
             padding: 0.2rem;
             border: 1px solid oklch(var(--b3));
         }
+        .cart-item__qty-wrap {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.2rem;
+        }
+        .cart-item__qty-error {
+            max-width: 11rem;
+            color: oklch(var(--er));
+            font-size: 0.65rem;
+            font-weight: 600;
+            line-height: 1.15;
+            text-align: center;
+        }
         .qty-btn {
             width: 2.35rem;
             height: 2.35rem;
@@ -145,12 +159,30 @@
             cursor: not-allowed;
         }
         .qty-value {
-            min-width: 2rem;
+            width: 4.5rem;
+            min-width: 4.5rem;
+            height: 2.35rem;
             text-align: center;
             font-weight: 700;
             font-size: 0.9375rem;
             font-variant-numeric: tabular-nums;
-            user-select: none;
+            color: oklch(var(--bc));
+            background: oklch(var(--b1));
+            border: 1px solid transparent;
+            border-radius: 0.45rem;
+            outline: none;
+            padding: 0 0.25rem;
+            transition: border-color 0.12s, box-shadow 0.12s;
+        }
+        .qty-value:hover {
+            border-color: oklch(var(--bc) / 0.2);
+        }
+        .qty-value:focus {
+            border-color: oklch(var(--p));
+            box-shadow: 0 0 0 2px oklch(var(--p) / 0.18);
+        }
+        .qty-value:invalid {
+            border-color: oklch(var(--er));
         }
 
         /* Totals hierarchy */
@@ -577,8 +609,16 @@
                 <div class="pos-cart-footer">
                     <div class="checkout-totals">
                         <div class="checkout-totals__row">
-                            <span>Subtotal</span>
+                            <span>Subtotal (VAT inclusive)</span>
                             <span id="subtotal">₱0.00</span>
+                        </div>
+                        <div class="checkout-totals__row">
+                            <span>VATable sales</span>
+                            <span id="vatableSales">₱0.00</span>
+                        </div>
+                        <div class="checkout-totals__row">
+                            <span>VAT (12%, included)</span>
+                            <span id="vatAmount">₱0.00</span>
                         </div>
                         <div class="checkout-totals__row">
                             <span>Items</span>
@@ -738,11 +778,19 @@
                         <span class="font-bold" id="successTotal">₱0.00</span>
                     </div>
                     <div class="flex justify-between">
+                        <span class="text-base-content/60">VAT (12%, included)</span>
+                        <span id="successVat">₱0.00</span>
+                    </div>
+                    <div class="flex justify-between">
                         <span class="text-base-content/60">Payment</span>
                         <span id="successPayment">Cash</span>
                     </div>
+                    <div class="flex justify-between" id="successTenderedRow">
+                        <span class="text-base-content/60">Cash received</span>
+                        <span class="font-bold" id="successTendered">₱0.00</span>
+                    </div>
                     <div class="flex justify-between" id="successChangeRow">
-                        <span class="text-base-content/60">Change</span>
+                        <span class="text-base-content/60">Change to return</span>
                         <span class="font-bold text-success" id="successChange">₱0.00</span>
                     </div>
                 </div>
@@ -768,6 +816,7 @@
     <script src="../../js/config/auth.js?v=20260814-3"></script>
     <script src="../../js/security/role-guard.js" data-allowed-roles="cashier,general_manager"></script>
     <script src="../../js/pos/pos.service.js"></script>
+    <script src="../../js/pos/receipt-printer.js?v=20260909-vat1"></script>
 
     <script>
         // State
@@ -776,6 +825,16 @@
         let cart = [];
         let currentPaymentMethod = 'cash';
         let lastSaleData = null;
+        const POS_VAT_RATE = 0.12;
+
+        function vatInclusiveBreakdown(amount) {
+            const gross = Math.max(0, Number(amount) || 0);
+            const vatableSales = Math.round((gross / (1 + POS_VAT_RATE)) * 100) / 100;
+            return {
+                vatableSales,
+                taxAmount: Math.round((gross - vatableSales) * 100) / 100
+            };
+        }
 
         // Sidebar toggle
         function toggleSidebar() {
@@ -926,7 +985,8 @@
                 grid.innerHTML = `
                     <div class="col-span-full text-center py-12 text-base-content/60">
                         <i class="fas fa-search text-4xl mb-3 opacity-30"></i>
-                        <p>No products found</p>
+                        <p>No sellable products found</p>
+                        <p class="text-sm mt-1">Batches with 7 days or less before expiry are handled by QC.</p>
                     </div>
                 `;
                 return;
@@ -1038,17 +1098,28 @@
                         <div class="cart-item__name" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</div>
                         <div class="cart-item__meta">${escapeHtml(variant)} · ${unitPrice} each</div>
                     </div>
-                    <div class="qty-stepper" role="group" aria-label="Quantity">
-                        <button type="button" class="qty-btn" onclick="updateQuantity(${index}, -1)" aria-label="Decrease quantity">
-                            <i class="fas fa-minus"></i>
-                        </button>
-                        <span class="qty-value">${item.quantity}</span>
-                        <button type="button" class="qty-btn" onclick="updateQuantity(${index}, 1)"
-                            ${atMax ? 'disabled' : ''} aria-label="Increase quantity">
-                            <i class="fas fa-plus"></i>
-                        </button>
+                    <div class="cart-item__qty-wrap">
+                        <div class="qty-stepper" role="group" aria-label="Quantity">
+                            <button type="button" class="qty-btn" onclick="updateQuantity(${index}, -1)" aria-label="Decrease quantity">
+                                <i class="fas fa-minus"></i>
+                            </button>
+                            <input type="number" class="qty-value" value="${item.quantity}"
+                                min="1" max="${item.maxStock}" step="1" inputmode="numeric"
+                                aria-label="Quantity for ${escapeHtml(item.name)}"
+                                aria-describedby="cartQtyError${index}"
+                                title="Type a quantity from 1 to ${item.maxStock}"
+                                onfocus="this.select()"
+                                oninput="previewCartQuantity(${index}, this.value, this)"
+                                onchange="setCartQuantity(${index}, this.value, this)"
+                                onkeydown="handleQuantityKey(event, ${index}, this)">
+                            <button type="button" class="qty-btn" onclick="updateQuantity(${index}, 1)"
+                                id="cartQtyPlus${index}" ${atMax ? 'disabled' : ''} aria-label="Increase quantity">
+                                <i class="fas fa-plus"></i>
+                            </button>
+                        </div>
+                        <div class="cart-item__qty-error" id="cartQtyError${index}" aria-live="polite"></div>
                     </div>
-                    <div class="cart-item__line-total">${lineTotal}</div>
+                    <div class="cart-item__line-total" id="cartLineTotal${index}">${lineTotal}</div>
                     <button type="button" class="cart-item__remove" onclick="removeFromCart(${index})"
                         title="Remove item" aria-label="Remove ${escapeHtml(item.name)}">
                         <i class="fas fa-times"></i>
@@ -1071,6 +1142,72 @@
             } else if (newQty <= item.maxStock) {
                 item.quantity = newQty;
                 renderCart();
+            }
+        }
+
+        function parseCartQuantity(index, rawValue) {
+            const item = cart[index];
+            if (!item) return { valid: false, message: 'Cart item no longer exists' };
+
+            const text = String(rawValue ?? '').trim();
+            const quantity = Number(text);
+            const validInteger = /^\d+$/.test(text) && Number.isSafeInteger(quantity);
+
+            if (!validInteger || quantity < 1) {
+                return { valid: false, message: 'Quantity must be a whole number of at least 1' };
+            }
+
+            if (quantity > item.maxStock) {
+                return { valid: false, message: `Only ${item.maxStock} units are available` };
+            }
+
+            return { valid: true, quantity, item };
+        }
+
+        function previewCartQuantity(index, rawValue, input) {
+            const parsed = parseCartQuantity(index, rawValue);
+            const error = document.getElementById(`cartQtyError${index}`);
+            input.setCustomValidity(parsed.valid ? '' : parsed.message);
+            input.setAttribute('aria-invalid', parsed.valid ? 'false' : 'true');
+            if (error) error.textContent = parsed.valid ? '' : parsed.message;
+            if (!parsed.valid) return false;
+
+            // Update only the affected values. Re-rendering the cart here would
+            // destroy the focused input after the first digit of a multi-digit entry.
+            parsed.item.quantity = parsed.quantity;
+            const lineTotal = document.getElementById(`cartLineTotal${index}`);
+            if (lineTotal) lineTotal.textContent = formatCurrency(parsed.item.price * parsed.quantity);
+            const plusButton = document.getElementById(`cartQtyPlus${index}`);
+            if (plusButton) plusButton.disabled = parsed.quantity >= parsed.item.maxStock;
+            updateTotals();
+            return true;
+        }
+
+        function setCartQuantity(index, rawValue, input) {
+            const parsed = parseCartQuantity(index, rawValue);
+            if (!parsed.valid) {
+                showToast(parsed.message, 'warning');
+                input.value = cart[index]?.quantity ?? 1;
+                input.setCustomValidity('');
+                input.setAttribute('aria-invalid', 'false');
+                const error = document.getElementById(`cartQtyError${index}`);
+                if (error) error.textContent = '';
+                return false;
+            }
+
+            return previewCartQuantity(index, parsed.quantity, input);
+        }
+
+        function handleQuantityKey(event, index, input) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                if (setCartQuantity(index, input.value, input)) {
+                    document.getElementById('amountTendered').focus();
+                }
+            } else if (event.key === 'Escape') {
+                event.preventDefault();
+                input.value = cart[index]?.quantity ?? 1;
+                input.blur();
             }
         }
 
@@ -1099,8 +1236,11 @@
         function updateTotals() {
             const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
             const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
+            const vat = vatInclusiveBreakdown(subtotal);
 
             document.getElementById('subtotal').textContent = formatCurrency(subtotal);
+            document.getElementById('vatableSales').textContent = formatCurrency(vat.vatableSales);
+            document.getElementById('vatAmount').textContent = formatCurrency(vat.taxAmount);
             document.getElementById('totalItems').textContent = totalItems;
             document.getElementById('grandTotal').textContent = formatCurrency(subtotal);
 
@@ -1247,25 +1387,42 @@
 
                 if (response?.success) {
                     const result = response.data;
+                    const savedTotal = Number(result.total_amount) || total;
+                    const savedTendered = Number(result.amount_tendered ?? result.amount_paid ?? tendered) || savedTotal;
+                    const returnedChange = Number(result.change_amount ?? result.change);
+                    const savedChange = Number.isFinite(returnedChange)
+                        ? Math.max(0, returnedChange)
+                        : Math.max(0, savedTendered - savedTotal);
 
                     // Store last sale data
                     lastSaleData = {
                         transaction_id: result.transaction_id,
                         si_number: result.transaction_code || result.si_number,
-                        total: parseFloat(result.total_amount),
+                        total: savedTotal,
+                        subtotal: Number(result.subtotal) || savedTotal,
+                        vatable_sales: Number(result.vatable_sales) || Math.max(0, savedTotal - Number(result.tax_amount || 0)),
+                        tax_amount: Number(result.tax_amount) || 0,
+                        amount_tendered: savedTendered,
                         payment_method: currentPaymentMethod,
-                        change: parseFloat(result.change_amount) || 0
+                        change: savedChange,
+                        customer_name: saleData.customer_name,
+                        completed_at: new Date().toISOString(),
+                        items: cart.map(item => ({ ...item }))
                     };
 
                     // Show success modal
                     document.getElementById('successSINumber').textContent = lastSaleData.si_number;
                     document.getElementById('successTotal').textContent = formatCurrency(lastSaleData.total);
+                    document.getElementById('successVat').textContent = formatCurrency(lastSaleData.tax_amount);
                     document.getElementById('successPayment').textContent = getPaymentMethodLabel(currentPaymentMethod);
 
                     if (currentPaymentMethod === 'cash') {
+                        document.getElementById('successTenderedRow').classList.remove('hidden');
+                        document.getElementById('successTendered').textContent = formatCurrency(lastSaleData.amount_tendered);
                         document.getElementById('successChangeRow').classList.remove('hidden');
                         document.getElementById('successChange').textContent = formatCurrency(lastSaleData.change);
                     } else {
+                        document.getElementById('successTenderedRow').classList.add('hidden');
                         document.getElementById('successChangeRow').classList.add('hidden');
                     }
 
@@ -1341,10 +1498,58 @@
         }
 
         // Print receipt
-        function printReceipt() {
+        function localReceiptFallback() {
+            const user = typeof AuthService !== 'undefined' ? AuthService.getCurrentUser() : null;
+            return {
+                header: {
+                    company_name: 'Highland Fresh',
+                    address: 'Cagayan de Oro City',
+                    document_type: 'SALES INVOICE',
+                    si_number: lastSaleData.si_number
+                },
+                transaction: {
+                    transaction_code: lastSaleData.si_number,
+                    customer_name: lastSaleData.customer_name,
+                    payment_method: lastSaleData.payment_method
+                },
+                items: lastSaleData.items.map(item => ({
+                    product_name: item.name,
+                    variant: item.variant,
+                    quantity: item.quantity,
+                    unit_price: item.price,
+                    line_total: item.quantity * item.price
+                })),
+                payment: {
+                    subtotal: lastSaleData.subtotal,
+                    discount: 0,
+                    vatable_sales: lastSaleData.vatable_sales,
+                    tax_amount: lastSaleData.tax_amount,
+                    vat_rate: 12,
+                    vat_inclusive: true,
+                    total: lastSaleData.total,
+                    amount_tendered: lastSaleData.amount_tendered,
+                    change: lastSaleData.change,
+                    method: lastSaleData.payment_method
+                },
+                footer: {
+                    cashier: user ? `${user.first_name || ''} ${user.last_name || ''}`.trim() : '',
+                    date: lastSaleData.completed_at,
+                    message: 'Thank you for your purchase!'
+                }
+            };
+        }
+
+        async function printReceipt() {
             if (!lastSaleData) return;
-            showToast('Printing receipt...', 'info');
-            window.print();
+            showToast('Preparing thermal receipt...', 'info');
+            let receipt = null;
+            try {
+                const response = await POSService.printReceipt(lastSaleData.transaction_id);
+                receipt = response?.data || null;
+            } catch (error) {
+                console.error('Receipt lookup failed; using completed sale data:', error);
+            }
+            POSReceiptPrinter.printSalesReceipt(receipt || localReceiptFallback());
         }
 
         // New sale

@@ -93,14 +93,14 @@ try {
     $pendingBatches->execute();
     $batchStats = $pendingBatches->fetch();
     
-    // Expiry alerts (products expiring in next 3 days) - use multi-unit calculation
+    // Match the Cashier cutoff: products entering the seven-day QC window.
     $expiryAlerts = $db->prepare("
         SELECT COUNT(*) as count,
                COALESCE(SUM((COALESCE(fgi.boxes_available, 0) * COALESCE(p.pieces_per_box, 1)) + COALESCE(fgi.pieces_available, 0)), 0) as total_quantity
         FROM finished_goods_inventory fgi
         LEFT JOIN products p ON fgi.product_id = p.id
         WHERE fgi.status = 'available'
-          AND fgi.expiry_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 3 DAY)
+          AND fgi.expiry_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 7 DAY)
     ");
     $expiryAlerts->execute();
     $expiryStats = $expiryAlerts->fetch();

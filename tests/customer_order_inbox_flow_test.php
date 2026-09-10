@@ -49,6 +49,9 @@ $approved = ['customer_id' => 3, 'customer_po_number' => 'PO-1', 'delivery_date'
 $laterEdit = ['customer_id' => 3, 'customer_po_number' => 'PO-1', 'delivery_date' => '2026-08-27', 'lines' => [['row_number' => 1, 'line' => ['quantity' => 2]]]];
 inboxAssert(hfManualSnapshotMatches($approved, $approved), 'An approval must match the exact saved order.');
 inboxAssert(!hfManualSnapshotMatches($approved, $laterEdit), 'A later quantity change must require a new customer approval.');
+inboxAssert(!hfCustomerOrderRequiresGmApproval('cash', 0, 5000, 0), 'Cash orders must bypass GM approval.');
+inboxAssert(!hfCustomerOrderRequiresGmApproval('credit', 1000, 2000, 5000), 'Credit orders within the limit must bypass GM approval.');
+inboxAssert(hfCustomerOrderRequiresGmApproval('credit', 4000, 2000, 5000), 'Only a credit-limit exception must require GM approval.');
 
 $helperSource = file_get_contents(__DIR__ . '/../api/helpers/customer_order_import.php');
 $endpointSource = file_get_contents(__DIR__ . '/../api/sales/order_inbox.php');

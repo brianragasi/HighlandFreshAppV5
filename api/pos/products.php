@@ -12,6 +12,7 @@
  */
 
 require_once dirname(__DIR__) . '/bootstrap.php';
+require_once dirname(__DIR__) . '/helpers/sellable_expiry_policy.php';
 
 // Require Cashier or GM role
 $currentUser = Auth::requireRole(['cashier', 'general_manager']);
@@ -93,10 +94,17 @@ function formatMultiUnitDisplay($boxes, $pieces, $boxUnit = 'Box', $baseUnit = '
 
 /**
  * Sellable unit count for one product row (pieces/bottles).
- * Prefer multi-unit fields; fall back to quantity_available / remaining_quantity
- * (many FG rows only populate quantity_available).
+ * quantity_available is the authoritative sellable ledger. Pack columns are
+ * presentation mirrors and must never resurrect sold/disposed stock.
  */
 function posSellableUnits(array $p): int {
+    if (array_key_exists('stock_available', $p)) {
+        return max(0, (int)$p['stock_available']);
+    }
+    if (array_key_exists('quantity_available', $p)) {
+        return max(0, (int)$p['quantity_available']);
+    }
+
     $ppb = max(1, (int) ($p['pieces_per_box'] ?? 1));
     $boxes = (int) ($p['boxes_available'] ?? 0);
     $pieces = (int) ($p['pieces_available'] ?? 0);
@@ -104,49 +112,48 @@ function posSellableUnits(array $p): int {
     if ($fromMulti > 0) {
         return $fromMulti;
     }
-    return max(
-        0,
-        (int) ($p['stock_available'] ?? 0),
-        (int) ($p['quantity_available'] ?? 0),
-        (int) ($p['remaining_quantity'] ?? 0)
-    );
+    return max(0, (int) ($p['remaining_quantity'] ?? 0));
 }
 
 /**
  * Aggregated FG stock subquery for POS — one row per product_id (no card duplication).
- * Only sellable FG: status=available, not expired, active product, chiller not offline.
+ * Only sellable FG: status=available, more than seven days before expiry,
+ * active product, chiller not offline.
  */
 function posInventoryJoinSql(): string {
+    $sellableExpiry = hfSellableExpirySql('fgi.expiry_date');
     return "
         LEFT JOIN (
             SELECT
                 fgi.product_id,
-                SUM(
-                    GREATEST(
-                        COALESCE(fgi.quantity_available, 0),
-                        COALESCE(fgi.remaining_quantity, 0),
-                        (COALESCE(fgi.boxes_available, 0) * GREATEST(COALESCE(p2.pieces_per_box, 1), 1))
-                            + COALESCE(fgi.pieces_available, 0)
-                    )
-                ) AS total_available,
-                SUM(COALESCE(fgi.boxes_available, 0)) AS total_boxes,
-                SUM(COALESCE(fgi.pieces_available, 0)) AS total_pieces,
+                SUM(GREATEST(COALESCE(fgi.quantity_available, 0), 0)) AS total_available,
+                SUM(FLOOR(
+                    GREATEST(COALESCE(fgi.quantity_available, 0), 0)
+                    / GREATEST(COALESCE(p2.pieces_per_box, 1), 1)
+                )) AS total_boxes,
+                SUM(MOD(
+                    GREATEST(COALESCE(fgi.quantity_available, 0), 0),
+                    GREATEST(COALESCE(p2.pieces_per_box, 1), 1)
+                )) AS total_pieces,
                 MIN(fgi.expiry_date) AS earliest_expiry,
                 COUNT(*) AS batch_count
             FROM finished_goods_inventory fgi
             INNER JOIN products p2 ON p2.id = fgi.product_id AND p2.is_active = 1
             LEFT JOIN chiller_locations cl ON cl.id = fgi.chiller_id
             WHERE fgi.status = 'available'
-              AND fgi.expiry_date > CURDATE()
-              AND (
-                    COALESCE(fgi.quantity_available, 0) > 0
-                 OR COALESCE(fgi.remaining_quantity, 0) > 0
-                 OR COALESCE(fgi.boxes_available, 0) > 0
-                 OR COALESCE(fgi.pieces_available, 0) > 0
-              )
+              AND {$sellableExpiry}
+              AND COALESCE(fgi.quantity_available, 0) > 0
               AND (cl.id IS NULL OR (cl.is_active = 1 AND cl.status IN ('available', 'full')))
               -- Exclude pure freezer storage from walk-in POS (still sellable via Dispatch/Main FG)
               AND (cl.id IS NULL OR cl.chiller_code NOT LIKE 'FREEZE%')
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM disposals open_disposal
+                  WHERE open_disposal.source_type = 'finished_goods'
+                    AND open_disposal.source_id = fgi.id
+                    AND open_disposal.status IN ('pending', 'approved')
+                    AND COALESCE(open_disposal.notes, '') NOT LIKE 'Auto-created from delivery return.%'
+              )
             GROUP BY fgi.product_id
         ) inv ON inv.product_id = p.id
     ";
@@ -205,6 +212,10 @@ function enrichPosProducts(PDO $db, array &$products): void {
 // ========================================
 
 function handleGet($db, $action) {
+    $fgiSellableExpiry = hfSellableExpirySql('fgi.expiry_date');
+    $fgSellableExpiry = hfSellableExpirySql('fg.expiry_date');
+    $plainSellableExpiry = hfSellableExpirySql('expiry_date');
+
     switch ($action) {
         case 'list':
             // One card per sellable SKU (products.id) — inventory batches are aggregated
@@ -302,6 +313,7 @@ function handleGet($db, $action) {
                 FROM products p
                 {$invJoin}
                 WHERE p.is_active = 1
+                AND COALESCE(inv.total_available, 0) > 0
                 AND (
                     p.product_name LIKE ?
                     OR p.product_code LIKE ?
@@ -379,15 +391,27 @@ function handleGet($db, $action) {
             // Get inventory details
             $invStmt = $db->prepare("
                 SELECT 
-                    SUM(COALESCE(quantity_available, 0)) as total_available,
-                    SUM(COALESCE(boxes_available, 0)) as total_boxes,
-                    SUM(COALESCE(pieces_available, 0)) as total_pieces,
-                    MIN(expiry_date) as earliest_expiry,
+                    SUM(GREATEST(COALESCE(fgi.quantity_available, 0), 0)) as total_available,
+                    SUM(FLOOR(GREATEST(COALESCE(fgi.quantity_available, 0), 0) / GREATEST(COALESCE(p.pieces_per_box, 1), 1))) as total_boxes,
+                    SUM(MOD(GREATEST(COALESCE(fgi.quantity_available, 0), 0), GREATEST(COALESCE(p.pieces_per_box, 1), 1))) as total_pieces,
+                    MIN(fgi.expiry_date) as earliest_expiry,
                     COUNT(*) as batch_count
-                FROM finished_goods_inventory
-                WHERE product_id = ?
-                AND status = 'available'
-                AND expiry_date > CURDATE()
+                FROM finished_goods_inventory fgi
+                INNER JOIN products p ON p.id = fgi.product_id AND p.is_active = 1
+                LEFT JOIN chiller_locations cl ON cl.id = fgi.chiller_id
+                WHERE fgi.product_id = ?
+                AND fgi.status = 'available'
+                AND {$fgiSellableExpiry}
+                AND COALESCE(fgi.quantity_available, 0) > 0
+                AND (cl.id IS NULL OR (cl.is_active = 1 AND cl.status IN ('available', 'full')))
+                AND (cl.id IS NULL OR cl.chiller_code NOT LIKE 'FREEZE%')
+                AND NOT EXISTS (
+                    SELECT 1 FROM disposals open_disposal
+                    WHERE open_disposal.source_type = 'finished_goods'
+                      AND open_disposal.source_id = fgi.id
+                      AND open_disposal.status IN ('pending', 'approved')
+                      AND COALESCE(open_disposal.notes, '') NOT LIKE 'Auto-created from delivery return.%'
+                )
             ");
             $invStmt->execute([$product['id']]);
             $inventory = $invStmt->fetch();
@@ -408,6 +432,13 @@ function handleGet($db, $action) {
             $piecesPerBox = intval($product['pieces_per_box']) ?: 1;
             $product['total_pieces'] = ($product['boxes_available'] * $piecesPerBox) + $product['pieces_available'];
             $product['scanned_barcode'] = $barcode;
+
+            if ($product['total_pieces'] <= 0) {
+                Response::error(
+                    'This product has no POS-sellable stock. Batches with 7 days or less before expiry are handled by QC.',
+                    409
+                );
+            }
             
             Response::success($product, 'Product found');
             break;
@@ -454,8 +485,15 @@ function handleGet($db, $action) {
                 LEFT JOIN chiller_locations c ON fg.chiller_id = c.id
                 WHERE fg.product_id = ?
                 AND fg.status = 'available'
-                AND fg.expiry_date > CURDATE()
-                AND (fg.quantity_available > 0 OR fg.boxes_available > 0 OR fg.pieces_available > 0)
+                AND {$fgSellableExpiry}
+                AND fg.quantity_available > 0
+                AND NOT EXISTS (
+                    SELECT 1 FROM disposals open_disposal
+                    WHERE open_disposal.source_type = 'finished_goods'
+                      AND open_disposal.source_id = fg.id
+                      AND open_disposal.status IN ('pending', 'approved')
+                      AND COALESCE(open_disposal.notes, '') NOT LIKE 'Auto-created from delivery return.%'
+                )
                 ORDER BY fg.expiry_date ASC
             ");
             $batchesStmt->execute([$id]);
@@ -465,8 +503,13 @@ function handleGet($db, $action) {
             $totalBoxes = 0;
             $totalPieces = 0;
             foreach ($batches as &$b) {
-                $totalBoxes += intval($b['boxes_available']);
-                $totalPieces += intval($b['pieces_available']);
+                $baseQty = max(0, intval($b['quantity_available']));
+                $batchBoxes = intdiv($baseQty, max(1, intval($product['pieces_per_box'])));
+                $batchPieces = $baseQty % max(1, intval($product['pieces_per_box']));
+                $b['boxes_available'] = $batchBoxes;
+                $b['pieces_available'] = $batchPieces;
+                $totalBoxes += $batchBoxes;
+                $totalPieces += $batchPieces;
                 $b['display'] = formatMultiUnitDisplay(
                     intval($b['boxes_available']),
                     intval($b['pieces_available']),
@@ -504,7 +547,7 @@ function handleGet($db, $action) {
                     SELECT DISTINCT product_id
                     FROM finished_goods_inventory
                     WHERE status = 'available'
-                    AND expiry_date > CURDATE()
+                    AND {$plainSellableExpiry}
                     AND (quantity_available > 0 OR boxes_available > 0 OR pieces_available > 0)
                 ) inv ON p.id = inv.product_id
                 WHERE p.is_active = 1
@@ -543,7 +586,7 @@ function handleGet($db, $action) {
                         SUM(COALESCE(pieces_available, 0)) as total_pieces
                     FROM finished_goods_inventory
                     WHERE status = 'available'
-                    AND expiry_date > CURDATE()
+                    AND {$plainSellableExpiry}
                     GROUP BY product_id
                 ) inv ON p.id = inv.product_id
                 WHERE p.is_active = 1

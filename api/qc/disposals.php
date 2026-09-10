@@ -38,6 +38,7 @@ error_reporting(E_ALL);
 require_once dirname(__DIR__) . '/bootstrap.php';
 require_once dirname(__DIR__) . '/helpers/plain_text.php';
 require_once dirname(__DIR__) . '/helpers/finished_goods_disposal.php';
+require_once dirname(__DIR__) . '/warehouse/fg/inventory_helpers.php';
 
 // Require QC, GM/Admin, Finance, or Warehouse role
 $currentUser = Auth::requireRole(['qc_officer', 'general_manager', 'finance_officer', 'warehouse_raw', 'warehouse_fg']);
@@ -71,6 +72,39 @@ define('SOURCE_TYPES', [
     'production_batch' => 'Production Batch',
     'milk_receiving' => 'Milk Receiving'
 ]);
+
+/**
+ * Resolve an auto-created driver/delivery return disposal.
+ *
+ * These goods were deducted when the DR was picked. Completing their disposal is
+ * an approval/audit event only and must never deduct the source FG lot a second
+ * time. New records use a negative return ID; the notes check keeps old records
+ * safe as well.
+ */
+function resolveDeliveryReturnDisposal(PDO $db, array $disposal): ?array {
+    if (($disposal['source_type'] ?? '') !== 'finished_goods') {
+        return null;
+    }
+
+    $notes = (string)($disposal['notes'] ?? '');
+    $rawSourceId = (int)($disposal['source_id'] ?? 0);
+    $isMarkedReturn = $rawSourceId < 0
+        || str_starts_with($notes, 'Auto-created from delivery return.');
+    if (!$isMarkedReturn || $rawSourceId === 0) {
+        return null;
+    }
+
+    $stmt = $db->prepare("
+        SELECT dr.*, dri.inventory_id, dri.unit_price, dri.delivery_receipt_id
+        FROM delivery_returns dr
+        LEFT JOIN delivery_receipt_items dri ON dri.id = dr.dr_item_id
+        WHERE dr.id = ?
+        LIMIT 1
+    ");
+    $stmt->execute([abs($rawSourceId)]);
+    $return = $stmt->fetch(PDO::FETCH_ASSOC);
+    return $return ?: null;
+}
 
 try {
     $db = Database::getInstance()->getConnection();
@@ -293,6 +327,7 @@ function handleGetRequest($db, $currentUser) {
                       WHERE existing_disposal.source_type = 'finished_goods'
                         AND existing_disposal.source_id = fgi.id
                         AND existing_disposal.status IN ('pending', 'approved')
+                        AND COALESCE(existing_disposal.notes, '') NOT LIKE 'Auto-created from delivery return.%'
                   )
                 ORDER BY fgi.expiry_date ASC
                 LIMIT 100
@@ -527,6 +562,10 @@ function handlePostRequest($db, $currentUser) {
         WHERE source_type = ?
           AND source_id = ?
           AND status IN ('pending', 'approved')
+          AND NOT (
+              source_type = 'finished_goods'
+              AND COALESCE(notes, '') LIKE 'Auto-created from delivery return.%'
+          )
         ORDER BY id DESC
         LIMIT 1
     ");
@@ -771,8 +810,13 @@ function handlePutRequest($db, $currentUser) {
                     ]);
                 }
 
-                // Execute the disposal - deduct from inventory
-                executeDisposal($db, $disposal, $currentUser);
+                // Returned goods already left sellable FG during picking. Their
+                // physical disposal closes the audit record without a second stock
+                // deduction. Ordinary FG disposals still deduct here.
+                $deliveryReturn = resolveDeliveryReturnDisposal($db, $disposal);
+                if (!$deliveryReturn) {
+                    executeDisposal($db, $disposal, $currentUser);
+                }
                 
                 $stmt = $db->prepare("
                     UPDATE disposals SET
@@ -797,7 +841,9 @@ function handlePutRequest($db, $currentUser) {
                     ['status' => 'completed', 'disposed_by' => $currentUser['user_id']]
                 );
                 
-                $message = 'Disposal completed successfully. Inventory updated.';
+                $message = $deliveryReturn
+                    ? 'Returned goods disposal completed. Sellable stock was already removed at dispatch; no second deduction was made.'
+                    : 'Disposal completed successfully. Inventory updated.';
                 break;
                 
             default:
@@ -1116,11 +1162,7 @@ function executeDisposal($db, $disposal, $currentUser) {
             ]);
 
             if (!empty($source['chiller_id'])) {
-                $db->prepare("
-                    UPDATE chiller_locations
-                    SET current_count = GREATEST(0, current_count - ?)
-                    WHERE id = ?
-                ")->execute([$quantity, $source['chiller_id']]);
+                fgSyncChillerCount($db, (int)$source['chiller_id']);
             }
             
             // Create inventory transaction record

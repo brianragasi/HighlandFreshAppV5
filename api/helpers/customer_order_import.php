@@ -1,6 +1,7 @@
 <?php
 
 require_once __DIR__ . '/pack_uom.php';
+require_once __DIR__ . '/sellable_expiry_policy.php';
 
 function hfEnsureManualCustomerOrderSchema(PDO $db): void
 {
@@ -1425,6 +1426,7 @@ function hfImportedOrderAvailableStock(PDO $db, array $productIds): array
     if (!$productIds) {
         return [];
     }
+    $sellableExpiry = hfSellableExpirySql('expiry_date');
     $placeholders = implode(',', array_fill(0, count($productIds), '?'));
     $stmt = $db->prepare("
         SELECT p.id,
@@ -1438,7 +1440,7 @@ function hfImportedOrderAvailableStock(PDO $db, array $productIds): array
             FROM finished_goods_inventory
             WHERE product_id IN ($placeholders)
               AND status = 'available'
-              AND (expiry_date IS NULL OR expiry_date > CURDATE())
+              AND {$sellableExpiry}
             GROUP BY product_id
         ) stock ON stock.product_id = p.id
         LEFT JOIN (
@@ -2460,6 +2462,16 @@ function hfCustomerOrderLinePricing(array $line): array
     ];
 }
 
+function hfCustomerOrderRequiresGmApproval(
+    string $paymentType,
+    float $currentBalance,
+    float $orderTotal,
+    float $creditLimit
+): bool {
+    return $paymentType === 'credit'
+        && ($currentBalance + $orderTotal) > $creditLimit;
+}
+
 function hfConvertCustomerOrderImport(
     PDO $db,
     int $importId,
@@ -2642,20 +2654,6 @@ function hfConvertCustomerOrderImport(
             ? date('Y-m-d', strtotime('+' . $terms . ' days'))
             : null;
 
-        $orderInsert = $db->prepare("
-            INSERT INTO sales_orders (
-                order_number, customer_id, customer_name, customer_type,
-                customer_po_number, source_type, source_import_id,
-                payment_type, payment_terms_days, contact_person,
-                contact_number, delivery_address, delivery_date,
-                total_items, total_quantity, subtotal, total_amount,
-                balance_due, due_date, status, notes, created_by
-            ) VALUES (
-                ?, ?, ?, ?, ?, 'customer_po_email', ?, ?, ?, ?, ?, ?, ?,
-                ?, ?, ?, ?, ?, ?, 'pending', ?, ?
-            )
-        ");
-
         $subtotal = 0.0;
         $totalQty = 0;
         foreach ($lines as $line) {
@@ -2668,8 +2666,12 @@ function hfConvertCustomerOrderImport(
         }
         $creditLimit = (float) ($source['credit_limit'] ?? 0);
         $currentBalance = max(0, (float) ($source['outstanding_balance'] ?? $source['current_balance'] ?? 0));
-        $creditExceeded = $paymentType === 'credit'
-            && ($currentBalance + $subtotal) > $creditLimit;
+        $creditExceeded = hfCustomerOrderRequiresGmApproval(
+            $paymentType,
+            $currentBalance,
+            $subtotal,
+            $creditLimit
+        );
         if ($creditExceeded && !$acceptWarnings) {
             throw new RuntimeException('This order exceeds the customer credit limit. Review and accept the warning first.');
         }
@@ -2680,6 +2682,23 @@ function hfConvertCustomerOrderImport(
         if (mb_strlen($creditOverrideReason) > 500) {
             throw new RuntimeException('The credit review reason must be 500 characters or fewer.');
         }
+        $orderStatus = $creditExceeded ? 'pending' : 'approved';
+        $approvedBy = $creditExceeded ? null : $userId;
+        $approvedAt = $creditExceeded ? null : date('Y-m-d H:i:s');
+        $orderInsert = $db->prepare("
+            INSERT INTO sales_orders (
+                order_number, customer_id, customer_name, customer_type,
+                customer_po_number, source_type, source_import_id,
+                payment_type, payment_terms_days, contact_person,
+                contact_number, delivery_address, delivery_date,
+                total_items, total_quantity, subtotal, total_amount,
+                balance_due, due_date, status, approved_by, approved_at,
+                notes, created_by
+            ) VALUES (
+                ?, ?, ?, ?, ?, 'customer_po_email', ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            )
+        ");
         $notes = 'Entered from customer email by Highland Fresh. Original attachment retained. Source PO: ' . $source['customer_po_number'];
         if ($creditExceeded) {
             $notes .= sprintf(
@@ -2744,6 +2763,9 @@ function hfConvertCustomerOrderImport(
             $subtotal,
             $subtotal,
             $dueDate,
+            $orderStatus,
+            $approvedBy,
+            $approvedAt,
             $notes,
             $userId,
         ]);
@@ -2788,11 +2810,14 @@ function hfConvertCustomerOrderImport(
 
         $historyStmt = $db->prepare("
             INSERT INTO sales_order_status_history (order_id, status, notes, changed_by)
-            VALUES (?, 'pending', ?, ?)
+            VALUES (?, ?, ?, ?)
         ");
         $historyStmt->execute([
             $orderId,
-            'Verified customer PO created by Sales and sent for General Manager approval.',
+            $orderStatus,
+            $creditExceeded
+                ? 'Verified customer PO created by Sales and sent for General Manager credit-exception approval.'
+                : 'Verified customer PO released by Sales directly to Warehouse Finished Goods.',
             $userId,
         ]);
 
@@ -2809,13 +2834,16 @@ function hfConvertCustomerOrderImport(
                 'source_import_id' => $importId,
                 'customer_po_number' => $source['customer_po_number'],
                 'order_number' => $orderNumber,
+                'status' => $orderStatus,
+                'gm_approval_required' => $creditExceeded,
             ]);
         }
 
         return [
             'order_id' => $orderId,
             'order_number' => $orderNumber,
-            'status' => 'pending',
+            'status' => $orderStatus,
+            'approval_required' => $creditExceeded,
             'stock_warnings' => $stockWarnings,
         ];
     } catch (Throwable $e) {

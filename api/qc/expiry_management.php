@@ -43,6 +43,7 @@ error_reporting(E_ALL);
 
 require_once dirname(__DIR__) . '/bootstrap.php';
 require_once dirname(__DIR__) . '/helpers/plain_text.php';
+require_once dirname(__DIR__) . '/warehouse/fg/inventory_helpers.php';
 
 // Require QC or Production role
 $currentUser = Auth::requireRole(['qc_officer', 'general_manager', 'production_staff']);
@@ -495,15 +496,11 @@ try {
                     ");
                     $updateStmt->execute([$quantity, $quantity, $inventoryId]);
                 } else {
-                    $updateStmt = $db->prepare("
-                        UPDATE finished_goods_inventory
-                        SET quantity_available = GREATEST(0, quantity_available - ?),
-                            remaining_quantity = GREATEST(0, COALESCE(remaining_quantity, 0) - ?),
-                            boxes_available = GREATEST(0, COALESCE(boxes_available, 0) - CEIL(? / COALESCE(NULLIF((SELECT pieces_per_box FROM products WHERE id = product_id LIMIT 1), 0), 1))),
-                            status = CASE WHEN GREATEST(0, quantity_available - ?) <= 0 THEN 'transformed' ELSE status END
-                        WHERE id = ?
-                    ");
-                    $updateStmt->execute([$quantity, $quantity, $quantity, $quantity, $inventoryId]);
+                    $deduction = fgInventoryDeductBaseUnits($db, (int)$inventoryId, (int)$quantity);
+                    if ((int)$deduction['after_base'] === 0) {
+                        $db->prepare("UPDATE finished_goods_inventory SET status = 'transformed' WHERE id = ?")
+                           ->execute([(int)$inventoryId]);
+                    }
                 }
 
                 $productionRunId = null;
@@ -703,13 +700,16 @@ try {
                     try {
                         // Restore inventory if possible
                         if ($transformation['status'] === 'pending') {
-                            $restoreStmt = $db->prepare("
-                                UPDATE finished_goods_inventory
-                                SET quantity_available = quantity_available + ?,
-                                    status = 'available'
-                                WHERE id = ?
-                            ");
-                            $restoreStmt->execute([$transformation['source_quantity'], $transformation['source_inventory_id']]);
+                            $restock = fgInventoryRestockBaseUnits(
+                                $db,
+                                (int)$transformation['source_inventory_id'],
+                                (int)$transformation['source_quantity']
+                            );
+                            $db->prepare("UPDATE finished_goods_inventory SET status = 'available' WHERE id = ?")
+                               ->execute([(int)$transformation['source_inventory_id']]);
+                            if (!empty($restock['chiller_id'])) {
+                                fgSyncChillerCount($db, (int)$restock['chiller_id']);
+                            }
                         }
 
                         $updateStmt = $db->prepare("

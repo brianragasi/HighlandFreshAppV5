@@ -625,6 +625,11 @@ function markNoReturnsAndReconcile(PDO $db, array $data, array $currentUser) {
 
 /**
  * Create disposal (spoilage) record — stock already left FG at pick time, so we only log.
+ *
+ * Delivery-return IDs share the same integer range as FG inventory IDs. Store them
+ * as negative IDs so an open return disposal can never be mistaken for/quarantine
+ * an unrelated inventory row with the same positive ID. Older positive records are
+ * still recognized by the QC disposal handler through their audit-note marker.
  */
 function createDisposalFromReturn(
     PDO $db,
@@ -693,7 +698,7 @@ function createDisposalFromReturn(
 
     $dispStmt->execute([
         $disposalCode,
-        $returnId,
+        -abs((int)$returnId),
         $batchRef,
         $productId,
         $product['product_name'] ?? 'Unknown Product',

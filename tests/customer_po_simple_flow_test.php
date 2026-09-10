@@ -12,7 +12,9 @@ if ($page === false || $api === false) {
 $checks = [
     'The normal review exposes one primary workflow action' =>
         str_contains($page, 'id="primaryReviewButton"')
-        && str_contains($page, 'Submit for GM Approval')
+        && str_contains($page, '<span>Release Order</span>')
+        && str_contains($page, 'Send Credit Exception to GM')
+        && !str_contains($page, 'Submit for GM Approval')
         && !str_contains($page, 'id="saveDetailsButton"')
         && !str_contains($page, 'id="createOrderButton"'),
     'Customer confirmation is contextual rather than a permanent action' =>
@@ -45,6 +47,10 @@ $checks = [
         && str_contains($page, "approved: 'sales_approved'")
         && str_contains($page, "rejected: 'rejected'")
         && str_contains($page, "fulfilled: 'sales_completed'"),
+    'Only a credit exception is sent to GM' =>
+        str_contains($api, "!empty(\$order['approval_required'])")
+        && str_contains($api, 'General Manager credit-exception approval')
+        && str_contains($api, 'Sales Order released to Warehouse Finished Goods.'),
 ];
 
 foreach ($checks as $label => $passed) {

@@ -93,44 +93,84 @@ function getFinanceNotifications($db) {
     Response::success($stmt->fetchAll(), 'Finance notifications retrieved');
 }
 
+function financeDashboardPayableTotalExpression(string $poAlias = 'po'): string {
+    return "(SELECT COALESCE(SUM(
+        (CASE
+            WHEN {$poAlias}.status = 'partial_received' THEN IFNULL(poi.quantity_received, 0)
+            WHEN IFNULL(poi.quantity_received, 0) > 0 THEN poi.quantity_received
+            ELSE GREATEST(poi.quantity - IFNULL(poi.quantity_rejected, 0), 0)
+        END) * poi.unit_price
+    ), 0) FROM purchase_order_items poi WHERE poi.po_id = {$poAlias}.id)";
+}
+
+function financeDashboardPayableBalanceExpression(string $poAlias = 'po'): string {
+    return 'GREATEST(' . financeDashboardPayableTotalExpression($poAlias)
+        . " - COALESCE({$poAlias}.amount_paid, 0), 0)";
+}
+
+function financeDashboardDueDateExpression(string $poAlias = 'po'): string {
+    return "CASE
+        WHEN {$poAlias}.payment_terms = 'cash' THEN (
+            SELECT DATE(COALESCE(rr_due.verified_at, rr_due.received_at))
+            FROM receiving_reports rr_due
+            WHERE rr_due.po_id = {$poAlias}.id
+              AND rr_due.status IN ('verified', 'completed')
+            ORDER BY rr_due.received_at DESC, rr_due.id DESC
+            LIMIT 1
+        )
+        ELSE {$poAlias}.due_date
+    END";
+}
+
 function getDashboardStats($db) {
     $stats = [];
+    $payableBalance = financeDashboardPayableBalanceExpression('po');
+    $dueDate = financeDashboardDueDateExpression('po');
     
     // === PAYABLES (What company owes) ===
     
-    // Total unpaid supplier POs
+    // Count only approved, received supplier liabilities using accepted quantity
+    // and the remaining balance—the same definition used by Supplier Payables.
     $stmt = $db->query("
-        SELECT 
-            COUNT(*) as count,
-            COALESCE(SUM(total_amount), 0) as total
-        FROM purchase_orders 
-        WHERE payment_status IN ('unpaid', 'partial')
-        AND status != 'cancelled'
+        SELECT COUNT(*) AS count, COALESCE(SUM(balance_due), 0) AS total
+        FROM (
+            SELECT {$payableBalance} AS balance_due
+            FROM purchase_orders po
+            WHERE po.payment_status IN ('unpaid', 'partial')
+              AND po.status IN ('received', 'partial_received', 'closed')
+              AND po.approved_by IS NOT NULL
+              AND po.approved_at IS NOT NULL
+        ) canonical_payables
+        WHERE balance_due > 0
     ");
     $unpaidPOs = $stmt->fetch();
     $stats['unpaid_pos_count'] = (int) $unpaidPOs['count'];
     $stats['unpaid_pos_amount'] = (float) $unpaidPOs['total'];
     
-    // Overdue POs (received but not paid, past expected delivery + 30 days)
+    // Overdue means the contractual/COD due date passed and a canonical balance remains.
     $stmt = $db->query("
-        SELECT COUNT(*) as count, COALESCE(SUM(total_amount), 0) as total
-        FROM purchase_orders 
-        WHERE payment_status IN ('unpaid', 'partial')
-        AND status IN ('received', 'partial_received', 'closed')
-        AND expected_delivery < DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+        SELECT COUNT(*) AS count, COALESCE(SUM(balance_due), 0) AS total
+        FROM (
+            SELECT {$payableBalance} AS balance_due, {$dueDate} AS effective_due_date
+            FROM purchase_orders po
+            WHERE po.payment_status IN ('unpaid', 'partial')
+              AND po.status IN ('received', 'partial_received', 'closed')
+              AND po.approved_by IS NOT NULL
+              AND po.approved_at IS NOT NULL
+        ) canonical_overdue
+        WHERE balance_due > 0 AND effective_due_date < CURDATE()
     ");
     $overdue = $stmt->fetch();
     $stats['overdue_payables_count'] = (int) $overdue['count'];
     $stats['overdue_payables_amount'] = (float) $overdue['total'];
     
-    // Monthly disbursements (POs paid this month)
+    // Supplier disbursements come from released payment ledger rows—not PO flags.
     $stmt = $db->query("
-        SELECT COALESCE(SUM(total_amount), 0) as total
-        FROM purchase_orders 
-        WHERE payment_status = 'paid'
-        AND status != 'cancelled'
-        AND YEAR(updated_at) = YEAR(CURDATE()) 
-        AND MONTH(updated_at) = MONTH(CURDATE())
+        SELECT COALESCE(SUM(amount_paid), 0) AS total
+        FROM po_payments
+        WHERE confirmed_release = 1
+          AND YEAR(payment_date) = YEAR(CURDATE())
+          AND MONTH(payment_date) = MONTH(CURDATE())
     ");
     $stats['monthly_disbursements'] = (float) $stmt->fetch()['total'];
 
@@ -142,6 +182,21 @@ function getDashboardStats($db) {
         AND status = 'released'
     ");
     $stats['monthly_disbursements'] += (float) $stmt->fetch()['total'];
+
+    // Keep pre-control records visible for reconciliation without treating them
+    // as proof-backed disbursements or silently rewriting financial history.
+    $stmt = $db->query("
+        SELECT
+            (SELECT COUNT(*) FROM po_payments
+             WHERE confirmed_release <> 1 OR invoice_date IS NULL OR invoice_total IS NULL
+                OR invoice_path IS NULL OR proof_path IS NULL) AS incomplete_payment_records,
+            (SELECT COUNT(*) FROM purchase_orders po
+             WHERE po.payment_status = 'paid'
+               AND NOT EXISTS (SELECT 1 FROM po_payments pp WHERE pp.po_id = po.id)) AS paid_without_ledger
+    ");
+    $legacy = $stmt->fetch();
+    $stats['legacy_payment_records'] = (int) ($legacy['incomplete_payment_records'] ?? 0)
+        + (int) ($legacy['paid_without_ledger'] ?? 0);
     
     // === COLLECTIONS (What company is owed - read-only from Cashier) ===
     
@@ -211,23 +266,27 @@ function getDashboardStats($db) {
 }
 
 function getPayablesSummary($db) {
-    // Get all unpaid/partial POs grouped by supplier
+    $payableBalance = financeDashboardPayableBalanceExpression('po');
     $stmt = $db->query("
-        SELECT 
-            s.id as supplier_id,
-            s.supplier_name,
-            s.supplier_code,
-            s.payment_terms,
-            COUNT(po.id) as po_count,
-            COALESCE(SUM(po.total_amount), 0) as total_amount,
-            MIN(po.order_date) as oldest_po_date,
-            MAX(po.order_date) as latest_po_date,
-            GROUP_CONCAT(po.po_number ORDER BY po.order_date SEPARATOR ', ') as po_numbers
-        FROM purchase_orders po
-        JOIN suppliers s ON po.supplier_id = s.id
-        WHERE po.payment_status IN ('unpaid', 'partial')
-        AND po.status != 'cancelled'
-        GROUP BY s.id, s.supplier_name, s.supplier_code, s.payment_terms
+        SELECT supplier_id, supplier_name, supplier_code, payment_terms,
+               COUNT(po_id) AS po_count,
+               COALESCE(SUM(balance_due), 0) AS total_amount,
+               MIN(order_date) AS oldest_po_date,
+               MAX(order_date) AS latest_po_date,
+               GROUP_CONCAT(po_number ORDER BY order_date SEPARATOR ', ') AS po_numbers
+        FROM (
+            SELECT po.id AS po_id, po.po_number, po.order_date,
+                   s.id AS supplier_id, s.supplier_name, s.supplier_code, s.payment_terms,
+                   {$payableBalance} AS balance_due
+            FROM purchase_orders po
+            JOIN suppliers s ON po.supplier_id = s.id
+            WHERE po.payment_status IN ('unpaid', 'partial')
+              AND po.status IN ('received', 'partial_received', 'closed')
+              AND po.approved_by IS NOT NULL
+              AND po.approved_at IS NOT NULL
+        ) canonical_supplier_payables
+        WHERE balance_due > 0
+        GROUP BY supplier_id, supplier_name, supplier_code, payment_terms
         ORDER BY total_amount DESC
     ");
     $payables = $stmt->fetchAll();
@@ -301,20 +360,20 @@ function getRecentDisbursements($db) {
         SELECT *
         FROM (
             SELECT
-                po.id,
+                pp.id,
                 po.po_number,
                 po.order_date,
-                po.total_amount,
-                po.payment_status,
+                pp.amount_paid AS total_amount,
+                CASE WHEN pp.confirmed_release = 1 THEN 'paid' ELSE 'unpaid' END AS payment_status,
                 po.status,
-                po.updated_at as payment_date,
+                pp.payment_date,
                 s.supplier_name,
                 s.supplier_code,
                 'supplier_payment' as transaction_type
-            FROM purchase_orders po
+            FROM po_payments pp
+            JOIN purchase_orders po ON po.id = pp.po_id
             JOIN suppliers s ON po.supplier_id = s.id
-            WHERE po.payment_status = 'paid'
-            AND po.status != 'cancelled'
+            WHERE pp.confirmed_release = 1
 
             UNION ALL
 

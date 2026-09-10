@@ -193,6 +193,10 @@
             color: #047857;
         }
 
+        .document-line.is-present {
+            color: #475569;
+        }
+
         .document-line.is-missing {
             color: #b45309;
         }
@@ -511,8 +515,8 @@
                 </div>
 
                 <div class="border border-base-300 rounded-xl p-4 mb-4">
-                    <div class="font-semibold mb-1">Supplier invoice</div>
-                    <div class="text-xs text-base-content/60 mb-3">The invoice number comes from receiving. Finance supplies the date, total, and actual invoice file.</div>
+                    <div class="font-semibold mb-1" id="payInvoiceSectionTitle">Supplier invoice</div>
+                    <div class="text-xs text-base-content/60 mb-3" id="payInvoiceSectionHint">The invoice number comes from receiving. Finance supplies the date, total, and actual invoice file.</div>
                     <div class="grid md:grid-cols-3 gap-3">
                         <div class="form-control">
                             <label class="label"><span class="label-text">Invoice Number</span></label>
@@ -528,7 +532,7 @@
                         </div>
                     </div>
                     <div class="form-control mt-3">
-                        <label class="label"><span class="label-text">Supplier Invoice File</span></label>
+                        <label class="label"><span class="label-text" id="payInvoiceFileLabel">Supplier Invoice File</span></label>
                         <input type="file" id="payInvoiceFile" class="file-input file-input-bordered w-full" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png">
                         <div id="payInvoiceFileHint" class="text-xs text-base-content/60 mt-1">PDF, JPG, or PNG; maximum 5 MB.</div>
                     </div>
@@ -573,6 +577,35 @@
                     <button type="submit" class="btn btn-primary" id="paySubmitBtn">
                         <i class="fas fa-check mr-1"></i> Confirm Payment
                     </button>
+                </div>
+            </form>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+
+    <!-- Missing supplier invoice recovery -->
+    <dialog id="invoiceRecoveryModal" class="modal">
+        <div class="modal-box max-w-lg">
+            <h3 class="font-bold text-lg"><i class="fas fa-file-circle-plus text-primary mr-2"></i>Complete Supplier Invoice</h3>
+            <p class="text-sm text-base-content/70 mt-1 mb-4">Use this only when the supplier invoice arrived after Warehouse recorded the delivery. The original Receiving Report remains unchanged except for its previously blank invoice number.</p>
+            <form id="invoiceRecoveryForm">
+                <input type="hidden" id="invoiceRecoveryPoId">
+                <div class="form-control mb-3">
+                    <label class="label"><span class="label-text">Verified Receiving Report</span></label>
+                    <select id="invoiceRecoveryRrId" class="select select-bordered w-full" required></select>
+                </div>
+                <div class="form-control mb-3">
+                    <label class="label"><span class="label-text">Supplier Invoice Number</span></label>
+                    <input id="invoiceRecoveryNumber" class="input input-bordered w-full" minlength="2" maxlength="100" required placeholder="Exactly as printed on the invoice">
+                </div>
+                <div class="form-control">
+                    <label class="label"><span class="label-text">Why was it added after receiving?</span></label>
+                    <textarea id="invoiceRecoveryExplanation" class="textarea textarea-bordered w-full" minlength="5" maxlength="500" required placeholder="Example: Supplier delivered the invoice after the goods were received."></textarea>
+                    <span class="text-xs text-base-content/60 mt-1">The invoice number, reason, user, date, PO, and RR are written to the audit trail.</span>
+                </div>
+                <div class="modal-action">
+                    <button type="button" class="btn btn-ghost" onclick="document.getElementById('invoiceRecoveryModal').close()">Cancel</button>
+                    <button type="submit" id="invoiceRecoverySubmit" class="btn btn-primary"><i class="fas fa-floppy-disk"></i> Save invoice number</button>
                 </div>
             </form>
         </div>
@@ -704,6 +737,7 @@
                     po.payable_total = payableTotal;
                     po.amount_paid = amountPaid;
                     po.balance_due = balanceDue;
+                    po.rr_missing_invoice_count = parseInt(po.rr_missing_invoice_count || 0, 10);
                     payablesIndex[po.id] = po;
                 });
 
@@ -737,8 +771,11 @@
                     const overdueClass = po.is_overdue == 1 ? 'row-overdue' : '';
                     const rrCount = parseInt(po.rr_count || 0, 10);
                     const rrReadyCount = parseInt(po.rr_ready_count || 0, 10);
+                    const rrVerifiedCount = parseInt(po.rr_verified_count || 0, 10);
+                    const rrInvoiceCount = parseInt(po.rr_invoice_count || 0, 10);
                     const allReceiptsReady = rrCount > 0 && rrReadyCount === rrCount;
-                    const rrVerified = ['verified', 'completed'].includes(String(po.rr_status || '').toLowerCase());
+                    const allReceiptsVerified = rrCount > 0 && rrVerifiedCount === rrCount;
+                    const allInvoicesRecorded = rrCount > 0 && rrInvoiceCount === rrCount;
                     const canPay = po.balance_due > 0 && po.payment_status !== 'cancelled' && allReceiptsReady;
                     const isPaid = po.payment_status === 'paid' || po.balance_due <= 0;
                     let readinessTitle = 'Ready to pay';
@@ -752,16 +789,16 @@
                         readinessIcon = 'clock';
                         readinessColor = 'text-amber-700';
                         blockedText = 'Warehouse Raw must complete receiving first.';
-                    } else if (rrReadyCount < rrCount && !po.invoice_number) {
+                    } else if (!allInvoicesRecorded) {
                         readinessTitle = 'Waiting for supplier invoice';
                         readinessIcon = 'file-circle-exclamation';
                         readinessColor = 'text-amber-700';
-                        blockedText = 'Add the supplier invoice before payment.';
-                    } else if (!allReceiptsReady || !rrVerified) {
-                        readinessTitle = 'Waiting for Purchaser verification';
+                        blockedText = `${rrInvoiceCount} of ${rrCount} Receiving Report invoice numbers recorded.`;
+                    } else if (!allReceiptsVerified) {
+                        readinessTitle = 'Waiting for Purchaser to verify RR';
                         readinessIcon = 'user-check';
                         readinessColor = 'text-amber-700';
-                        blockedText = 'Every receiving report must be verified and have an invoice number.';
+                        blockedText = `${rrVerifiedCount} of ${rrCount} Receiving Reports verified by Purchasing.`;
                     }
                     return `
                         <tr class="payable-row ${overdueClass}">
@@ -790,11 +827,14 @@
                             <td>
                                 <div class="readiness-stack">
                                     <span class="readiness-title ${readinessColor}"><i class="fas fa-${readinessIcon}"></i>${readinessTitle}</span>
-                                    <span class="document-line ${po.rr_number ? 'is-ready' : 'is-missing'}">
-                                        <i class="fas fa-${po.rr_number ? 'check' : 'minus'}"></i> RR: ${escapeHtml(po.rr_number || 'Missing')}
+                                    <span class="document-line ${po.rr_number ? 'is-present' : 'is-missing'}">
+                                        <i class="fas fa-${po.rr_number ? 'file-lines' : 'minus'}"></i> RR recorded: ${escapeHtml(po.rr_number || 'Missing')}${rrCount > 1 ? ` (+${rrCount - 1} more)` : ''}
                                     </span>
-                                    <span class="document-line ${po.invoice_number ? 'is-ready' : 'is-missing'}">
-                                        <i class="fas fa-${po.invoice_number ? 'check' : 'minus'}"></i> Invoice: ${escapeHtml(po.invoice_number || 'Missing')}
+                                    <span class="document-line ${allReceiptsVerified ? 'is-ready' : 'is-missing'}">
+                                        <i class="fas fa-${allReceiptsVerified ? 'circle-check' : 'clock'}"></i> Purchaser verification: ${allReceiptsVerified ? 'Verified' : `${rrVerifiedCount}/${rrCount} verified`}
+                                    </span>
+                                    <span class="document-line ${allInvoicesRecorded ? 'is-ready' : 'is-missing'}">
+                                        <i class="fas fa-${allInvoicesRecorded ? 'file-circle-check' : 'file-circle-exclamation'}"></i> Invoice recorded: ${escapeHtml(po.invoice_number || 'Missing')}${rrCount > 1 ? ` (${rrInvoiceCount}/${rrCount})` : ''}
                                     </span>
                                 </div>
                             </td>
@@ -806,6 +846,9 @@
                                     ${canPay ? `<button class="btn btn-primary btn-sm" onclick="openPaymentModal(${po.id})">
                                         <i class="fas fa-money-bill-wave"></i> Pay
                                     </button>` : blockedText ? `<span class="blocked-action">${blockedText}</span>` : ''}
+                                    ${po.rr_missing_invoice_count > 0 ? `<button class="btn btn-outline btn-xs" onclick="openInvoiceRecovery(${po.id})">
+                                        <i class="fas fa-file-circle-plus"></i> Add missing invoice
+                                    </button>` : ''}
                                 </div>
                             </td>
                         </tr>
@@ -894,6 +937,12 @@
                 const invoiceNumbers = [...new Set((detail.receiving_reports || []).map(report => report.invoice_number).filter(Boolean))];
                 document.getElementById('payInvoiceNumber').value = invoiceNumbers.join(', ');
                 document.getElementById('payInvoiceTotal').value = detail.payable_total.toFixed(2);
+                const hasMultipleInvoices = invoiceNumbers.length > 1;
+                document.getElementById('payInvoiceSectionTitle').textContent = hasMultipleInvoices ? 'Supplier invoice packet' : 'Supplier invoice';
+                document.getElementById('payInvoiceSectionHint').textContent = hasMultipleInvoices
+                    ? `${invoiceNumbers.length} supplier invoice numbers cover this PO. Upload one PDF containing every invoice page, in the same order shown in the Receiving Report comparison.`
+                    : 'The invoice number comes from receiving. Finance supplies the date, total, and actual invoice file.';
+                document.getElementById('payInvoiceFileLabel').textContent = hasMultipleInvoices ? 'Combined Supplier Invoice PDF' : 'Supplier Invoice File';
 
                 const evidence = detail.invoice_evidence;
                 const invoiceFile = document.getElementById('payInvoiceFile');
@@ -918,19 +967,25 @@
         function renderPaymentComparison(po) {
             const reports = po.receiving_reports || [];
             const items = po.items || [];
-            const allReportsReady = reports.length > 0 && reports.every(report => ['verified', 'completed'].includes(String(report.status || '').toLowerCase()) && report.invoice_number);
+            const verifiedReportCount = reports.filter(report => ['verified', 'completed'].includes(String(report.status || '').toLowerCase())).length;
+            const allReportsVerified = reports.length > 0 && verifiedReportCount === reports.length;
+            const invoiceReportCount = reports.filter(report => String(report.invoice_number || '').trim()).length;
+            const allInvoicesRecorded = reports.length > 0 && invoiceReportCount === reports.length;
+            const invoiceNumbers = [...new Set(reports.map(report => String(report.invoice_number || '').trim()).filter(Boolean))];
             document.getElementById('paymentDocumentReview').innerHTML = `
-                <div class="grid sm:grid-cols-3 gap-2 mb-3">
+                ${invoiceNumbers.length > 1 ? `<div class="alert alert-warning py-2 mb-3 text-xs"><i class="fas fa-layer-group"></i><span>This PO has ${invoiceNumbers.length} supplier invoices. Compare every invoice below and upload them together as one PDF packet.</span></div>` : ''}
+                <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-2 mb-3">
                     <div class="rounded-lg bg-base-200 p-3"><span class="text-xs text-base-content/60">Approved PO</span><div class="font-semibold text-success"><i class="fas fa-check-circle mr-1"></i>${escapeHtml(po.po_number)}</div></div>
-                    <div class="rounded-lg bg-base-200 p-3"><span class="text-xs text-base-content/60">Receiving Reports</span><div class="font-semibold ${allReportsReady ? 'text-success' : 'text-error'}"><i class="fas fa-${allReportsReady ? 'check-circle' : 'circle-exclamation'} mr-1"></i>${reports.length} report${reports.length === 1 ? '' : 's'} checked</div></div>
-                    <div class="rounded-lg bg-base-200 p-3"><span class="text-xs text-base-content/60">Supplier Invoices</span><div class="font-semibold ${allReportsReady ? 'text-success' : 'text-error'}"><i class="fas fa-${allReportsReady ? 'check-circle' : 'circle-exclamation'} mr-1"></i>${reports.filter(report => report.invoice_number).length} invoice number${reports.length === 1 ? '' : 's'}</div></div>
+                    <div class="rounded-lg bg-base-200 p-3"><span class="text-xs text-base-content/60">Receiving Reports</span><div class="font-semibold"><i class="fas fa-file-lines mr-1"></i>${reports.length} recorded</div></div>
+                    <div class="rounded-lg bg-base-200 p-3"><span class="text-xs text-base-content/60">Purchaser Verification</span><div class="font-semibold ${allReportsVerified ? 'text-success' : 'text-warning'}"><i class="fas fa-${allReportsVerified ? 'check-circle' : 'clock'} mr-1"></i>${verifiedReportCount}/${reports.length} verified</div></div>
+                    <div class="rounded-lg bg-base-200 p-3"><span class="text-xs text-base-content/60">Supplier Invoices</span><div class="font-semibold ${allInvoicesRecorded ? 'text-success' : 'text-warning'}"><i class="fas fa-${allInvoicesRecorded ? 'check-circle' : 'circle-exclamation'} mr-1"></i>${invoiceReportCount}/${reports.length} recorded</div></div>
                 </div>
                 <div class="grid sm:grid-cols-2 gap-2 mb-3">${reports.map(report => `
                     <div class="border border-base-300 rounded-lg p-2 text-xs">
                         <div class="font-semibold">${escapeHtml(report.rr_number || 'Receiving Report')}</div>
                         <div>Invoice: ${escapeHtml(report.invoice_number || 'Missing')}</div>
-                        <div>Status: ${escapeHtml(FinanceService.formatStatus(report.status || '-'))}</div>
-                        <div>Verified: ${formatDateTime(report.verified_at || report.received_at)}</div>
+                        <div>Received: ${formatDateTime(report.received_at)}</div>
+                        <div class="${['verified', 'completed'].includes(String(report.status || '').toLowerCase()) ? 'text-success' : 'text-warning'}">Purchaser verification: ${report.verified_at ? `Verified ${formatDateTime(report.verified_at)}` : 'Pending'}</div>
                     </div>`).join('')}</div>
                 <div class="overflow-x-auto">
                     <table class="table table-xs">
@@ -956,6 +1011,61 @@
                 : `../warehouse/raw/print_receiving_report.html?po_id=${encodeURIComponent(currentPayable.id)}&v=${documentVersion}`;
             window.open(path, '_blank', 'noopener');
         }
+
+        async function openInvoiceRecovery(poId) {
+            const modal = document.getElementById('invoiceRecoveryModal');
+            const select = document.getElementById('invoiceRecoveryRrId');
+            document.getElementById('invoiceRecoveryPoId').value = poId;
+            document.getElementById('invoiceRecoveryNumber').value = '';
+            document.getElementById('invoiceRecoveryExplanation').value = '';
+            select.innerHTML = '<option value="">Loading verified reports...</option>';
+            modal.showModal();
+            try {
+                const response = await FinanceService.getPayableDetail(poId);
+                const missingReports = (response?.data?.receiving_reports || []).filter(report =>
+                    ['verified', 'completed'].includes(String(report.status || '').toLowerCase())
+                    && !String(report.invoice_number || '').trim()
+                );
+                if (!missingReports.length) {
+                    modal.close();
+                    showToast('No verified Receiving Report has a missing invoice number. Refreshing the queue.', 'info');
+                    await Promise.all([loadPayablesOverview(), loadPayables()]);
+                    return;
+                }
+                select.innerHTML = missingReports.map(report =>
+                    `<option value="${Number(report.id)}">${escapeHtml(report.rr_number || `RR #${report.id}`)} — received ${formatDate(report.received_at)}</option>`
+                ).join('');
+                document.getElementById('invoiceRecoveryNumber').focus();
+            } catch (error) {
+                modal.close();
+                showToast(error.message || 'Could not load Receiving Reports', 'error');
+            }
+        }
+
+        document.getElementById('invoiceRecoveryForm').addEventListener('submit', async function (event) {
+            event.preventDefault();
+            const button = document.getElementById('invoiceRecoverySubmit');
+            const rrId = Number(document.getElementById('invoiceRecoveryRrId').value);
+            const invoiceNumber = document.getElementById('invoiceRecoveryNumber').value.trim();
+            const explanation = document.getElementById('invoiceRecoveryExplanation').value.trim();
+            if (!rrId || invoiceNumber.length < 2 || explanation.length < 5) {
+                showToast('Choose an RR, enter the printed invoice number, and explain the late entry.', 'error');
+                return;
+            }
+            button.disabled = true;
+            button.innerHTML = '<span class="loading loading-spinner loading-sm"></span> Saving...';
+            try {
+                const response = await FinanceService.recordReceivingInvoiceNumber(rrId, invoiceNumber, explanation);
+                document.getElementById('invoiceRecoveryModal').close();
+                showToast(response?.message || 'Supplier invoice number recorded', 'success');
+                await Promise.all([loadPayablesOverview(), loadPayables()]);
+            } catch (error) {
+                showToast(error.message || 'Could not record the supplier invoice number', 'error');
+            } finally {
+                button.disabled = false;
+                button.innerHTML = '<i class="fas fa-floppy-disk"></i> Save invoice number';
+            }
+        });
 
         function updatePaymentMethodFields() {
             const method = document.getElementById('payMethod').value;
@@ -1060,6 +1170,12 @@
                 }
                 if (!currentPayable.invoice_evidence && !invoiceFile) {
                     showToast('Attach the supplier invoice', 'error');
+                    return;
+                }
+                const invoiceNumberCount = new Set((currentPayable.receiving_reports || [])
+                    .map(report => String(report.invoice_number || '').trim()).filter(Boolean)).size;
+                if (invoiceFile && invoiceNumberCount > 1 && (invoiceFile.name.split('.').pop() || '').toLowerCase() !== 'pdf') {
+                    showToast('Combine every supplier invoice page into one PDF for this multi-invoice PO', 'error');
                     return;
                 }
                 if ((invoiceFile && !isAllowedPaymentFile(invoiceFile)) || !proofFile || !isAllowedPaymentFile(proofFile)) {

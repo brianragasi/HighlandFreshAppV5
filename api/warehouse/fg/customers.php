@@ -13,6 +13,7 @@
 
 require_once dirname(dirname(__DIR__)) . '/bootstrap.php';
 require_once dirname(dirname(__DIR__)) . '/helpers/plain_text.php';
+require_once dirname(dirname(__DIR__)) . '/helpers/lookup_normalization.php';
 
 // Require Warehouse FG role
 $currentUser = Auth::requireRole(['warehouse_fg', 'general_manager', 'sales_custodian']);
@@ -45,7 +46,7 @@ function handleGet($db, $action) {
         case 'list':
             $type = getParam('type');
             $status = getParam('status');
-            $search = getParam('search');
+            $search = hfNormalizeLookupText(getParam('search'));
             
             $sql = "SELECT * FROM customers WHERE 1=1";
             $params = [];
@@ -106,7 +107,7 @@ function handleGet($db, $action) {
             break;
             
         case 'search':
-            $query = getParam('q');
+            $query = hfNormalizeLookupText(getParam('q'));
             if (!$query || strlen($query) < 2) {
                 Response::success([], 'Search query too short');
                 break;

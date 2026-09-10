@@ -15,6 +15,7 @@
 require_once dirname(__DIR__) . '/bootstrap.php';
 require_once dirname(__DIR__) . '/helpers/pack_uom.php';
 require_once dirname(__DIR__) . '/helpers/customer_accounts.php';
+require_once dirname(__DIR__) . '/helpers/sellable_expiry_policy.php';
 
 // Different roles for different operations
 // GET: Warehouse FG can view orders (to see approved orders for DR creation)
@@ -81,6 +82,7 @@ function generateOrderNumber($db) {
  */
 function validateItemsStock(PDO $db, array $items): array {
     $errors = [];
+    $sellableExpiry = hfSellableExpirySql('fi.expiry_date');
 
     // Aggregate requested qty per product (a product may appear multiple times)
     $requested = [];
@@ -124,7 +126,7 @@ function validateItemsStock(PDO $db, array $items): array {
             FROM finished_goods_inventory fi
             WHERE fi.product_id IN ($placeholders)
               AND fi.status = 'available'
-              AND (fi.expiry_date IS NULL OR fi.expiry_date >= CURDATE())
+              AND {$sellableExpiry}
               AND COALESCE(fi.quantity_available, 0) > 0
             GROUP BY fi.product_id
         ) stock ON stock.product_id = p.id
@@ -168,6 +170,7 @@ function validateItemsStock(PDO $db, array $items): array {
 }
 
 function getOrderStockReadiness(PDO $db, int $orderId): array {
+    $sellableExpiry = hfSellableExpirySql('fgi.expiry_date');
     $itemsStmt = $db->prepare("
         SELECT soi.product_id, MAX(p.product_name) AS product_name,
                SUM(COALESCE(soi.quantity_ordered, 0)) AS requested
@@ -202,7 +205,7 @@ function getOrderStockReadiness(PDO $db, int $orderId): array {
         JOIN products p ON p.id = fgi.product_id
         WHERE fgi.product_id IN ({$placeholders})
           AND fgi.status = 'available'
-          AND (fgi.expiry_date IS NULL OR fgi.expiry_date >= CURDATE())
+          AND {$sellableExpiry}
         GROUP BY fgi.product_id
     ");
     $stockStmt->execute($productIds);
@@ -233,6 +236,8 @@ function getOrderStockReadiness(PDO $db, int $orderId): array {
  * Handle GET requests
  */
 function handleGet($db, $action, $validStatuses) {
+    $sellableExpiry = hfSellableExpirySql('expiry_date');
+
     switch ($action) {
         case 'list':
             $status = getParam('status');
@@ -407,7 +412,7 @@ function handleGet($db, $action, $validStatuses) {
                            SUM(COALESCE(quantity_available, remaining_quantity, 0)) AS qty_on_hand
                     FROM finished_goods_inventory
                     WHERE COALESCE(quantity_available, remaining_quantity, 0) > 0
-                      AND (expiry_date IS NULL OR expiry_date >= CURDATE())
+                      AND {$sellableExpiry}
                       AND status IN ('available', 'low_stock', 'reserved')
                     GROUP BY product_id
                 ) stock ON stock.product_id = oi.product_id
@@ -667,7 +672,11 @@ function handlePost($db, $action, $currentUser, $validStatuses = null) {
 
             $stockErrors = validateItemsStock($db, $items);
             if (!empty($stockErrors)) {
-                Response::error('Not enough released stock for one or more products.', 422, ['stock_errors' => $stockErrors]);
+                Response::error(
+                    'Not enough dispatchable stock for one or more products. Stock with 7 days or less before expiry is handled by QC.',
+                    422,
+                    ['stock_errors' => $stockErrors]
+                );
             }
 
             $productStmt = $db->prepare("

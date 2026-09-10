@@ -421,7 +421,10 @@ function handleCustomerOrderInboxPost(PDO $db, string $action, array $currentUse
         $acceptWarnings = filter_var(getParam('accept_warnings', false), FILTER_VALIDATE_BOOLEAN);
         $creditOverrideReason = trim((string) getParam('credit_override_reason', ''));
         $order = hfConvertCustomerOrderImport($db, $id, $userId, $acceptWarnings, $creditOverrideReason);
-        Response::success($order, 'Sales Order created and sent for General Manager approval.', 201);
+        $message = !empty($order['approval_required'])
+            ? 'Sales Order created and sent for General Manager credit-exception approval.'
+            : 'Sales Order released to Warehouse Finished Goods.';
+        Response::success($order, $message, 201);
     }
 
     if ($action === 'save_details') {

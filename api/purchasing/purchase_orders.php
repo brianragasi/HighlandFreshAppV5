@@ -3027,29 +3027,6 @@ function handlePut($db, $action, $currentUser) {
             Response::success(null, 'Purchase order cancelled');
             break;
 
-        case 'update_payment':
-            requireActionRole($currentUser, ['finance_officer'], 'Only the Finance Officer can update payment status');
-
-            $newPaymentStatus = $data['payment_status'] ?? null;
-            if (!in_array($newPaymentStatus, ['unpaid', 'partial', 'paid'])) {
-                Response::error('Invalid payment status', 400);
-            }
-
-            $stmt = $db->prepare("
-                UPDATE purchase_orders
-                SET payment_status = ?,
-                    updated_at = NOW()
-                WHERE id = ?
-            ");
-            $stmt->execute([$newPaymentStatus, $id]);
-
-            logAudit($currentUser['user_id'], 'UPDATE', 'purchase_orders', $id,
-                ['payment_status' => $current['payment_status']],
-                ['payment_status' => $newPaymentStatus]);
-
-            Response::success(null, 'Payment status updated');
-            break;
-
         case 'close':
             requireActionRole($currentUser, ['purchaser', 'general_manager'], 'Only Purchaser or General Manager can close purchase orders');
 
@@ -3096,6 +3073,14 @@ function handlePut($db, $action, $currentUser) {
                 // Get receiving_items from request body: [{item_id, accepted, rejected, rejection_reason, rejection_category, new_price, lot_number, expiry_date, condition}]
                 $receivingItems = decodeJsonField($data['receiving_items'] ?? null, []);
                 $receivingMeta = decodeJsonField($data['receiving_meta'] ?? null, []);
+
+                $receivedInvoiceNumber = trim((string) ($receivingMeta['invoice_number'] ?? ''));
+                $invoiceNotSupplied = in_array($receivingMeta['invoice_not_supplied'] ?? null, [true, 1, '1', 'true', 'yes', 'on'], true);
+                if ($receivedInvoiceNumber === '' && !$invoiceNotSupplied) {
+                    throw new ReceivingValidationException(
+                        'Enter the supplier invoice number, or confirm that the supplier did not provide one with this delivery.'
+                    );
+                }
 
                 if (!hfPersonNameHasLetter($receivingMeta['driver_name'] ?? '', true)) {
                     throw new ReceivingValidationException('Driver name must contain at least one letter when provided');

@@ -517,6 +517,15 @@
                             <i class="fas fa-lightbulb"></i>
                             <span id="pkgRecommendText">—</span>
                         </div>
+                        <div class="rounded-xl border border-base-300 bg-base-200/50 p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                            <div>
+                                <p class="font-semibold text-sm">Automatic package plan</p>
+                                <p id="pkgAllocationModeText" class="text-xs text-base-content/60">Select the package sizes; the system calculates quantities from the remaining milk.</p>
+                            </div>
+                            <button type="button" id="pkgAutoSplitBtn" class="btn btn-outline btn-sm gap-2" onclick="autoDistributePackaging({ announce: true })">
+                                <i class="fas fa-wand-magic-sparkles"></i> Recalculate automatically
+                            </button>
+                        </div>
                         <div id="packagingLines" class="space-y-3"></div>
                         <div class="flex flex-wrap gap-2">
                             <button type="button" id="pkgAddSizeBtn" class="btn btn-outline btn-sm gap-2" onclick="addPackagingLine()">
@@ -604,6 +613,7 @@
     <script src="../../js/production/sidebar.js"></script>
     <script src="../../js/production/run-flow.js"></script>
     <script src="../../js/production/production.service.js"></script>
+    <script src="../../js/production/packaging-allocation.js?v=20260907-1"></script>
     <script>
         let selectedRunId = null;
         let wb = null; // { run, yieldData, estimates, reconciliation, nextStep }
@@ -1734,6 +1744,7 @@
         // =====================================================
         let pkgLineCounter = 0;
         let packagingFormInitInFlight = false;
+        let packagingAllocationMode = 'automatic';
 
         function getPackConfig() {
             const run = wb?.run || {};
@@ -1783,9 +1794,13 @@
             if (skus.length > 0) {
                 skuOptions = '<option value="" disabled>Select a product/size...</option>';
                 skus.forEach((sku, idx) => {
-                    const selected = (prefill.size_ml && Number(sku.packaging_size_ml) === Number(prefill.size_ml)) ? 'selected' : '';
+                    const matchesProduct = Number(prefill.product_id || 0) > 0
+                        && Number(sku.product_id) === Number(prefill.product_id);
+                    const matchesSize = !prefill.product_id && prefill.size_ml
+                        && Number(sku.packaging_size_ml) === Number(prefill.size_ml);
+                    const selected = (matchesProduct || matchesSize) ? 'selected' : '';
                     const readiness = sku.packaging_bom_ready ? '' : ' · Packaging setup needs attention';
-                    skuOptions += `<option value="${idx}" ${selected}>${escapePackagingText(sku.packaging_label || (sku.product_name + ' · ' + sku.packaging_size_ml + 'ml'))}${readiness}</option>`;
+                    skuOptions += `<option value="${Number(sku.product_id)}" ${selected}>${escapePackagingText(sku.packaging_label || (sku.product_name + ' · ' + sku.packaging_size_ml + 'ml'))}${readiness}</option>`;
                 });
             } else {
                 skuOptions = '<option value="" selected disabled>No packaging SKU configured</option>';
@@ -1804,10 +1819,10 @@
                         </select>
                     </div>
                     <div class="form-control">
-                        <label class="label"><span class="label-text text-xs">Quantity (pieces)</span></label>
+                        <label class="label"><span class="label-text text-xs">Planned quantity (automatically calculated)</span></label>
                         <input type="number" class="input input-bordered input-sm" data-pkg="quantity"
                             value="${prefill.quantity || ''}" min="1" step="1" placeholder="How many did you pack?"
-                            oninput="updatePkgTotals()">
+                            oninput="onPackagingQuantityInput()">
                     </div>
                 </div>
                 ${!hasSkus ? '<p class="text-xs text-error">Ask Admin to add an active SKU and its Packaging BOM under Products before completing this run.</p>' : ''}
@@ -1820,22 +1835,22 @@
             container.appendChild(div);
 
             // Auto-fill hidden fields if prefill has a matching SKU
-            if (hasSkus && prefill.size_ml) {
-                onSkuSelect(id);
+            if (hasSkus && (prefill.product_id || prefill.size_ml)) {
+                onSkuSelect(id, { preservePlan: Number(prefill.quantity || 0) > 0 });
             }
             refreshPackagingSkuChoices();
             updatePkgTotals();
         }
 
         /** When user picks a SKU from dropdown, auto-fill hidden fields */
-        function onSkuSelect(lineId) {
+        function onSkuSelect(lineId, options = {}) {
             const line = document.getElementById(`pkgLine_${lineId}`);
             if (!line) return;
             const select = line.querySelector('[data-pkg="sku_select"]');
             const skus = getAvailableSkus();
-            const idx = parseInt(select.value, 10);
-            if (isNaN(idx) || !skus[idx]) return;
-            const sku = skus[idx];
+            const productId = Number(select.value || 0);
+            const sku = skus.find(candidate => Number(candidate.product_id) === productId);
+            if (!productId || !sku) return;
             const selects = Array.from(document.querySelectorAll('#packagingLines [data-pkg="sku_select"]'));
             const existing = selects.find(candidate => candidate !== select && candidate.value === select.value);
             if (existing) {
@@ -1857,22 +1872,72 @@
             line.querySelector('[data-pkg="size_ml"]').value = sku.packaging_size_ml || '';
             line.querySelector('[data-pkg="product_variant"]').value = sku.packaging_label || '';
             line.querySelector('[data-pkg="unit_measure"]').value = 'ml';
-            const quantityInput = line.querySelector('[data-pkg="quantity"]');
-            if (quantityInput && !quantityInput.value) {
-                const basisMl = getPackagingBasisVolumeMl();
-                const usedByOtherLines = Array.from(document.querySelectorAll('#packagingLines [id^="pkgLine_"]'))
-                    .filter(otherLine => otherLine !== line)
-                    .reduce((total, otherLine) => {
-                        const otherSize = Number(otherLine.querySelector('[data-pkg="size_ml"]')?.value || 0);
-                        const otherQty = Number(otherLine.querySelector('[data-pkg="quantity"]')?.value || 0);
-                        return total + (otherSize > 0 && otherQty > 0 ? otherSize * otherQty : 0);
-                    }, 0);
-                const availableMl = Math.max(0, basisMl - usedByOtherLines);
-                const sizeMl = Number(sku.packaging_size_ml || 0);
-                const suggestedUnits = sizeMl > 0 ? Math.floor(availableMl / sizeMl) : 0;
-                if (suggestedUnits > 0) quantityInput.value = String(suggestedUnits);
-            }
             refreshPackagingSkuChoices();
+            if (options.preservePlan) {
+                updatePkgTotals();
+            } else {
+                autoDistributePackaging();
+            }
+        }
+
+        function getSelectedPackagingRows() {
+            const skus = getAvailableSkus();
+            return Array.from(document.querySelectorAll('#packagingLines [id^="pkgLine_"]'))
+                .map(line => {
+                    const productId = Number(line.querySelector('[data-pkg="sku_select"]')?.value || 0);
+                    const sku = skus.find(candidate => Number(candidate.product_id) === productId);
+                    return sku ? { line, sku } : null;
+                })
+                .filter(Boolean);
+        }
+
+        function setPackagingAllocationMode(mode) {
+            packagingAllocationMode = mode === 'manual' ? 'manual' : 'automatic';
+            const text = document.getElementById('pkgAllocationModeText');
+            if (text) {
+                text.textContent = packagingAllocationMode === 'automatic'
+                    ? 'Automatic plan active. One size fills the batch; multiple sizes split the available milk evenly. Adjust only for the real packed count.'
+                    : 'Actual count adjustment active. Recalculate automatically at any time to create a fresh plan from the remaining milk.';
+            }
+        }
+
+        function autoDistributePackaging(options = {}) {
+            if (wb?.run?.packaging_request) return;
+            const selectedRows = getSelectedPackagingRows();
+            if (!selectedRows.length) {
+                updatePkgTotals();
+                return;
+            }
+            const plan = PackagingAllocation.distributeEvenlyByVolume(
+                getPackagingBasisVolumeMl(),
+                selectedRows.map(({ sku }) => ({
+                    key: sku.product_id,
+                    size_ml: sku.packaging_size_ml,
+                }))
+            );
+            const quantityByProduct = new Map(
+                plan.allocations.map(item => [Number(item.key), Number(item.quantity)])
+            );
+            selectedRows.forEach(({ line, sku }) => {
+                const input = line.querySelector('[data-pkg="quantity"]');
+                const quantity = quantityByProduct.get(Number(sku.product_id)) || 0;
+                if (input) input.value = quantity > 0 ? String(quantity) : '';
+            });
+            setPackagingAllocationMode('automatic');
+            updatePkgTotals();
+            if (options.announce) {
+                const selectedCount = selectedRows.length;
+                showToast(
+                    selectedCount === 1
+                        ? `Quantity calculated from ${fmtLitersFromMl(getPackagingBasisVolumeMl())} L.`
+                        : `${fmtLitersFromMl(getPackagingBasisVolumeMl())} L split automatically across ${selectedCount} sizes.`,
+                    'success'
+                );
+            }
+        }
+
+        function onPackagingQuantityInput() {
+            setPackagingAllocationMode('manual');
             updatePkgTotals();
         }
 
@@ -1911,7 +1976,7 @@
             const el = document.getElementById(`pkgLine_${id}`);
             if (el) el.remove();
             refreshPackagingSkuChoices();
-            updatePkgTotals();
+            autoDistributePackaging();
         }
 
         function updatePkgTotals() {
@@ -1924,11 +1989,28 @@
 
             const box = document.getElementById('pkgTotalsBox');
             const txt = document.getElementById('pkgTotalsText');
+            const volume = PackagingAllocation.summarize(getPackagingBasisVolumeMl(), items);
+            const selectedSizes = items.map(item => Number(item.size_ml || 0)).filter(size => size > 0);
+            const smallestSelectedSize = selectedSizes.length ? Math.min(...selectedSizes) : 0;
+            box.classList.remove('alert-info', 'alert-success', 'alert-warning', 'alert-error');
             if (totalPieces > 0) {
                 box.classList.remove('hidden');
                 let display = `Total: ${totalPieces} ${cfg.baseUnit}(s)`;
                 if (ppb > 1) {
                     display += ` = ${boxes} ${cfg.boxUnit}(s) + ${loose} loose`;
+                }
+                display += ` · ${(volume.used_ml / 1000).toLocaleString(undefined, { maximumFractionDigits: 3 })} L planned`;
+                if (volume.over_ml > 0) {
+                    display += ` · ${(volume.over_ml / 1000).toLocaleString(undefined, { maximumFractionDigits: 3 })} L OVER available milk`;
+                    box.classList.add('alert-error');
+                } else if (volume.remaining_ml > 0) {
+                    display += ` · ${(volume.remaining_ml / 1000).toLocaleString(undefined, { maximumFractionDigits: 3 })} L remainder`;
+                    box.classList.add(smallestSelectedSize > 0 && volume.remaining_ml >= smallestSelectedSize
+                        ? 'alert-warning'
+                        : 'alert-success');
+                } else {
+                    display += ' · fully allocated';
+                    box.classList.add('alert-success');
                 }
                 txt.textContent = display;
             } else {
@@ -1936,6 +2018,37 @@
                 txt.textContent = '—';
             }
             renderPackagingMaterialRequirements(items);
+            syncPackagingRequestAvailability();
+        }
+
+        function getPackagingPlanValidation() {
+            const selectedRows = getSelectedPackagingRows();
+            const items = collectPackagingItems();
+            const unquantified = selectedRows.some(({ line }) =>
+                Number(line.querySelector('[data-pkg="quantity"]')?.value || 0) <= 0
+            );
+            const volume = PackagingAllocation.summarize(getPackagingBasisVolumeMl(), items);
+            const materials = calculatePackagingMaterialRequirements(items);
+            if (!selectedRows.length) return { valid: false, message: 'Choose at least one product size.' };
+            if (unquantified) return { valid: false, message: 'Every selected size needs a quantity. Use Recalculate automatically.' };
+            if (volume.over_ml > 0) {
+                return {
+                    valid: false,
+                    message: `Reduce the plan by ${(volume.over_ml / 1000).toLocaleString(undefined, { maximumFractionDigits: 3 })} L; it exceeds the remaining milk.`,
+                };
+            }
+            if (!materials.ready) {
+                return { valid: false, message: `Packaging setup needs attention: ${materials.missing.join(', ')}` };
+            }
+            return { valid: true, message: '' };
+        }
+
+        function syncPackagingRequestAvailability() {
+            const requestBtn = document.getElementById('requestPackagingBtn');
+            if (!requestBtn || wb?.run?.packaging_request) return;
+            const validation = getPackagingPlanValidation();
+            requestBtn.disabled = !validation.valid;
+            requestBtn.title = validation.message;
         }
 
         function calculatePackagingMaterialRequirements(items = collectPackagingItems()) {
@@ -2061,12 +2174,19 @@
             document.querySelectorAll('#packagingLines button').forEach(button => {
                 button.classList.toggle('hidden', requested);
             });
+            document.getElementById('pkgAutoSplitBtn')?.classList.toggle('hidden', requested);
+            syncPackagingRequestAvailability();
         }
 
         async function requestPackagingMaterials() {
             if (!selectedRunId) return;
             if (wb?.run?.status !== 'packaging') {
                 showToast('Move the run to the Packaging stage first.', 'warning');
+                return;
+            }
+            const validation = getPackagingPlanValidation();
+            if (!validation.valid) {
+                showToast(validation.message, 'error');
                 return;
             }
             const packagingItems = collectPackagingItems();
@@ -2111,22 +2231,26 @@
 
         function collectPackagingItems() {
             const lines = document.querySelectorAll('#packagingLines [id^="pkgLine_"]');
+            const skus = getAvailableSkus();
             const items = [];
             lines.forEach(line => {
                 const get = (key) => line.querySelector(`[data-pkg="${key}"]`)?.value?.trim() || '';
                 const qty = parseInt(get('quantity'), 10);
                 if (!qty || qty <= 0) return; // skip empty lines
 
-                // If SKU dropdown exists, make sure something was selected
+                // Resolve from the stable product id every time. Hidden fields
+                // are display helpers only and must never retain stale SKU state.
                 const skuSelect = line.querySelector('[data-pkg="sku_select"]');
                 if (skuSelect && skuSelect.value === '') return; // no SKU selected, skip
+                const sku = skus.find(candidate => Number(candidate.product_id) === Number(skuSelect?.value || 0));
+                if (!sku) return;
 
                 items.push({
-                    product_name: get('product_name'),
-                    product_id: get('product_id') ? parseInt(get('product_id'), 10) : null,
-                    product_variant: get('product_variant') || null,
-                    size_ml: get('size_ml') ? parseFloat(get('size_ml')) : null,
-                    unit_measure: get('unit_measure') || 'ml',
+                    product_name: sku.product_name || get('product_name'),
+                    product_id: Number(sku.product_id),
+                    product_variant: sku.packaging_label || get('product_variant') || null,
+                    size_ml: Number(sku.packaging_size_ml),
+                    unit_measure: sku.unit_measure || get('unit_measure') || 'ml',
                     quantity: qty,
                 });
             });
@@ -2168,6 +2292,7 @@
         function applyRecommendedPackaging() {
             const container = document.getElementById('packagingLines');
             container.innerHTML = '';
+            setPackagingAllocationMode('automatic');
             const rec = getRecommendedPackaging();
             if (rec.length === 0) {
                 addPackagingLine();
@@ -2216,7 +2341,7 @@
                 estimated_units: item.quantity,
                 packaging_label: item.product_variant || item.product_name,
                 product_id: item.product_id,
-            })) : (availableSkus.length === 1 ? getRecommendedPackaging() : []);
+            })) : getRecommendedPackaging();
             const banner = document.getElementById('pkgRecommendBox');
             const bannerText = document.getElementById('pkgRecommendText');
             const resetBtn = document.getElementById('pkgResetRecommendBtn');
@@ -2245,12 +2370,11 @@
                     applyRecommendedPackaging();
                 }
             } else {
-                // With several valid SKUs, Production must first choose the
-                // intended package size. Selecting it calculates the whole-unit
-                // quantity from the remaining batch volume.
+                // Production chooses the intended size(s); selecting a size
+                // calculates a complete plan without manual division.
                 addPackagingLine();
                 if (banner && bannerText && availableSkus.length > 1) {
-                    bannerText.textContent = `Choose the intended product size for ${fmtLitersFromMl(getPackagingBasisVolumeMl())} L remaining milk. The quantity will be calculated automatically.`;
+                    bannerText.textContent = `Choose one or more product sizes for ${fmtLitersFromMl(getPackagingBasisVolumeMl())} L remaining milk. One size fills the batch; multiple sizes are split evenly and can be adjusted after packing.`;
                     banner.classList.remove('hidden');
                 }
             }

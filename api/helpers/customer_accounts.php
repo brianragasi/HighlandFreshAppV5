@@ -21,7 +21,7 @@ function hfCustomerOutstandingSql(string $customerExpression = 'c.id'): string
         FROM delivery_receipts dr
         WHERE dr.customer_id = {$customerExpression}
           AND dr.payment_status <> 'paid'
-          AND dr.status NOT IN ('cancelled', 'draft')
+          AND dr.status = 'delivered'
     ), 0)";
 }
 

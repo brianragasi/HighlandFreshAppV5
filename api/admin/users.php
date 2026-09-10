@@ -493,11 +493,11 @@ function createUser() {
         Response::error('Username already exists', 400);
     }
 
+    $emailIdentityLock = hfAcquireEmailIdentityLock($pdo, $data['email'] ?? null);
     if (!empty($data['email'])) {
-        $stmt = $pdo->prepare("SELECT id FROM users WHERE email = ?");
-        $stmt->execute([$data['email']]);
-        if ($stmt->fetch()) {
-            Response::error('Email already exists', 400);
+        $emailError = hfValidateUserSupplierEmailOwnership($pdo, $data['email']);
+        if ($emailError !== null) {
+            Response::validationError(['email' => $emailError]);
         }
     }
 
@@ -647,10 +647,12 @@ function createUser() {
         }
 
         $pdo->commit();
+        hfReleaseEmailIdentityLock($pdo, $emailIdentityLock);
     } catch (PDOException $e) {
         if ($pdo->inTransaction()) {
             $pdo->rollBack();
         }
+        hfReleaseEmailIdentityLock($pdo, $emailIdentityLock);
         error_log('User create failed: ' . $e->getMessage());
         // Handle MySQL duplicate entry error (1062) as validation error
         if ($e->getCode() === '23000' || $e->getCode() === 1062) {
@@ -674,6 +676,7 @@ function createUser() {
         if ($pdo->inTransaction()) {
             $pdo->rollBack();
         }
+        hfReleaseEmailIdentityLock($pdo, $emailIdentityLock);
         error_log('User create failed: ' . $e->getMessage());
         Response::error('Failed to create user: ' . $e->getMessage(), 500);
     }
@@ -791,11 +794,14 @@ function updateUser($id) {
         }
     }
 
-    if (!empty($data['email']) && $data['email'] !== ($existingUser['email'] ?? '')) {
-        $stmt = $pdo->prepare("SELECT id FROM users WHERE email = ? AND id != ?");
-        $stmt->execute([$data['email'], $id]);
-        if ($stmt->fetch()) {
-            Response::error('Email already exists', 400);
+    $emailChanged = array_key_exists('email', $raw)
+        && hfNormalizeIdentityEmail($data['email'] ?? null) !== hfNormalizeIdentityEmail($existingUser['email'] ?? null);
+    $emailIdentityLock = null;
+    if ($emailChanged && !empty($data['email'])) {
+        $emailIdentityLock = hfAcquireEmailIdentityLock($pdo, $data['email']);
+        $emailError = hfValidateUserSupplierEmailOwnership($pdo, $data['email'], (int) $id, null);
+        if ($emailError !== null) {
+            Response::validationError(['email' => $emailError]);
         }
     }
 
@@ -834,7 +840,6 @@ function updateUser($id) {
     }
 
     if (hasOnboardingColumns()) {
-        $emailChanged = array_key_exists('email', $raw) && ($data['email'] ?? '') !== ($existingUser['email'] ?? '');
         $empIdChanged = array_key_exists('employee_id', $raw)
             && ($data['employee_id'] ?? '') !== ($existingUser['employee_id'] ?? '');
         $usernameChanged = array_key_exists('username', $raw)
@@ -869,6 +874,7 @@ function updateUser($id) {
     $query = 'UPDATE users SET ' . implode(', ', $updates) . ' WHERE id = ?';
     $stmt = $pdo->prepare($query);
     $stmt->execute($params);
+    hfReleaseEmailIdentityLock($pdo, $emailIdentityLock);
 
     $roleChanged = array_key_exists('role', $raw) && ($data['role'] ?? '') !== ($existingUser['role'] ?? '');
     $deactivated = array_key_exists('is_active', $raw)

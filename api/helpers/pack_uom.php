@@ -121,6 +121,14 @@ if (!function_exists('hf_pack_config_from_row')) {
     {
         $total = max(0, (int)$totalPieces);
         $ppb = max(1, (int)$unitsPerPack);
+        if ($ppb === 1) {
+            return [
+                'packs' => 0,
+                'loose' => $total,
+                'total' => $total,
+                'units_per_pack' => 1,
+            ];
+        }
         return [
             'packs' => (int)floor($total / $ppb),
             'loose' => (int)($total % $ppb),

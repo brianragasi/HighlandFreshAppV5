@@ -14,6 +14,9 @@
  */
 
 require_once dirname(__DIR__) . '/bootstrap.php';
+require_once dirname(__DIR__) . '/warehouse/fg/inventory_helpers.php';
+require_once dirname(__DIR__) . '/helpers/pos_vat.php';
+require_once dirname(__DIR__) . '/helpers/sellable_expiry_policy.php';
 
 // Require Cashier or GM role
 $currentUser = Auth::requireRole(['cashier', 'general_manager']);
@@ -73,6 +76,9 @@ function generateSICode($db) {
  * Returns array of inventory deductions made
  */
 function deductInventory($db, $productId, $quantityNeeded, $userId, $transactionId, $transactionCode) {
+    $sellableExpiry = hfSellableExpirySql('fg.expiry_date');
+    $updateSellableExpiry = hfSellableExpirySql('expiry_date');
+
     // Lock sellable FG rows (FIFO by expiry). Race-safe: SELECT ... FOR UPDATE
     // inside the caller's transaction so two cashiers cannot oversell the last unit.
     $stmt = $db->prepare("
@@ -93,15 +99,18 @@ function deductInventory($db, $productId, $quantityNeeded, $userId, $transaction
         LEFT JOIN chiller_locations cl ON cl.id = fg.chiller_id
         WHERE fg.product_id = ?
           AND fg.status = 'available'
-          AND fg.expiry_date > CURDATE()
-          AND (
-                COALESCE(fg.quantity_available, 0) > 0
-             OR COALESCE(fg.remaining_quantity, 0) > 0
-             OR COALESCE(fg.pieces_available, 0) > 0
-             OR COALESCE(fg.boxes_available, 0) > 0
-          )
+          AND {$sellableExpiry}
+          AND COALESCE(fg.quantity_available, 0) > 0
           AND (cl.id IS NULL OR (cl.is_active = 1 AND cl.status IN ('available', 'full')))
           AND (cl.id IS NULL OR cl.chiller_code NOT LIKE 'FREEZE%')
+          AND NOT EXISTS (
+              SELECT 1
+              FROM disposals open_disposal
+              WHERE open_disposal.source_type = 'finished_goods'
+                AND open_disposal.source_id = fg.id
+                AND open_disposal.status IN ('pending', 'approved')
+                AND COALESCE(open_disposal.notes, '') NOT LIKE 'Auto-created from delivery return.%'
+          )
         ORDER BY fg.expiry_date ASC, fg.id ASC
         FOR UPDATE
     ");
@@ -109,7 +118,9 @@ function deductInventory($db, $productId, $quantityNeeded, $userId, $transaction
     $inventoryItems = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     if (empty($inventoryItems)) {
-        throw new Exception("No available inventory for product ID: {$productId}");
+        throw new Exception(
+            "No POS-sellable inventory for product ID {$productId}. Stock with 7 days or less before expiry is reserved for QC."
+        );
     }
 
     $deductions = [];
@@ -121,12 +132,10 @@ function deductInventory($db, $productId, $quantityNeeded, $userId, $transaction
         }
 
         $piecesPerBox = max(1, (int) ($inv['pieces_per_box'] ?: 1));
-        $availablePieces = (int) ($inv['pieces_available'] ?: 0);
-        $availableBoxes = (int) ($inv['boxes_available'] ?: 0);
-        $fromMulti = ($availableBoxes * $piecesPerBox) + $availablePieces;
-        // Many FG rows only set quantity_available / remaining_quantity
-        $qtyAvail = max((int) ($inv['quantity_available'] ?: 0), (int) ($inv['remaining_quantity'] ?: 0));
-        $totalAvailable = max($fromMulti, $qtyAvail);
+        // quantity_available is authoritative. The pack columns are mirrors only.
+        $totalAvailable = max(0, (int)($inv['quantity_available'] ?? 0));
+        $availableBoxes = intdiv($totalAvailable, $piecesPerBox);
+        $availablePieces = $totalAvailable % $piecesPerBox;
 
         if ($totalAvailable <= 0) {
             continue;
@@ -142,38 +151,45 @@ function deductInventory($db, $productId, $quantityNeeded, $userId, $transaction
         // Conditional update: refuse if another transaction already depleted stock
         $updateStmt = $db->prepare("
             UPDATE finished_goods_inventory
-            SET quantity_available = GREATEST(0, COALESCE(quantity_available, 0) - ?),
-                remaining_quantity = GREATEST(0, COALESCE(remaining_quantity, 0) - ?),
+            SET quantity = ?,
+                quantity_available = ?,
+                remaining_quantity = ?,
+                quantity_boxes = ?,
+                quantity_pieces = ?,
                 boxes_available = ?,
                 pieces_available = ?,
                 last_movement_at = NOW()
             WHERE id = ?
               AND status = 'available'
-              AND (
-                    COALESCE(quantity_available, 0) >= ?
-                 OR COALESCE(remaining_quantity, 0) >= ?
-                 OR ((COALESCE(boxes_available, 0) * ?) + COALESCE(pieces_available, 0)) >= ?
+              AND {$updateSellableExpiry}
+              AND COALESCE(quantity_available, 0) >= ?
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM disposals open_disposal
+                  WHERE open_disposal.source_type = 'finished_goods'
+                    AND open_disposal.source_id = finished_goods_inventory.id
+                    AND open_disposal.status IN ('pending', 'approved')
+                    AND COALESCE(open_disposal.notes, '') NOT LIKE 'Auto-created from delivery return.%'
               )
         ");
         $updateStmt->execute([
-            $deductAmount,
-            $deductAmount,
+            $newTotal,
+            $newTotal,
+            $newTotal,
+            $newBoxes,
+            $newPieces,
             $newBoxes,
             $newPieces,
             $inv['id'],
-            $deductAmount,
-            $deductAmount,
-            $piecesPerBox,
             $deductAmount,
         ]);
         if ($updateStmt->rowCount() === 0) {
             throw new Exception('Stock changed while selling — please refresh cart and try again');
         }
         
-        // Update chiller count if applicable
+        // Rebuild the location cache from authoritative inventory.
         if ($inv['chiller_id']) {
-            $db->prepare("UPDATE chiller_locations SET current_count = current_count - ? WHERE id = ?")
-               ->execute([$deductAmount, $inv['chiller_id']]);
+            fgSyncChillerCount($db, (int)$inv['chiller_id']);
         }
         
         // Log the transaction
@@ -214,7 +230,9 @@ function deductInventory($db, $productId, $quantityNeeded, $userId, $transaction
     }
     
     if ($remaining > 0) {
-        throw new Exception("Insufficient inventory. Short by {$remaining} units for product ID: {$productId}");
+        throw new Exception(
+            "Insufficient POS-sellable inventory. Short by {$remaining} units for product ID {$productId}; near-expiry stock is reserved for QC."
+        );
     }
     
     return $deductions;
@@ -334,6 +352,13 @@ function handleGet($db, $action, $currentUser) {
             if (!$transaction) {
                 Response::error('Transaction not found', 404);
             }
+
+            $transaction['vatable_sales'] = round(
+                (float) $transaction['total_amount'] - (float) ($transaction['tax_amount'] ?? 0),
+                2
+            );
+            $transaction['vat_rate'] = 12;
+            $transaction['vat_inclusive'] = (float) ($transaction['tax_amount'] ?? 0) > 0;
             
             // Get transaction items
             $itemsStmt = $db->prepare("
@@ -493,6 +518,15 @@ function handleGet($db, $action, $currentUser) {
             ");
             $itemsStmt->execute([$id]);
             $items = $itemsStmt->fetchAll();
+            $calculatedChange = max(
+                0,
+                floatval($transaction['amount_paid']) - floatval($transaction['total_amount'])
+            );
+            $savedChange = isset($transaction['change_amount'])
+                ? max(0, floatval($transaction['change_amount']))
+                : $calculatedChange;
+            $taxAmount = max(0, (float) ($transaction['tax_amount'] ?? 0));
+            $vatableSales = round((float) $transaction['total_amount'] - $taxAmount, 2);
             
             $receipt = [
                 'header' => [
@@ -506,9 +540,15 @@ function handleGet($db, $action, $currentUser) {
                 'payment' => [
                     'subtotal' => $transaction['subtotal_amount'] ?? $transaction['total_amount'],
                     'discount' => $transaction['discount_amount'],
+                    'vatable_sales' => $vatableSales,
+                    'tax_amount' => $taxAmount,
+                    'vat_rate' => 12,
+                    'vat_inclusive' => $taxAmount > 0,
                     'total' => $transaction['total_amount'],
                     'amount_paid' => $transaction['amount_paid'],
-                    'change' => max(0, floatval($transaction['amount_paid']) - floatval($transaction['total_amount'])),
+                    'amount_tendered' => $transaction['amount_paid'],
+                    'change' => $savedChange,
+                    'change_amount' => $savedChange,
                     'method' => $transaction['payment_method']
                 ],
                 'footer' => [
@@ -648,7 +688,9 @@ function handlePost($db, $action, $currentUser) {
                 
                 // Calculate discount and total
                 $discountAmount = $subtotal * ($discountPercent / 100);
-                $totalAmount = $subtotal - $discountAmount;
+                $totalAmount = round($subtotal - $discountAmount, 2);
+                $vatBreakdown = hfPosVatBreakdown($totalAmount);
+                $taxAmount = $vatBreakdown['tax_amount'];
                 if (!is_finite($subtotal) || $subtotal > 9999999999.99
                     || !is_finite($totalAmount) || $totalAmount < 0 || $totalAmount > 9999999999.99) {
                     throw new Exception('Sale total is outside the supported range');
@@ -668,10 +710,10 @@ function handlePost($db, $action, $currentUser) {
                 $stmt = $db->prepare("
                     INSERT INTO sales_transactions 
                     (transaction_code, transaction_type, customer_id, customer_name,
-                     subtotal_amount, discount_value, discount_amount, total_amount,
+                     subtotal_amount, discount_value, discount_amount, tax_amount, total_amount,
                      amount_paid, change_amount, payment_status, payment_method,
                      payment_reference, cashier_id, notes)
-                    VALUES (?, 'cash', ?, ?, ?, ?, ?, ?, ?, ?, 'paid', ?, ?, ?, ?)
+                    VALUES (?, 'cash', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'paid', ?, ?, ?, ?)
                 ");
                 
                 // Build payment reference for check/bank/gcash
@@ -691,6 +733,7 @@ function handlePost($db, $action, $currentUser) {
                     $subtotal,
                     $discountPercent,
                     $discountAmount,
+                    $taxAmount,
                     $totalAmount,
                     $amountPaid,
                     $changeAmount,
@@ -748,7 +791,7 @@ function handlePost($db, $action, $currentUser) {
                     'sales_transactions',
                     $transactionId,
                     null,
-                    ['transaction_code' => $transactionCode, 'total' => $totalAmount, 'items' => count($itemsData)]
+                    ['transaction_code' => $transactionCode, 'total' => $totalAmount, 'tax_amount' => $taxAmount, 'items' => count($itemsData)]
                 );
                 
                 $db->commit();
@@ -759,9 +802,15 @@ function handlePost($db, $action, $currentUser) {
                     'si_number' => $transactionCode,
                     'subtotal' => $subtotal,
                     'discount_amount' => $discountAmount,
+                    'vatable_sales' => $vatBreakdown['vatable_sales'],
+                    'tax_amount' => $taxAmount,
+                    'vat_rate' => $vatBreakdown['vat_rate'],
+                    'vat_inclusive' => true,
                     'total_amount' => $totalAmount,
                     'amount_paid' => $amountPaid,
-                    'change' => $amountPaid - $totalAmount,
+                    'amount_tendered' => $amountPaid,
+                    'change' => $changeAmount,
+                    'change_amount' => $changeAmount,
                     'payment_method' => $paymentMethod,
                     'items_count' => count($itemsData),
                     'inventory_deductions' => $allDeductions
@@ -813,12 +862,13 @@ function handlePost($db, $action, $currentUser) {
                     $deductions = json_decode($item['inventory_deductions'], true);
                     if ($deductions) {
                         foreach ($deductions as $ded) {
-                            // Restore inventory
-                            $db->prepare("
-                                UPDATE finished_goods_inventory 
-                                SET quantity_available = quantity_available + ?
-                                WHERE id = ?
-                            ")->execute([$ded['quantity_deducted'], $ded['inventory_id']]);
+                            // Restore the exact lot and keep every quantity column
+                            // plus its location occupancy synchronized.
+                            fgInventoryRestockBaseUnits(
+                                $db,
+                                (int)$ded['inventory_id'],
+                                (int)$ded['quantity_deducted']
+                            );
                         }
                     }
                 }

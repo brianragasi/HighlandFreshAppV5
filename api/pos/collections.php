@@ -6,7 +6,7 @@
  * Generates Official Receipt (OR) documents
  * Supports partial payments (staggered collection)
  * 
- * GET - Search by DR number, outstanding balances, customer balance
+ * GET - Search by customer/order/DR, outstanding balances, customer balance
  * POST - Record collection payment, generate OR
  * 
  * @package HighlandFresh
@@ -261,18 +261,29 @@ function handleGet($db, $action, $currentUser) {
             break;
             
         case 'outstanding':
-            // Get all outstanding (unpaid/partial) delivery receipts
+            // Get collectible receivables. A DR becomes Accounts Receivable only
+            // after Warehouse confirms delivery; picking/dispatched documents are
+            // operational records and must never be collected by Cashier.
             $customerId = getParam('customer_id');
+            $search = trim((string)getParam('search', ''));
             $limit = min(100, max(10, intval(getParam('limit', 50))));
             
             $sql = "
                 SELECT 
                     dr.id,
                     dr.dr_number,
+                    dr.order_id,
+                    so.order_number,
+                    so.customer_po_number,
                     COALESCE(c.customer_type, 'institutional') as customer_type,
                     dr.customer_name,
+                    c.customer_code,
                     COALESCE(dr.sub_location, c.sub_location, '') as sub_location,
                     dr.total_amount,
+                    COALESCE(return_summary.returned_quantity, 0) as returned_quantity,
+                    COALESCE(return_summary.return_adjustment, 0) as return_adjustment,
+                    dr.total_amount + COALESCE(return_summary.return_adjustment, 0) as gross_shipped_amount,
+                    COALESCE(return_summary.pending_disposal_quantity, 0) as pending_disposal_quantity,
                     COALESCE(dr.amount_paid, 0) as amount_paid,
                     (dr.total_amount - COALESCE(dr.amount_paid, 0)) as amount_due,
                     COALESCE(pending.pending_check_amount, 0) as pending_check_amount,
@@ -287,7 +298,36 @@ function handleGet($db, $action, $currentUser) {
                     dr.payment_terms_days as payment_terms,
                     dr.due_date
                 FROM delivery_receipts dr
-                LEFT JOIN customers c ON dr.customer_id = c.id OR dr.customer_name = c.name
+                LEFT JOIN customers c
+                    ON dr.customer_id = c.id
+                    OR (dr.customer_id IS NULL AND dr.customer_name = c.name)
+                LEFT JOIN sales_orders so ON so.id = dr.order_id
+                LEFT JOIN (
+                    SELECT
+                        drt.delivery_receipt_id,
+                        SUM(drt.quantity_returned) AS returned_quantity,
+                        SUM(drt.quantity_returned * COALESCE(dri.unit_price, 0)) AS return_adjustment,
+                        SUM(CASE
+                            WHEN drt.disposition IN ('dispose', 'qc_review')
+                             AND EXISTS (
+                                 SELECT 1
+                                 FROM disposals d
+                                 WHERE d.source_type = 'finished_goods'
+                                   AND d.status IN ('pending', 'approved')
+                                   AND (
+                                       d.source_id = -drt.id
+                                       OR (
+                                           d.source_id = drt.id
+                                           AND COALESCE(d.notes, '') LIKE 'Auto-created from delivery return.%'
+                                       )
+                                   )
+                             )
+                            THEN drt.quantity_returned ELSE 0 END
+                        ) AS pending_disposal_quantity
+                    FROM delivery_returns drt
+                    INNER JOIN delivery_receipt_items dri ON dri.id = drt.dr_item_id
+                    GROUP BY drt.delivery_receipt_id
+                ) return_summary ON return_summary.delivery_receipt_id = dr.id
                 LEFT JOIN (
                     SELECT dr_id,
                            SUM(amount_collected) AS pending_check_amount,
@@ -297,13 +337,28 @@ function handleGet($db, $action, $currentUser) {
                     GROUP BY dr_id
                 ) pending ON pending.dr_id = dr.id
                 WHERE COALESCE(dr.payment_status, 'unpaid') IN ('unpaid', 'partial')
-                AND dr.status NOT IN ('cancelled')
+                AND dr.status = 'delivered'
             ";
             $params = [];
             
             if ($customerId) {
                 $sql .= " AND c.id = ?";
                 $params[] = $customerId;
+            }
+
+            if ($search !== '') {
+                $like = "%{$search}%";
+                $sql .= " AND (
+                    dr.dr_number LIKE ?
+                    OR dr.customer_name LIKE ?
+                    OR c.name LIKE ?
+                    OR c.customer_code LIKE ?
+                    OR c.contact_person LIKE ?
+                    OR c.contact_number LIKE ?
+                    OR so.order_number LIKE ?
+                    OR so.customer_po_number LIKE ?
+                )";
+                array_push($params, $like, $like, $like, $like, $like, $like, $like, $like);
             }
             
             $sql .= " ORDER BY dr.delivered_at ASC, dr.created_at ASC LIMIT ?";
@@ -319,8 +374,9 @@ function handleGet($db, $action, $currentUser) {
             Response::success([
                 'receivables' => $outstanding,
                 'count' => count($outstanding),
-                'total_outstanding' => $totalOutstanding
-            ], 'Outstanding receivables retrieved');
+                'total_outstanding' => $totalOutstanding,
+                'search' => $search
+            ], $search !== '' ? 'Matching receivables retrieved' : 'Outstanding receivables retrieved');
             break;
             
         case 'customer_balance':
@@ -353,12 +409,12 @@ function handleGet($db, $action, $currentUser) {
                     dr.delivered_at,
                     DATEDIFF(CURDATE(), dr.delivered_at) as days_outstanding
                 FROM delivery_receipts dr
-                WHERE dr.customer_name = ?
+                WHERE (dr.customer_id = ? OR (dr.customer_id IS NULL AND dr.customer_name = ?))
                 AND dr.payment_status IN ('unpaid', 'partial')
-                AND dr.status NOT IN ('cancelled')
+                AND dr.status = 'delivered'
                 ORDER BY dr.delivered_at ASC
             ");
-            $drsStmt->execute([$customer['name']]);
+            $drsStmt->execute([$customer['id'], $customer['name']]);
             $outstandingDRs = $drsStmt->fetchAll();
             
             // Get recent payments
@@ -655,6 +711,10 @@ function handlePost($db, $action, $currentUser) {
                 
                 if (!$dr) {
                     throw new Exception('Delivery Receipt not found');
+                }
+
+                if (($dr['status'] ?? '') !== 'delivered') {
+                    throw new Exception('Payment can only be recorded after the delivery is confirmed');
                 }
                 
                 $drId = $dr['id'];

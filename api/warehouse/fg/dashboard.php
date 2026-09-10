@@ -46,7 +46,19 @@ try {
             SUM(CASE WHEN status = 'full' THEN 1 ELSE 0 END) as full,
             SUM(CASE WHEN status IN ('maintenance', 'offline') THEN 1 ELSE 0 END) as offline,
             COALESCE(SUM(capacity), 0) as total_capacity,
-            COALESCE(SUM(current_count), 0) as current_count
+            COALESCE((
+                SELECT SUM(GREATEST(
+                           COALESCE(fi.quantity_available, 0),
+                           COALESCE(fi.remaining_quantity, 0),
+                           (COALESCE(fi.boxes_available, 0) * COALESCE(NULLIF(p.pieces_per_box, 0), 1))
+                               + COALESCE(fi.pieces_available, 0)
+                       ))
+                FROM finished_goods_inventory fi
+                JOIN chiller_locations occupied ON occupied.id = fi.chiller_id
+                LEFT JOIN products p ON p.id = fi.product_id
+                WHERE occupied.is_active = 1
+                  AND fi.status IN ('available', 'low_stock')
+            ), 0) as current_count
         FROM chiller_locations
         WHERE is_active = 1
     ");

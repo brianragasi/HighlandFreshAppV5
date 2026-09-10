@@ -13,6 +13,7 @@
 require_once dirname(dirname(__DIR__)) . '/bootstrap.php';
 require_once __DIR__ . '/inventory_helpers.php';
 require_once dirname(dirname(__DIR__)) . '/helpers/customer_accounts.php';
+require_once dirname(dirname(__DIR__)) . '/helpers/sellable_expiry_policy.php';
 
 // Different roles for different operations:
 // - GET: Sales can view DRs (to track delivery status)
@@ -321,6 +322,7 @@ function markDeliveryReceiptPrinted(PDO $db, array $current, $currentUser) {
 }
 
 function handlePost($db, $action, $currentUser) {
+    $sellableExpiry = hfSellableExpirySql('fgi.expiry_date');
     $data = getRequestBody();
 
     // Print status flag (also available via PUT mark_printed)
@@ -416,8 +418,8 @@ function handlePost($db, $action, $currentUser) {
         $placeholders = implode(',', array_fill(0, count($productIds), '?'));
 
         // Single query: fetch available stock keyed by product_id
-        // Mirrors the canonical dispatchable-stock logic from inventory.php:
-        //   fg.status = 'available', not expired, has positive qty
+        // Mirrors the canonical dispatchable-stock logic:
+        //   fg.status = 'available', outside the 7-day QC window, has positive qty
         $stockStmt = $db->prepare("
             SELECT
                 fgi.product_id,
@@ -441,7 +443,7 @@ function handlePost($db, $action, $currentUser) {
             INNER JOIN products p ON fgi.product_id = p.id
             WHERE fgi.product_id IN ({$placeholders})
               AND fgi.status = 'available'
-              AND (fgi.expiry_date IS NULL OR fgi.expiry_date >= CURDATE())
+              AND {$sellableExpiry}
               AND (
                   COALESCE(fgi.quantity_available, 0) > 0
                   OR COALESCE(fgi.boxes_available, 0) > 0
@@ -466,7 +468,7 @@ function handlePost($db, $action, $currentUser) {
             $ordered = (int)$item['quantity_ordered'];
 
             if ($available < $ordered) {
-                $stockWarnings[] = "{$item['product_name']}: need {$ordered}, only {$available} in FG";
+                $stockWarnings[] = "{$item['product_name']}: need {$ordered}, only {$available} dispatchable units in FG";
             }
         }
 
@@ -474,7 +476,7 @@ function handlePost($db, $action, $currentUser) {
             Response::error(
                 "⚠️ INSUFFICIENT FG INVENTORY:\n" .
                 implode("\n", $stockWarnings) .
-                "\n\nPlease ensure products are produced, QC-released, and received in FG warehouse before creating DR.",
+                "\n\nPlease ensure products are produced, QC-released, received in FG, and have more than 7 days before expiry.",
                 400
             );
         }
@@ -608,6 +610,7 @@ function handlePost($db, $action, $currentUser) {
 }
 
 function handlePut($db, $action, $currentUser) {
+    $sellableExpiry = hfSellableExpirySql('fgi.expiry_date');
     $data = getRequestBody();
     $id = getParam('id') ?? ($data['id'] ?? null);
     
@@ -907,7 +910,7 @@ function handlePut($db, $action, $currentUser) {
                         LEFT JOIN products p ON fgi.product_id = p.id
                         WHERE fgi.product_id = ?
                           AND fgi.status IN ('available', 'low_stock')
-                          AND fgi.expiry_date >= CURDATE()
+                          AND {$sellableExpiry}
                           AND (pb.qc_status = 'released' OR pb.qc_status IS NULL)
                           AND (
                               fgi.boxes_available > 0
@@ -951,7 +954,7 @@ function handlePut($db, $action, $currentUser) {
                             WHERE fgi.id = ?
                               AND fgi.product_id = ?
                               AND fgi.status IN ('available', 'low_stock')
-                              AND fgi.expiry_date >= CURDATE()
+                              AND {$sellableExpiry}
                             FOR UPDATE
                         ");
                         $lockStmt->execute([$invId, (int) $item['product_id']]);

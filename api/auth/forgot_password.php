@@ -51,11 +51,14 @@ try {
     $stmt = $db->prepare("
         SELECT id, username, full_name, first_name, last_name, email, role, is_active
         FROM users
-        WHERE LOWER(email) = ? AND is_active = 1
-        LIMIT 1
+        WHERE LOWER(TRIM(email)) = ? AND is_active = 1
+        LIMIT 2
     ");
     $stmt->execute([$email]);
-    $user = $stmt->fetch();
+    $matchingUsers = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    // Fail closed for historical duplicate emails. The public response remains
+    // generic; an administrator must give those accounts distinct addresses.
+    $user = count($matchingUsers) === 1 ? $matchingUsers[0] : null;
 
     if ($user) {
         $openStmt = $db->prepare("

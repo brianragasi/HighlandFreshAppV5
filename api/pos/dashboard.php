@@ -87,7 +87,7 @@ function handleGet($db, $action, $currentUser) {
                     COALESCE(SUM(total_amount - amount_paid), 0) as total_outstanding
                 FROM delivery_receipts 
                 WHERE payment_status IN ('unpaid', 'partial')
-                AND status NOT IN ('cancelled')
+                AND status = 'delivered'
             ");
             $arStmt->execute();
             $arData = $arStmt->fetch();
@@ -425,7 +425,7 @@ function handleGet($db, $action, $currentUser) {
                 FROM delivery_receipts dr
                 LEFT JOIN customers c ON dr.customer_id = c.id
                 WHERE dr.payment_status IN ('unpaid', 'partial')
-                AND dr.status NOT IN ('cancelled', 'pending', 'draft')
+                AND dr.status = 'delivered'
             ";
             $params = [];
             

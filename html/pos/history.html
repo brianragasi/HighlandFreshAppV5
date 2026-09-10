@@ -384,6 +384,14 @@
                             <span class="text-base-content/60">Discount</span>
                             <span class="text-error" id="detailDiscount">-₱0.00</span>
                         </div>
+                        <div class="flex justify-between">
+                            <span class="text-base-content/60">VATable Sales</span>
+                            <span id="detailVatableSales">₱0.00</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-base-content/60">VAT (12%, included)</span>
+                            <span id="detailVatAmount">₱0.00</span>
+                        </div>
                         <div class="divider my-1"></div>
                         <div class="flex justify-between text-lg font-bold">
                             <span>Total</span>
@@ -543,6 +551,7 @@
     <script src="../../js/config/auth.js?v=20260814-3"></script>
     <script src="../../js/security/role-guard.js" data-allowed-roles="cashier,general_manager"></script>
     <script src="../../js/pos/pos.service.js"></script>
+    <script src="../../js/pos/receipt-printer.js?v=20260909-vat1"></script>
 
     <script>
         // State
@@ -979,7 +988,10 @@
                 </tr>
             `).join('');
 
-            document.getElementById('detailSubtotal').textContent = formatCurrency(data.subtotal);
+            document.getElementById('detailSubtotal').textContent = formatCurrency(data.subtotal_amount ?? data.subtotal ?? data.total_amount);
+            const taxAmount = Math.max(0, Number(data.tax_amount || 0));
+            document.getElementById('detailVatableSales').textContent = formatCurrency(data.vatable_sales ?? (Number(data.total_amount || 0) - taxAmount));
+            document.getElementById('detailVatAmount').textContent = formatCurrency(taxAmount);
 
             if (data.discount_amount > 0) {
                 document.getElementById('detailDiscountRow').classList.remove('hidden');
@@ -1160,9 +1172,17 @@
             window.print();
         }
 
-        function printTransaction() {
-            showToast('Printing...', 'info');
-            window.print();
+        async function printTransaction() {
+            if (!selectedTransaction?.id) return;
+            showToast('Preparing thermal receipt...', 'info');
+            try {
+                const response = await POSService.printReceipt(selectedTransaction.id);
+                if (!response?.data) throw new Error('Receipt data was not returned');
+                POSReceiptPrinter.printSalesReceipt(response.data);
+            } catch (error) {
+                console.error('Receipt print error:', error);
+                showToast(error?.response?.data?.message || error.message || 'Could not prepare receipt', 'error');
+            }
         }
 
         async function voidTransaction() {

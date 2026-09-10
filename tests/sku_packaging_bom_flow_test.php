@@ -11,6 +11,7 @@ $sources = [
     'yield_helpers' => file_get_contents($root . '/api/production/helpers/yield_helpers.php'),
     'runs_api' => file_get_contents($root . '/api/production/runs.php'),
     'workbench' => file_get_contents($root . '/html/production/run-workbench.html'),
+    'packaging_allocator' => file_get_contents($root . '/js/production/packaging-allocation.js'),
     'warehouse_requisitions_api' => file_get_contents($root . '/api/warehouse/raw/requisitions.php'),
     'warehouse_requisitions_page' => file_get_contents($root . '/html/warehouse/raw/requisitions.html'),
 ];
@@ -80,10 +81,12 @@ $checks = [
         && str_contains($sources['workbench'], 'lossSubmissionInFlight')
         && str_contains($sources['workbench'], 'completionSubmissionInFlight')
         && !str_contains($sources['workbench'], 'Manual entry (no catalog sizes)'),
-    'Production chooses the intended SKU before a multi-size recommendation is applied' =>
-        str_contains($sources['workbench'], 'Choose the intended product size')
+    'Production automatically allocates one or several selected package sizes' =>
+        str_contains($sources['workbench'], 'Recalculate automatically')
         && str_contains($sources['workbench'], 'getPackagingBasisVolumeMl')
-        && str_contains($sources['workbench'], 'Math.floor(availableMl / sizeMl)')
+        && str_contains($sources['workbench'], 'autoDistributePackaging')
+        && str_contains($sources['packaging_allocator'], 'distributeEvenlyByVolume')
+        && str_contains($sources['packaging_allocator'], 'Math.floor(targetVolumePerSku / sku.size_ml)')
         && str_contains($sources['runs_api'], 'validateSkuPackagingPlanVolume'),
 ];
 
@@ -115,7 +118,11 @@ try {
         FROM master_recipes mr
         JOIN products p ON p.base_product_id = mr.base_product_id AND p.is_active = 1
         WHERE mr.is_active = 1 AND mr.base_product_id IS NOT NULL
-          AND LOWER(COALESCE(p.base_unit, '')) NOT IN ('bottle', 'bottles')
+          AND LOWER(COALESCE(p.base_unit, '')) NOT IN (
+              'bottle', 'bottles', 'printed_pouch', 'plain_pouch', 'pouch',
+              'sachet', 'tub', 'jar', 'wrapped_block', 'block',
+              'bulk_container', 'bulk'
+          )
         ORDER BY mr.id DESC, p.id ASC LIMIT 1
     ");
     $fixture = $fixtureStmt->fetch(PDO::FETCH_ASSOC);

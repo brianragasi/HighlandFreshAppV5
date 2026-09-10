@@ -166,10 +166,6 @@ const PurchasingService = {
         });
     },
 
-    async updatePaymentStatus(id, paymentStatus) {
-        return await api.put(`/purchasing/purchase_orders.php?action=update_payment&id=${id}`, { payment_status: paymentStatus });
-    },
-
     async receivePOWithPrices(id, priceUpdates = [], receivingItems = [], receivingMeta = {}) {
         return await api.put(`/purchasing/purchase_orders.php?action=receive_with_prices&id=${id}`, {
             price_updates: priceUpdates,

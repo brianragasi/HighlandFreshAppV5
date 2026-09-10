@@ -16,6 +16,8 @@ require_once dirname(dirname(__DIR__)) . '/helpers/procurement_notifications.php
 require_once dirname(dirname(__DIR__)) . '/helpers/qc_count_discrepancy.php';
 require_once __DIR__ . '/inventory_helpers.php';
 
+class FgChillerCapacityException extends RuntimeException {}
+
 // Require Warehouse FG role
 $currentUser = Auth::requireRole(['warehouse_fg', 'general_manager']);
 
@@ -127,6 +129,12 @@ function getProductUnitConfig($db, $productId) {
  */
 function piecesToBoxes($totalPieces, $piecesPerBox) {
     if ($piecesPerBox <= 0) $piecesPerBox = 1;
+    if ($piecesPerBox === 1) {
+        return [
+            'boxes' => 0,
+            'pieces' => max(0, (int)$totalPieces)
+        ];
+    }
     return [
         'boxes' => intdiv($totalPieces, $piecesPerBox),
         'pieces' => $totalPieces % $piecesPerBox
@@ -377,10 +385,9 @@ function releaseMultiUnit($db, $inventoryId, $releasedBoxes, $releasedPieces, $u
         $inventoryId
     ]);
     
-    // Update chiller count if applicable
+    // Rebuild the location cache from inventory after the stock mutation.
     if ($inventory['chiller_id']) {
-        $db->prepare("UPDATE chiller_locations SET current_count = current_count - ? WHERE id = ?")
-           ->execute([$totalReleasedPieces, $inventory['chiller_id']]);
+        fgSyncChillerCount($db, (int)$inventory['chiller_id']);
     }
     
     // Log transaction
@@ -1386,14 +1393,18 @@ function handlePost($db, $action, $currentUser) {
                 
                 $inventoryId = $db->lastInsertId();
                 
-                // Update chiller count if assigned
+                // Rebuild the location cache from the inventory source of truth.
                 if (!empty($data['chiller_id'])) {
-                    $updateChiller = $db->prepare("
-                        UPDATE chiller_locations 
-                        SET current_count = current_count + ?
-                        WHERE id = ?
-                    ");
-                    $updateChiller->execute([$totalQuantity, $data['chiller_id']]);
+                    $newOccupancy = fgSyncChillerCount($db, (int)$data['chiller_id']);
+                    $capacityStmt = $db->prepare("SELECT capacity FROM chiller_locations WHERE id = ? FOR UPDATE");
+                    $capacityStmt->execute([(int)$data['chiller_id']]);
+                    $capacity = $capacityStmt->fetchColumn();
+                    if ($capacity === false) {
+                        throw new Exception('Assigned chiller was not found');
+                    }
+                    if ((int)$capacity > 0 && $newOccupancy > (int)$capacity) {
+                        throw new Exception('The selected chiller does not have enough remaining capacity');
+                    }
                 }
                 
                 // Log transaction
@@ -1579,8 +1590,10 @@ function handlePost($db, $action, $currentUser) {
                     $inventoryId
                 ]);
 
-                $db->prepare("UPDATE chiller_locations SET current_count = current_count + ? WHERE id = ?")
-                   ->execute([$totalPieces, $chillerId]);
+                $newOccupancy = fgSyncChillerCount($db, (int)$chillerId);
+                if ($chillerCapacity > 0 && $newOccupancy > $chillerCapacity) {
+                    throw new Exception('The selected chiller no longer has enough remaining capacity');
+                }
 
                 // Mark production batch as FG-received once stock has a chiller location
                 try {
@@ -1719,6 +1732,14 @@ function handlePost($db, $action, $currentUser) {
                 ]];
             }
 
+            $requiredCapacity = 0;
+            foreach ($packagingLines as $packagingLine) {
+                $requiredCapacity += max(0, (int) ($packagingLine['quantity'] ?? 0));
+            }
+            if ($requiredCapacity <= 0) {
+                Response::error('This batch has no released finished goods to receive', 422);
+            }
+
             // Resolve QC release ID
             $qcReleaseId = null;
             $qcStmt = $db->prepare("SELECT id FROM qc_batch_release WHERE batch_id = ? ORDER BY id DESC LIMIT 1");
@@ -1729,6 +1750,39 @@ function handlePost($db, $action, $currentUser) {
             $db->beginTransaction();
 
             try {
+                // Serialize receiving into this location and reject an undersized
+                // chiller before creating any Finished Goods inventory rows.
+                $chillerStmt = $db->prepare("
+                    SELECT id, chiller_name, capacity, status, is_active
+                    FROM chiller_locations
+                    WHERE id = ?
+                    FOR UPDATE
+                ");
+                $chillerStmt->execute([$chillerId]);
+                $destinationChiller = $chillerStmt->fetch(PDO::FETCH_ASSOC);
+                if (!$destinationChiller || !(int) ($destinationChiller['is_active'] ?? 0)) {
+                    throw new FgChillerCapacityException('The selected chiller is not available. Choose another chiller.');
+                }
+                if (in_array((string) ($destinationChiller['status'] ?? ''), ['maintenance', 'offline'], true)) {
+                    throw new FgChillerCapacityException(
+                        'Chiller "' . ($destinationChiller['chiller_name'] ?? $chillerId)
+                        . '" is not available for receiving. Choose another chiller.'
+                    );
+                }
+
+                $capacity = (int) ($destinationChiller['capacity'] ?? 0);
+                $currentOccupancy = fgChillerAuthoritativeCount($db, $chillerId);
+                $remainingCapacity = $capacity > 0 ? max(0, $capacity - $currentOccupancy) : null;
+                if ($remainingCapacity !== null && $requiredCapacity > $remainingCapacity) {
+                    $shortage = $requiredCapacity - $remainingCapacity;
+                    throw new FgChillerCapacityException(
+                        'This batch needs ' . number_format($requiredCapacity) . ' unit(s), but chiller "'
+                        . ($destinationChiller['chiller_name'] ?? $chillerId) . '" has only '
+                        . number_format($remainingCapacity) . ' available. It is short by '
+                        . number_format($shortage) . ' unit(s). Choose another chiller.'
+                    );
+                }
+
                 $createdIds = [];
                 $totalReceived = 0;
 
@@ -1861,9 +1915,14 @@ function handlePost($db, $action, $currentUser) {
                 $db->prepare("UPDATE production_batches SET fg_received = 1, updated_at = NOW() WHERE id = ?")
                    ->execute([$batchId]);
 
-                // Update chiller count
-                $db->prepare("UPDATE chiller_locations SET current_count = current_count + ? WHERE id = ?")
-                   ->execute([$totalReceived, $chillerId]);
+                // Rebuild from the rows just received, then enforce actual capacity.
+                $newOccupancy = fgSyncChillerCount($db, $chillerId);
+                if ($capacity > 0 && $newOccupancy > $capacity) {
+                    throw new FgChillerCapacityException(
+                        'Chiller capacity changed while this batch was being received. '
+                        . 'The batch was not saved; refresh and choose another chiller.'
+                    );
+                }
 
                 $db->commit();
 
@@ -1875,8 +1934,15 @@ function handlePost($db, $action, $currentUser) {
                     'chiller_id' => $chillerId,
                 ], "Batch received: {$totalReceived} pieces across " . count($createdIds) . " product line(s) into chiller.", 201);
 
-            } catch (Exception $e) {
-                $db->rollBack();
+            } catch (FgChillerCapacityException $e) {
+                if ($db->inTransaction()) {
+                    $db->rollBack();
+                }
+                Response::error($e->getMessage(), 422);
+            } catch (Throwable $e) {
+                if ($db->inTransaction()) {
+                    $db->rollBack();
+                }
                 throw $e;
             }
             break;
@@ -2089,26 +2155,31 @@ function handlePut($db, $action, $currentUser) {
                     Response::error('Expired inventory should be disposed or quarantined, not transferred as usable stock', 400);
                 }
 
+                if ((int)($current['chiller_id'] ?? 0) === (int)$data['to_chiller_id']) {
+                    throw new Exception('This inventory is already assigned to the selected chiller');
+                }
+
+                $totalPieces = fgInventoryEffectiveBaseUnits($current, $current['pieces_per_box'] ?? 1);
+                $targetStmt = $db->prepare("SELECT capacity FROM chiller_locations WHERE id = ? FOR UPDATE");
+                $targetStmt->execute([(int)$data['to_chiller_id']]);
+                $targetCapacity = $targetStmt->fetchColumn();
+                if ($targetCapacity === false) {
+                    throw new Exception('Target chiller was not found');
+                }
+                $targetCurrent = fgChillerAuthoritativeCount($db, (int)$data['to_chiller_id']);
+                if (!fgChillerAllowsQuantityChange($targetCurrent, $totalPieces, (int)$targetCapacity)) {
+                    throw new Exception('The target chiller does not have enough remaining capacity');
+                }
+
                 // Update inventory chiller
                 $stmt = $db->prepare("UPDATE finished_goods_inventory SET chiller_id = ? WHERE id = ?");
                 $stmt->execute([$data['to_chiller_id'], $id]);
-                
-                // Calculate total for chiller count
-                $totalPieces = boxesToPieces(
-                    $current['boxes_available'] ?? 0,
-                    $current['pieces_available'] ?? 0,
-                    $current['pieces_per_box'] ?? 1
-                );
-                
-                // Update old chiller count
+
+                // Rebuild both location caches after moving the row.
                 if ($current['chiller_id']) {
-                    $db->prepare("UPDATE chiller_locations SET current_count = current_count - ? WHERE id = ?")
-                       ->execute([$totalPieces, $current['chiller_id']]);
+                    fgSyncChillerCount($db, (int)$current['chiller_id']);
                 }
-                
-                // Update new chiller count
-                $db->prepare("UPDATE chiller_locations SET current_count = current_count + ? WHERE id = ?")
-                   ->execute([$totalPieces, $data['to_chiller_id']]);
+                fgSyncChillerCount($db, (int)$data['to_chiller_id']);
                 
                 // Log transaction
                 $logStmt = $db->prepare("
@@ -2150,64 +2221,110 @@ function handlePut($db, $action, $currentUser) {
             break;
             
         case 'adjust':
-            // Stock adjustment with multi-unit support
-            $piecesPerBox = max(1, (int) ($current['pieces_per_box'] ?? 1));
-            try {
-                $newBoxes = array_key_exists('boxes', $data)
-                    ? hfParseBusinessInteger($data['boxes'], 'Adjusted boxes', 0, 100000000)
-                    : (int) ($current['boxes_available'] ?? 0);
-                $newPieces = array_key_exists('pieces', $data)
-                    ? hfParseBusinessInteger($data['pieces'], 'Adjusted loose pieces', 0, $piecesPerBox - 1)
-                    : (int) ($current['pieces_available'] ?? 0);
-            } catch (InvalidArgumentException $error) {
-                Response::error($error->getMessage(), 400);
+            $reasonLabels = [
+                'physical_count' => 'Physical count correction',
+                'receiving_entry' => 'Receiving or encoding correction',
+                'other' => 'Other count correction',
+            ];
+            $reasonCode = strtolower(trim((string)($data['reason_code'] ?? 'physical_count')));
+            $reasonDetails = trim((string)($data['reason_details'] ?? $data['reason'] ?? ''));
+            if (!isset($reasonLabels[$reasonCode])) {
+                Response::error('Choose a valid stock adjustment reason', 400);
+            }
+            if (mb_strlen($reasonDetails) < 8) {
+                Response::error('Describe why the recorded stock differs from the physical count (at least 8 characters)', 400);
+            }
+            if (mb_strlen($reasonDetails) > 500) {
+                Response::error('Adjustment details must be 500 characters or fewer', 400);
+            }
+            if (!array_key_exists('new_quantity', $data)
+                && !array_key_exists('boxes', $data)
+                && !array_key_exists('pieces', $data)) {
+                Response::error('Enter the physical count', 400);
             }
 
-            // Also support new_quantity for backwards compatibility
-            if (isset($data['new_quantity']) && !isset($data['boxes']) && !isset($data['pieces'])) {
-                try {
-                    $newQuantity = hfParseBusinessInteger(
+            $db->beginTransaction();
+            try {
+                // Re-read and lock the exact lot so simultaneous dispatches or
+                // counts cannot be overwritten by a stale screen value.
+                $lockStmt = $db->prepare("
+                    SELECT fg.*, p.pieces_per_box, p.base_unit, p.box_unit,
+                           COALESCE(pb.batch_code, CONCAT('FG-', fg.id)) AS batch_code
+                    FROM finished_goods_inventory fg
+                    LEFT JOIN products p ON fg.product_id = p.id
+                    LEFT JOIN production_batches pb ON fg.batch_id = pb.id
+                    WHERE fg.id = ?
+                    FOR UPDATE
+                ");
+                $lockStmt->execute([$id]);
+                $locked = $lockStmt->fetch(PDO::FETCH_ASSOC);
+                if (!$locked) {
+                    throw new RuntimeException('Finished Goods stock was not found');
+                }
+                if (!in_array((string)($locked['status'] ?? ''), ['available', 'low_stock'], true)) {
+                    throw new RuntimeException('Only available Finished Goods stock can be count-adjusted');
+                }
+                if (!empty($locked['expiry_date']) && $locked['expiry_date'] < date('Y-m-d')) {
+                    throw new RuntimeException('Expired stock must be reported to QC instead of count-adjusted');
+                }
+
+                $openDisposal = $db->prepare("
+                    SELECT disposal_code
+                    FROM disposals
+                    WHERE source_type = 'finished_goods'
+                      AND source_id = ?
+                      AND status IN ('pending', 'approved')
+                    LIMIT 1
+                ");
+                $openDisposal->execute([$id]);
+                if ($disposalCode = $openDisposal->fetchColumn()) {
+                    throw new RuntimeException("This lot is already controlled by disposal request {$disposalCode}");
+                }
+
+                $piecesPerBox = max(1, (int)($locked['pieces_per_box'] ?? 1));
+                if (array_key_exists('new_quantity', $data)
+                    && !array_key_exists('boxes', $data)
+                    && !array_key_exists('pieces', $data)) {
+                    $newTotalPieces = hfParseBusinessInteger(
                         $data['new_quantity'],
-                        'Adjusted stock quantity',
+                        'Physical count',
                         0,
                         100000000
                     );
-                } catch (InvalidArgumentException $error) {
-                    Response::error($error->getMessage(), 400);
+                    $split = fgInventorySplitBaseToPacks($newTotalPieces, $piecesPerBox);
+                    $newBoxes = $split['boxes'];
+                    $newPieces = $split['loose'];
+                } else {
+                    $newBoxes = array_key_exists('boxes', $data)
+                        ? hfParseBusinessInteger($data['boxes'], 'Counted boxes', 0, 100000000)
+                        : (int)($locked['boxes_available'] ?? 0);
+                    $newPieces = array_key_exists('pieces', $data)
+                        ? hfParseBusinessInteger($data['pieces'], 'Counted loose pieces', 0, $piecesPerBox - 1)
+                        : (int)($locked['pieces_available'] ?? 0);
+                    $newTotalPieces = boxesToPieces($newBoxes, $newPieces, $piecesPerBox);
                 }
-                $converted = piecesToBoxes($newQuantity, $piecesPerBox);
-                $newBoxes = $converted['boxes'];
-                $newPieces = $converted['pieces'];
-            }
-            
-            $newTotalPieces = boxesToPieces($newBoxes, $newPieces, $piecesPerBox);
-            if ($newTotalPieces < 0 || $newTotalPieces > 100000000) {
-                Response::error('Adjusted stock must be between 0 and 100,000,000 base units', 400);
-            }
-            $oldTotalPieces = boxesToPieces(
-                $current['boxes_available'] ?? 0, 
-                $current['pieces_available'] ?? 0, 
-                $piecesPerBox
-            );
-            $difference = $newTotalPieces - $oldTotalPieces;
-            
-            $db->beginTransaction();
-            
-            try {
-                if (!empty($current['chiller_id'])) {
+
+                $oldTotalPieces = fgInventoryEffectiveBaseUnits($locked, $piecesPerBox);
+                $difference = $newTotalPieces - $oldTotalPieces;
+                if ($difference === 0) {
+                    throw new RuntimeException('The physical count matches the recorded stock; no adjustment is needed');
+                }
+
+                if (!empty($locked['chiller_id'])) {
                     $capacityStmt = $db->prepare("
                         SELECT capacity, current_count
                         FROM chiller_locations
                         WHERE id = ?
                         FOR UPDATE
                     ");
-                    $capacityStmt->execute([$current['chiller_id']]);
+                    $capacityStmt->execute([$locked['chiller_id']]);
                     $chiller = $capacityStmt->fetch();
                     if (!$chiller) {
                         throw new Exception('Assigned chiller was not found');
                     }
-                    $projectedCount = (int) $chiller['current_count'] + $difference;
-                    if ($projectedCount < 0 || $projectedCount > (int) $chiller['capacity']) {
+                    $authoritativeCount = fgChillerAuthoritativeCount($db, (int)$locked['chiller_id']);
+                    $projectedCount = $authoritativeCount + $difference;
+                    if (!fgChillerAllowsQuantityChange($authoritativeCount, $difference, (int)$chiller['capacity'])) {
                         throw new Exception(
                             'This adjustment would place the chiller outside its capacity. ' .
                             'Projected: ' . number_format($projectedCount) .
@@ -2218,21 +2335,45 @@ function handlePut($db, $action, $currentUser) {
 
                 $stmt = $db->prepare("
                     UPDATE finished_goods_inventory 
-                    SET quantity_available = ?,
+                    SET quantity = ?,
+                        remaining_quantity = ?,
+                        quantity_available = ?,
                         quantity_boxes = ?,
                         boxes_available = ?,
                         quantity_pieces = ?,
-                        pieces_available = ?
+                        pieces_available = ?,
+                        last_movement_at = NOW()
                     WHERE id = ?
                 ");
-                $stmt->execute([$newTotalPieces, $newBoxes, $newBoxes, $newPieces, $newPieces, $id]);
-                
-                // Update chiller count
-                if ($current['chiller_id']) {
-                    $db->prepare("UPDATE chiller_locations SET current_count = current_count + ? WHERE id = ?")
-                       ->execute([$difference, $current['chiller_id']]);
+                $stmt->execute([
+                    $newTotalPieces,
+                    $newTotalPieces,
+                    $newTotalPieces,
+                    $newBoxes,
+                    $newBoxes,
+                    $newPieces,
+                    $newPieces,
+                    $id,
+                ]);
+
+                // Rebuild from authoritative inventory. This also repairs any
+                // historical cache drift left by older picking/return flows.
+                $chillerOccupancy = null;
+                if ($locked['chiller_id']) {
+                    $chillerOccupancy = fgSyncChillerCount($db, (int)$locked['chiller_id']);
                 }
-                
+
+                $differenceSplit = fgInventorySplitBaseToPacks(abs($difference), $piecesPerBox);
+                $auditReason = sprintf(
+                    '%s: %s. Recorded %d; physical count %d; variance %s%d.',
+                    $reasonLabels[$reasonCode],
+                    $reasonDetails,
+                    $oldTotalPieces,
+                    $newTotalPieces,
+                    $difference > 0 ? '+' : '',
+                    $difference
+                );
+
                 // Log transaction
                 $logStmt = $db->prepare("
                     INSERT INTO fg_inventory_transactions
@@ -2240,39 +2381,56 @@ function handlePut($db, $action, $currentUser) {
                      boxes_quantity, pieces_quantity, quantity_before, quantity_after,
                      boxes_before, pieces_before, boxes_after, pieces_after,
                      performed_by, reason)
-                    VALUES (?, 'adjust', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, 'adjustment', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ");
                 
                 $logStmt->execute([
                     'FGT-' . date('Ymd') . '-' . uniqid(),
                     $id,
-                    $current['product_id'],
+                    $locked['product_id'],
                     abs($difference),
-                    abs($newBoxes - ($current['boxes_available'] ?? 0)),
-                    abs($newPieces - ($current['pieces_available'] ?? 0)),
+                    $differenceSplit['boxes'],
+                    $differenceSplit['loose'],
                     $oldTotalPieces,
                     $newTotalPieces,
-                    $current['boxes_available'] ?? 0,
-                    $current['pieces_available'] ?? 0,
+                    $locked['boxes_available'] ?? 0,
+                    $locked['pieces_available'] ?? 0,
                     $newBoxes,
                     $newPieces,
                     $currentUser['user_id'],
-                    $data['reason'] ?? 'Stock adjustment'
+                    $auditReason
                 ]);
-                
+
+                logAudit(
+                    $currentUser['user_id'],
+                    'ADJUST_FINISHED_GOODS_STOCK',
+                    'finished_goods_inventory',
+                    $id,
+                    ['quantity' => $oldTotalPieces],
+                    [
+                        'quantity' => $newTotalPieces,
+                        'variance' => $difference,
+                        'reason_code' => $reasonCode,
+                        'reason_details' => $reasonDetails,
+                        'batch_code' => $locked['batch_code'],
+                    ]
+                );
                 $db->commit();
-                
+
                 Response::success([
                     'boxes' => $newBoxes,
                     'pieces' => $newPieces,
                     'total_quantity' => $newTotalPieces,
-                    'display' => formatMultiUnitDisplay($newBoxes, $newPieces, $current['box_unit'] ?? 'box', $current['base_unit'] ?? 'piece'),
-                    'adjustment' => $difference
-                ], 'Inventory adjusted successfully');
-                
-            } catch (Exception $e) {
-                $db->rollBack();
-                throw $e;
+                    'display' => formatMultiUnitDisplay($newBoxes, $newPieces, $locked['box_unit'] ?? 'box', $locked['base_unit'] ?? 'piece'),
+                    'adjustment' => $difference,
+                    'reason_code' => $reasonCode,
+                    'chiller_occupancy' => $chillerOccupancy,
+                ], 'Physical count recorded and inventory balance adjusted');
+            } catch (Throwable $e) {
+                if ($db->inTransaction()) {
+                    $db->rollBack();
+                }
+                Response::error($e->getMessage(), 400);
             }
             break;
             
