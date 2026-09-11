@@ -130,9 +130,11 @@ try {
             $farmerId = getParam('farmer_id');
             $milkTypeId = getParam('milk_type_id');
             $volumeLiters = getParam('volume_liters');
-            // Accept both delivery_date/delivery_time and receiving_date/receiving_time
-            $receivingDate = getParam('receiving_date') ?: getParam('delivery_date', date('Y-m-d'));
-            $receivingTime = getParam('receiving_time') ?: getParam('delivery_time', date('H:i:s'));
+            // Receiving is a live gate transaction. The official timestamp is
+            // always assigned by the server; client-supplied dates/times are
+            // intentionally ignored so records cannot be backdated or future-dated.
+            $receivingDate = date('Y-m-d');
+            $receivingTime = date('H:i:s');
             $temperatureCelsius = getParam('temperature_celsius');
             $transportContainer = getParam('transport_container');
             $visualInspection = getParam('visual_inspection', 'pending');

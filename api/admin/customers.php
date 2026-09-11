@@ -77,8 +77,9 @@ function getCustomers($conn) {
     $params = [];
     
     if ($search) {
-        $where[] = "(c.name LIKE ? OR c.customer_code LIKE ? OR c.contact_person LIKE ? OR c.contact_number LIKE ?)";
+        $where[] = "(c.name LIKE ? OR c.customer_code LIKE ? OR c.contact_person LIKE ? OR c.contact_number LIKE ? OR c.email LIKE ?)";
         $searchParam = "%$search%";
+        $params[] = $searchParam;
         $params[] = $searchParam;
         $params[] = $searchParam;
         $params[] = $searchParam;
@@ -292,6 +293,20 @@ function createCustomer($conn) {
             return;
         }
     }
+
+    // This must happen before INSERT. A post-insert check finds the row that
+    // was just created and falsely reports that its email belongs to another
+    // customer, even though the save already succeeded.
+    $effectiveStatus = (string) ($data['status'] ?? 'active');
+    if ($effectiveStatus === 'active' && !empty($data['email'])) {
+        $emailOwner = hfFindActiveCustomerByEmail($conn, $data['email']);
+        if ($emailOwner) {
+            sendError('This email is already assigned to another active customer', 409, [
+                'email' => 'This email belongs to ' . ($emailOwner['name'] ?: $emailOwner['customer_code']) . '.'
+            ]);
+            return;
+        }
+    }
     
     $sql = "INSERT INTO customers (
                 customer_code, customer_type, name, sub_location,
@@ -322,15 +337,6 @@ function createCustomer($conn) {
     if (isset($data['locations']) && is_array($data['locations'])) {
         hfSaveCustomerLocations($conn, (int) $customerId, $data['locations']);
     }
-    if (!empty($data['email'])) {
-        $emailStmt = $conn->prepare("SELECT id FROM customers WHERE status = 'active' AND LOWER(TRIM(email)) = LOWER(TRIM(?)) LIMIT 1");
-        $emailStmt->execute([$data['email']]);
-        if ($emailStmt->fetch()) {
-            sendError('This email is already assigned to another active customer', 409);
-            return;
-        }
-    }
-    
     sendSuccess([
         'message' => 'Customer created successfully',
         'customer_id' => $customerId,
@@ -380,10 +386,11 @@ function updateCustomer($conn, $id) {
     $effectiveEmail = array_key_exists('email', $data) ? trim((string) $data['email']) : trim((string) ($existing['email'] ?? ''));
     $effectiveStatus = array_key_exists('status', $data) ? (string) $data['status'] : (string) $existing['status'];
     if ($effectiveStatus === 'active' && $effectiveEmail !== '') {
-        $emailStmt = $conn->prepare("SELECT id FROM customers WHERE status = 'active' AND LOWER(TRIM(email)) = LOWER(TRIM(?)) AND id <> ? LIMIT 1");
-        $emailStmt->execute([$effectiveEmail, $id]);
-        if ($emailStmt->fetch()) {
-            sendError('This email is already assigned to another active customer', 409);
+        $emailOwner = hfFindActiveCustomerByEmail($conn, $effectiveEmail, (int) $id);
+        if ($emailOwner) {
+            sendError('This email is already assigned to another active customer', 409, [
+                'email' => 'This email belongs to ' . ($emailOwner['name'] ?: $emailOwner['customer_code']) . '.'
+            ]);
             return;
         }
     }

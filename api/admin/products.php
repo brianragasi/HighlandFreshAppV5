@@ -7,6 +7,7 @@
 require_once __DIR__ . '/../bootstrap.php';
 require_once __DIR__ . '/../helpers/sku_packaging_bom.php';
 require_once __DIR__ . '/../helpers/product_pack_configuration.php';
+require_once __DIR__ . '/../helpers/pos_wholesale.php';
 require_once __DIR__ . '/../helpers/sellable_expiry_policy.php';
 
 // Require GM/Admin role
@@ -18,6 +19,7 @@ ensureIngredientPackagingRoleSupport($conn);
 ensureSkuPackagingBomTable($conn);
 ensureProductPrimaryContainerSupport($conn);
 ensureMilkBarProductCategorySupport($conn);
+hfEnsurePosWholesaleSchema($conn);
 
 // Get request method and handle routing
 $method = $_SERVER['REQUEST_METHOD'];
@@ -161,7 +163,8 @@ function getBaseProducts($conn) {
         // Stock subquery is optional — never fail the whole catalog if FG inventory is unavailable
         $skuSqlWithStock = "
             SELECT p.id, p.product_code, p.product_name, p.variant, p.unit_size, p.unit_measure,
-                   p.base_unit, p.box_unit, p.pieces_per_box, p.selling_price, p.unit_price, p.is_active,
+                   p.base_unit, p.box_unit, p.pieces_per_box, p.selling_price, p.unit_price,
+                   p.wholesale_box_price, p.is_active,
                    p.category, p.milk_type_id, p.shelf_life_days, p.storage_temp_min, p.storage_temp_max,
                    p.description, p.base_product_id, p.primary_container_id,
                    mt.type_name AS milk_type_name,
@@ -183,7 +186,8 @@ function getBaseProducts($conn) {
         ";
         $skuSqlSimple = "
             SELECT p.id, p.product_code, p.product_name, p.variant, p.unit_size, p.unit_measure,
-                   p.base_unit, p.box_unit, p.pieces_per_box, p.selling_price, p.unit_price, p.is_active,
+                   p.base_unit, p.box_unit, p.pieces_per_box, p.selling_price, p.unit_price,
+                   p.wholesale_box_price, p.is_active,
                    p.category, p.milk_type_id, p.shelf_life_days, p.storage_temp_min, p.storage_temp_max,
                    p.description, p.base_product_id, p.primary_container_id,
                    mt.type_name AS milk_type_name,
@@ -381,6 +385,7 @@ function getProducts($conn) {
                     p.box_unit,
                     p.pieces_per_box,
                     p.selling_price,
+                    p.wholesale_box_price,
                     p.is_active,
                     p.created_at,
                     p.updated_at,
@@ -417,6 +422,7 @@ function getProducts($conn) {
                     p.box_unit,
                     p.pieces_per_box,
                     p.selling_price,
+                    p.wholesale_box_price,
                     p.is_active,
                     p.created_at,
                     p.updated_at,
@@ -474,6 +480,7 @@ function getProduct($conn, $id) {
                 p.box_unit,
                 p.pieces_per_box,
                 p.selling_price,
+                p.wholesale_box_price,
                 p.is_active,
                 p.created_at,
                 p.updated_at
@@ -813,6 +820,7 @@ function validateProductNumericPayload(array &$data): void {
     foreach ([
         'unit_size' => ['Package size', 1.00, 99999999.99],
         'selling_price' => ['Selling price', 0.01, 9999999999.99],
+        'wholesale_box_price' => ['Wholesale box price', 0.01, 9999999999.99],
         'unit_price' => ['Unit price', 0.01, 9999999999.99],
     ] as $field => [$label, $minimum, $maximum]) {
         if (!array_key_exists($field, $data) || $data[$field] === '' || $data[$field] === null) {
@@ -894,6 +902,12 @@ function createProduct($conn) {
     $primaryContainer = applyPrimaryContainerToSkuPayload($conn, $data);
     validateProductNumericPayload($data);
     validateUnusualSkuCapacity($data);
+    if ((int) ($data['pieces_per_box'] ?? 1) > 1
+        && (float) ($data['wholesale_box_price'] ?? 0) <= 0) {
+        sendValidationError([
+            'wholesale_box_price' => 'Enter the approved wholesale price for one full box.'
+        ]);
+    }
     
     // Validate required fields
     $required = ['product_name', 'category'];
@@ -1037,8 +1051,8 @@ function createProduct($conn) {
                     base_product_id, product_code, product_name, category, variant, milk_type_id,
                     description, unit_size, unit_measure, primary_container_id, shelf_life_days,
                     storage_temp_min, storage_temp_max, base_unit, box_unit,
-                    pieces_per_box, selling_price, is_active
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                    pieces_per_box, selling_price, wholesale_box_price, is_active
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
         $stmt = $conn->prepare($sql);
         $stmt->execute([
@@ -1059,6 +1073,7 @@ function createProduct($conn) {
             $data['box_unit'] ?? 'box',
             $data['pieces_per_box'] ?? 1,
             $data['selling_price'] ?? $data['unit_price'] ?? 0.00,
+            $data['wholesale_box_price'] ?? null,
             $data['is_active'] ?? 1
         ]);
     } catch (Throwable $e) {
@@ -1070,8 +1085,8 @@ function createProduct($conn) {
                     product_code, product_name, category, variant, milk_type_id,
                     description, unit_size, unit_measure, primary_container_id, shelf_life_days,
                     storage_temp_min, storage_temp_max, base_unit, box_unit,
-                    pieces_per_box, selling_price, is_active
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                    pieces_per_box, selling_price, wholesale_box_price, is_active
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
         $stmt = $conn->prepare($sql);
         $stmt->execute([
@@ -1091,6 +1106,7 @@ function createProduct($conn) {
             $data['box_unit'] ?? 'box',
             $data['pieces_per_box'] ?? 1,
             $data['selling_price'] ?? $data['unit_price'] ?? 0.00,
+            $data['wholesale_box_price'] ?? null,
             $data['is_active'] ?? 1
         ]);
     }
@@ -1230,7 +1246,8 @@ function updateProduct($conn, $id) {
     // Check if product exists
     $checkStmt = $conn->prepare("
         SELECT id, product_code, product_name, category, variant, unit_size, unit_measure,
-               base_unit, box_unit, pieces_per_box, base_product_id, primary_container_id
+               base_unit, box_unit, pieces_per_box, selling_price, wholesale_box_price,
+               base_product_id, primary_container_id
         FROM products
         WHERE id = ?
     ");
@@ -1245,6 +1262,17 @@ function updateProduct($conn, $id) {
     $primaryContainer = applyPrimaryContainerToSkuPayload($conn, $data, $existing);
     validateProductNumericPayload($data);
     validateUnusualSkuCapacity(array_merge($existing, $data));
+    $effectivePiecesPerBox = array_key_exists('pieces_per_box', $data)
+        ? (int) $data['pieces_per_box']
+        : (int) ($existing['pieces_per_box'] ?? 1);
+    $effectiveWholesalePrice = array_key_exists('wholesale_box_price', $data)
+        ? (float) ($data['wholesale_box_price'] ?? 0)
+        : (float) ($existing['wholesale_box_price'] ?? 0);
+    if ($effectivePiecesPerBox > 1 && $effectiveWholesalePrice <= 0) {
+        sendValidationError([
+            'wholesale_box_price' => 'Enter the approved wholesale price for one full box.'
+        ]);
+    }
 
     // Keep legacy variant text intact for audit/migration, but do not allow it
     // to be edited on a base-linked SKU. Flavor belongs to base_products.
@@ -1260,7 +1288,7 @@ function updateProduct($conn, $id) {
         'product_code', 'product_name', 'category', 'variant', 'milk_type_id',
         'description', 'unit_size', 'unit_measure', 'primary_container_id', 'shelf_life_days',
         'storage_temp_min', 'storage_temp_max', 'base_unit', 'box_unit',
-        'pieces_per_box', 'selling_price', 'unit_price', 'is_active'
+        'pieces_per_box', 'selling_price', 'wholesale_box_price', 'unit_price', 'is_active'
     ];
     
     foreach ($allowedFields as $field) {

@@ -285,7 +285,6 @@ function handlePost($db, $currentUser)
 function startConversion($db, $currentUser)
 {
     $conversionId = (int) getParam('conversion_id', 0);
-    $initialVolumeMl = (float) getParam('initial_volume_ml', 0);
 
     if (!$conversionId) Response::validationError(['conversion_id' => 'Conversion ID is required']);
 
@@ -313,9 +312,17 @@ function startConversion($db, $currentUser)
     $recipeStmt->execute([$recipeId]);
     $recipe = $recipeStmt->fetch();
 
-    $volumeMl = $initialVolumeMl > 0
-        ? $initialVolumeMl
-        : ($conversion['source_volume_liters'] ?? 0) * 1000;
+    // QC already measured and reserved this exact source quantity. Production
+    // must not retype it as an editable number (for example, entering 22 as mL
+    // for a 21.83 L conversion). Subsequent physical losses are recorded in the
+    // workbench instead of silently changing the authorized starting volume.
+    $sourceVolumeLiters = (float) ($conversion['source_volume_liters'] ?? 0);
+    if ($sourceVolumeLiters <= 0) {
+        Response::validationError([
+            'source_volume_liters' => 'QC must record a positive source volume before Production can start this conversion.'
+        ]);
+    }
+    $volumeMl = round($sourceVolumeLiters * 1000, 2);
 
     // Generate run code
     $today = date('Ymd');
@@ -337,9 +344,9 @@ function startConversion($db, $currentUser)
         $runStmt->execute([
             $runCode,
             $recipeId,
-            $conversion['source_volume_liters'] ?? 0,
+            $sourceVolumeLiters,
             $volumeMl,
-            $volumeMl / 1000,
+            $sourceVolumeLiters,
             "Reprocessing conversion {$conversion['transformation_code']}",
             $currentUser['user_id'],
         ]);

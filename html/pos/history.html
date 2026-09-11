@@ -69,9 +69,15 @@
                 <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Sales</h2>
                 <ul class="menu menu-sm p-0 gap-1">
                     <li>
-                        <a href="sale.html" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                        <a href="sale.html?mode=retail" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
                             <i class="fas fa-bolt w-5 text-center text-base-content/60"></i>
-                            <span class="flex-1">Quick Sale (POS)</span>
+                            <span class="flex-1">Retail Sale</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="sale.html?mode=wholesale" class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-boxes-stacked w-5 text-center text-base-content/60"></i>
+                            <span class="flex-1">Wholesale Sale</span>
                         </a>
                     </li>
                     <li>
@@ -979,14 +985,23 @@
 
             // Sale detail (collections now handled by showCollectionDetail)
             const items = data.items || [];
-            document.getElementById('detailItems').innerHTML = items.map(item => `
+            document.getElementById('detailItems').innerHTML = items.map(item => {
+                const savedSaleQuantity = Number(item.sale_quantity);
+                const displayQuantity = Number.isFinite(savedSaleQuantity) && savedSaleQuantity > 0
+                    ? savedSaleQuantity
+                    : Number(item.quantity || 0);
+                const isBox = String(item.sale_unit || '').toLowerCase() === 'box';
+                const quantityLabel = isBox
+                    ? `${displayQuantity} ${displayQuantity === 1 ? 'box' : 'boxes'} (${Number(item.pieces_per_box_snapshot || 1)} units/box)`
+                    : `${displayQuantity} ${displayQuantity === 1 ? 'piece' : 'pieces'}`;
+                return `
                 <tr>
                     <td>${escapeHtml(item.product_name)}</td>
-                    <td class="text-right">${item.quantity}</td>
+                    <td class="text-right">${escapeHtml(quantityLabel)}</td>
                     <td class="text-right">${formatCurrency(item.unit_price)}</td>
-                    <td class="text-right font-semibold">${formatCurrency(item.total_price)}</td>
+                    <td class="text-right font-semibold">${formatCurrency(item.line_total ?? item.total_price)}</td>
                 </tr>
-            `).join('');
+            `}).join('');
 
             document.getElementById('detailSubtotal').textContent = formatCurrency(data.subtotal_amount ?? data.subtotal ?? data.total_amount);
             const taxAmount = Math.max(0, Number(data.tax_amount || 0));

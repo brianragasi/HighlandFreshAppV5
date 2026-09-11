@@ -1491,11 +1491,36 @@ try {
                     ");
                     $sourceStmt->execute([$runId]);
                     $sourceRequest = $sourceStmt->fetch(PDO::FETCH_ASSOC);
-                    if (!$sourceRequest) {
+
+                    // A QC-authorized reprocessing conversion does not create a
+                    // normal cooking-material requisition: its source finished
+                    // goods were already isolated, safety-verified, and reserved
+                    // by QC. That controlled transformation is the equivalent
+                    // authorization for requesting its SKU packaging materials.
+                    $reprocessingStmt = $db->prepare("
+                        SELECT id, transformation_code
+                        FROM yogurt_transformations
+                        WHERE production_run_id = ?
+                          AND safety_verified = 1
+                          AND status = 'in_progress'
+                        ORDER BY id DESC
+                        LIMIT 1
+                    ");
+                    $reprocessingStmt->execute([$runId]);
+                    $reprocessingAuthorization = $reprocessingStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+
+                    if (!$sourceRequest && !$reprocessingAuthorization) {
                         Response::validationError([
-                            'source_requisition' => 'This run is not linked to a fulfilled cooking-material request. Cancel this invalid run, request the recipe materials, and start again after Warehouse fully issues them.'
+                            'source_requisition' => 'This run is neither linked to a fulfilled cooking-material request nor to a safety-verified QC reprocessing conversion. Cancel this invalid run and start it from the correct workflow.'
                         ]);
                     }
+
+                    $packagingAuthorizationBasis = $reprocessingAuthorization
+                        ? 'qc_verified_reprocessing'
+                        : 'approved_packaging_bom';
+                    $packagingPurpose = $reprocessingAuthorization
+                        ? 'Packaging materials for QC reprocessing ' . $reprocessingAuthorization['transformation_code']
+                        : 'Packaging materials for ' . ($run['run_code'] ?? ('run #' . $runId));
 
                     $db->beginTransaction();
                     try {
@@ -1507,7 +1532,7 @@ try {
                                 requested_by, department, priority, purpose, total_items,
                                 status, approved_at, authorization_basis
                             ) VALUES (?, ?, 'packaging', ?, ?, ?, 'liters', ?, 'production',
-                                      'normal', ?, ?, 'approved', NOW(), 'approved_packaging_bom')
+                                      'normal', ?, ?, 'approved', NOW(), ?)
                         ");
                         $insertReq->execute([
                             $requisitionCode,
@@ -1516,8 +1541,9 @@ try {
                             (int) $run['recipe_id'],
                             (float) ($run['planned_quantity'] ?? 0),
                             $currentUser['user_id'],
-                            'Packaging materials for ' . ($run['run_code'] ?? ('run #' . $runId)),
+                            $packagingPurpose,
                             count($packagingRequirements),
+                            $packagingAuthorizationBasis,
                         ]);
                         $packagingRequisitionId = (int) $db->lastInsertId();
 
@@ -1548,8 +1574,9 @@ try {
                             [
                                 'run_id' => (int) $runId,
                                 'status' => 'approved',
-                                'authorization_basis' => 'approved_packaging_bom',
-                                'source_requisition_id' => (int) $sourceRequest['id'],
+                                'authorization_basis' => $packagingAuthorizationBasis,
+                                'source_requisition_id' => $sourceRequest ? (int) $sourceRequest['id'] : null,
+                                'transformation_id' => $reprocessingAuthorization ? (int) $reprocessingAuthorization['id'] : null,
                             ]
                         );
                         $db->commit();
@@ -1558,7 +1585,7 @@ try {
                             'requisition_id' => $packagingRequisitionId,
                             'requisition_code' => $requisitionCode,
                             'status' => 'approved',
-                            'authorization_basis' => 'approved_packaging_bom',
+                            'authorization_basis' => $packagingAuthorizationBasis,
                             'packaging_plan' => $plannedSkuItems,
                             'requirements' => $packagingRequirements,
                         ], 'Packaging request sent to Warehouse. Complete the run after Warehouse issues every material.');

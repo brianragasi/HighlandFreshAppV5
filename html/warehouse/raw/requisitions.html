@@ -761,7 +761,7 @@
                             </button>
                             ${canFulfill ? `
                             <button type="button" class="btn btn-primary btn-sm" onclick="openFulfillModal(${req.id})">
-                                <i class="fas fa-box-open"></i> Fulfill
+                                <i class="fas fa-box-open"></i> Review &amp; Fulfill
                             </button>` : ''}
                         </div>
                     </td>
@@ -820,6 +820,17 @@
             const priority = (req.priority || 'normal').toLowerCase();
             const status = (req.status || 'pending').toLowerCase();
             const isPackaging = (req.request_type || 'cooking') === 'packaging';
+            const packagingShortages = isPackaging
+                ? items.filter(item => {
+                    if (!canFulfillItem(item)) return false;
+                    const requested = parseFloat(item.requested_quantity || item.quantity_requested || 0);
+                    const issued = parseFloat(item.issued_quantity || item.quantity_issued || 0);
+                    const remaining = Math.max(0, requested - issued);
+                    const available = parseFloat(item.available_stock || 0);
+                    return available + 0.0005 < remaining;
+                })
+                : [];
+            const packagingBlocked = packagingShortages.length > 0;
 
             document.getElementById('fulfillModalTitle').innerHTML = `
                 <span class="font-mono">${escapeHtml(req.requisition_code || 'Requisition')}</span>
@@ -846,6 +857,7 @@
                     const maxIssue = Math.max(0, Math.min(remaining, available));
                     const unit = escapeHtml(item.unit_of_measure || item.unit || '');
                     const canFulfill = !viewOnly && canFulfillItem(item);
+                    const canIssue = canFulfill && (!isPackaging || !packagingBlocked);
                     const st = (item.status || 'pending').toLowerCase();
 
                     let statusLabel = 'Pending';
@@ -863,20 +875,23 @@
                         ? `<div class="stock-low"><i class="fas fa-info-circle"></i> Only ${formatPackNumber(available)} ${unit} in stock</div>`
                         : '';
 
-                    const rejectBtn = canFulfill
+                    const rejectBtn = canFulfill && !isPackaging
                         ? `<button type="button" class="btn btn-ghost btn-xs text-error" onclick="openRejectModal(${req.id}, ${item.id}, ${escapeAttribute(JSON.stringify(item.item_name || item.name || ''))})" title="Reject item"><i class="fas fa-times"></i></button>`
                         : '';
 
-                    const issueCell = canFulfill
+                    const issueCell = canIssue
                         ? `<div class="flex flex-col items-end gap-1">
                                 <input type="number" class="input issue-input" id="fulfill_${item.id}"
                                     value="${formatPackNumber(maxIssue)}"
                                     min="0" max="${formatPackNumber(maxIssue)}"
                                     step="0.001" inputmode="decimal"
+                                    ${isPackaging ? 'readonly aria-readonly="true"' : ''}
                                     oninput="this.setCustomValidity('')" aria-label="Issue quantity">
                                 <span class="text-[0.65rem] text-base-content/45">${formatPackNumber(remaining)} ${unit} left to issue</span>
                            </div>`
-                        : `<span class="text-sm text-base-content/50">${st === 'fulfilled' ? '—' : escapeHtml(item.rejection_reason || statusLabel)}</span>`;
+                        : `<span class="text-sm text-base-content/50">${st === 'fulfilled'
+                            ? '—'
+                            : (isPackaging && packagingBlocked && canFulfill ? 'Waiting for complete stock' : escapeHtml(item.rejection_reason || statusLabel))}</span>`;
 
                     return `
                     <tr data-item-id="${item.id}">
@@ -958,6 +973,15 @@
 
                     ${overrideHtml}
 
+                    ${packagingBlocked ? `
+                    <div class="alert alert-error items-start mb-4" role="alert">
+                        <i class="fas fa-boxes-stacked mt-1"></i>
+                        <div>
+                            <p class="font-semibold">Packaging request cannot be fulfilled yet</p>
+                            <p class="text-sm">Warehouse is short on ${packagingShortages.length} packaging item${packagingShortages.length === 1 ? '' : 's'}: ${packagingShortages.map(item => escapeHtml(item.item_name || item.name || 'Unnamed')).join(', ')}. Replenish the stock before releasing this request.</p>
+                        </div>
+                    </div>` : ''}
+
                     ${plannedProduction ? `
                     <div class="req-plan-header">
                         <div class="req-plan-header__kicker">${isPackaging ? 'Packaging plan for approved run' : 'Production plan'}</div>
@@ -1002,8 +1026,10 @@
             document.getElementById('fulfillModalFooter').innerHTML = `
                 <button class="btn btn-ghost" onclick="document.getElementById('fulfillModal').close()">Close</button>
                 ${canFulfill && canFulfillAny ? `
-                    <button class="btn btn-primary" onclick="submitFulfillment()">
-                        <i class="fas fa-check mr-1"></i> ${isPackaging ? 'Issue packaging materials' : 'Release materials'}
+                    <button class="btn btn-primary" onclick="submitFulfillment()" ${packagingBlocked ? 'disabled' : ''}>
+                        <i class="fas fa-check mr-1"></i> ${isPackaging
+                            ? (packagingBlocked ? 'Cannot Fulfill — Stock Short' : 'Fulfill Packaging Request')
+                            : 'Release Materials'}
                     </button>
                 ` : ''}
             `;
@@ -1012,6 +1038,20 @@
 
         async function submitFulfillment() {
             const items = currentRequisition.items || [];
+            const isPackaging = (currentRequisition.request_type || 'cooking') === 'packaging';
+            if (isPackaging) {
+                const shortages = items.filter(item => {
+                    const requested = parseFloat(item.requested_quantity || item.quantity_requested || 0);
+                    const issued = parseFloat(item.issued_quantity || item.quantity_issued || 0);
+                    const remaining = Math.max(0, requested - issued);
+                    const available = parseFloat(item.available_stock || 0);
+                    return remaining > 0.0005 && available + 0.0005 < remaining;
+                });
+                if (shortages.length > 0) {
+                    showToast('Cannot fulfill packaging request: replenish every short item first.', 'error');
+                    return;
+                }
+            }
             const issuedQuantities = {};
             let hasItems = false;
             let hasInvalidQuantity = false;

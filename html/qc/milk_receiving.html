@@ -371,21 +371,21 @@
                     <div class="grid grid-cols-2 gap-4">
                         <div class="form-control">
                             <label class="label">
-                                <span class="label-text">Date <span class="text-error">*</span></span>
+                                <span class="label-text">Received Date <span class="text-error">*</span></span>
                             </label>
-                            <input type="date" class="input input-bordered w-full" id="deliveryDate" required>
+                            <input type="date" class="input input-bordered w-full" id="deliveryDate" disabled aria-disabled="true">
                         </div>
                         <div class="form-control">
                             <label class="label">
-                                <span class="label-text">Time <span class="text-error">*</span></span>
+                                <span class="label-text">Received Time <span class="text-error">*</span></span>
                             </label>
-                            <input type="time" class="input input-bordered w-full" id="deliveryTime" required>
+                            <input type="time" class="input input-bordered w-full" id="deliveryTime" disabled aria-disabled="true">
                         </div>
                     </div>
 
                     <div class="alert alert-info py-3">
                         <i class="fas fa-clock"></i>
-                        <p class="text-sm"><strong>Use the actual gate arrival time.</strong> The three-hour handling window starts here, and this form now defaults to the local Philippine date and time.</p>
+                        <p class="text-sm"><strong>Date and time are automatic.</strong> The server records the actual receiving time when you save. The three-hour handling window starts from that official timestamp.</p>
                     </div>
 
                     <div class="form-control">
@@ -1009,33 +1009,6 @@
 
             if (!validateQcDecimalFields(document.getElementById('newDeliveryForm'))) return;
 
-            const arrivalDate = document.getElementById('deliveryDate').value;
-            const arrivalTime = document.getElementById('deliveryTime').value;
-            const arrival = new Date(`${arrivalDate}T${arrivalTime}:00`);
-            const ageMilliseconds = Date.now() - arrival.getTime();
-            if (!Number.isFinite(arrival.getTime())) {
-                showToast('Enter a valid gate arrival date and time.', 'error');
-                return;
-            }
-            if (ageMilliseconds < -5 * 60 * 1000) {
-                showToast('Gate arrival time cannot be in the future.', 'error');
-                return;
-            }
-            if (ageMilliseconds >= 3 * 60 * 60 * 1000) {
-                const recordRejected = await AuthService.confirmAction({
-                    title: 'Three-hour window has passed',
-                    message: 'Check the arrival date and time. If they are correct, this delivery is too old to use and will be recorded as rejected.',
-                    highlight: `${arrivalDate} ${arrivalTime}`,
-                    highlightLabel: 'Recorded gate arrival',
-                    callout: 'It will not go to QC, Warehouse storage, or Production.',
-                    calloutTone: 'error',
-                    confirmText: 'Record as rejected',
-                    confirmIcon: 'fa-ban',
-                    tone: 'error'
-                });
-                if (!recordRejected) return;
-            }
-
             const btn = document.getElementById('submitDeliveryBtn');
             btn.disabled = true;
             btn.innerHTML = '<span class="loading loading-spinner loading-sm"></span> Saving...';
@@ -1043,19 +1016,13 @@
             try {
                 const response = await DeliveriesService.create({
                     farmer_id: document.getElementById('deliveryFarmer').value,
-                    delivery_date: document.getElementById('deliveryDate').value,
-                    delivery_time: document.getElementById('deliveryTime').value,
                     volume_liters: document.getElementById('deliveryVolume').value,
                     apt_result: document.getElementById('deliveryApt').value,
                     notes: document.getElementById('deliveryNotes').value
                 });
 
                 if (response.success) {
-                    const wasRejectedByTime = response.data?.status === 'rejected';
-                    showToast(
-                        wasRejectedByTime ? 'Delivery recorded as rejected — the three-hour window had passed.' : 'Delivery recorded successfully',
-                        wasRejectedByTime ? 'warning' : 'success'
-                    );
+                    showToast('Delivery recorded successfully with the current server date and time', 'success');
                     document.getElementById('newDeliveryModal').close();
                     loadDeliveries();
                 }

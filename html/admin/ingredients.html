@@ -354,7 +354,7 @@
                     <select id="statusFilter" class="select select-bordered select-sm w-full md:w-32 min-h-9" onchange="loadData()">
                         <option value="">All status</option>
                         <option value="1">Active</option>
-                        <option value="0">Inactive</option>
+                        <option value="0">Archived</option>
                     </select>
                 </div>
             </div>
@@ -459,7 +459,7 @@
                             <label class="label"><span class="label-text font-medium">Status</span></label>
                             <select id="is_active" class="select select-bordered">
                                 <option value="1">Active</option>
-                                <option value="0">Inactive</option>
+                                <option value="0">Archived</option>
                             </select>
                         </div>
                     </div>
@@ -1364,8 +1364,11 @@
                         <td><span class="badge badge-info badge-outline badge-sm">${escapeHtml(formLabels[i.packaging_form] || i.packaging_role || 'Unclassified')}</span><div class="text-xs mt-1 text-base-content/60">${escapeHtml(size)}</div></td>
                         <td><span class="font-semibold ${current <= reorder ? 'text-warning' : ''}">${current.toLocaleString()}</span><div class="text-xs text-base-content/50">Reorder at ${reorder.toLocaleString()}</div></td>
                         <td><span class="badge badge-outline badge-sm">${Number(i.supplier_count || 0)} linked</span><div class="text-xs text-base-content/50 mt-1 max-w-48 truncate">${escapeHtml(i.supplier_names || 'Supplier not linked yet')}</div></td>
-                        <td><span class="badge ${Number(i.is_active) === 1 ? 'badge-success' : 'badge-warning'} badge-sm">${Number(i.is_active) === 1 ? 'Active' : 'Inactive'}</span></td>
-                        <td><div class="flex gap-1"><button type="button" class="btn btn-ghost btn-xs" onclick="editRecord(${i.id})"><i class="fas fa-edit"></i>Edit</button><button type="button" class="btn btn-ghost btn-xs text-warning" onclick="deleteRecord(${i.id})"><i class="fas fa-box-archive"></i>Archive</button></div></td>
+                        <td><span class="badge ${Number(i.is_active) === 1 ? 'badge-success' : 'badge-warning'} badge-sm">${Number(i.is_active) === 1 ? 'Active' : 'Archived'}</span></td>
+                        <td><div class="flex gap-1"><button type="button" class="btn btn-ghost btn-xs" onclick="editRecord(${i.id})"><i class="fas fa-edit"></i>Edit</button>${Number(i.is_active) === 1
+                            ? `<button type="button" class="btn btn-ghost btn-xs text-warning" onclick="deleteRecord(${i.id})"><i class="fas fa-box-archive"></i>Archive</button>`
+                            : `<button type="button" class="btn btn-ghost btn-xs text-success" onclick="restoreRecord(${i.id})"><i class="fas fa-rotate-left"></i>Restore</button>`
+                        }</div></td>
                     </tr>`;
                 }).join('');
                 return;
@@ -1413,7 +1416,7 @@
                     <td>${i.unit_cost ? `${formatCurrency(i.unit_cost)} <span class="text-xs text-base-content/50">/ ${escapeHtml(i.unit_of_measure || 'unit')}</span>` : '-'}</td>
                     <td>
                         <span class="badge ${i.is_active == 1 ? 'badge-success' : 'badge-warning'} badge-sm">
-                            ${i.is_active == 1 ? 'Active' : 'Inactive'}
+                            ${i.is_active == 1 ? 'Active' : 'Archived'}
                         </span>
                     </td>
                     <td>
@@ -1421,9 +1424,14 @@
                             <button type="button" class="btn btn-ghost btn-xs" onclick="editRecord(${i.id})" title="Edit ${materialWorkspace === 'packaging' ? 'packaging material' : 'ingredient'}">
                                 <i class="fas fa-edit"></i><span>Edit</span>
                             </button>
-                            <button type="button" class="btn btn-ghost btn-xs text-warning" onclick="deleteRecord(${i.id})" title="Archive ${materialWorkspace === 'packaging' ? 'packaging material' : 'ingredient'}">
-                                <i class="fas fa-box-archive"></i><span>Archive</span>
-                            </button>
+                            ${Number(i.is_active) === 1
+                                ? `<button type="button" class="btn btn-ghost btn-xs text-warning" onclick="deleteRecord(${i.id})" title="Archive ${materialWorkspace === 'packaging' ? 'packaging material' : 'ingredient'}">
+                                    <i class="fas fa-box-archive"></i><span>Archive</span>
+                                </button>`
+                                : `<button type="button" class="btn btn-ghost btn-xs text-success" onclick="restoreRecord(${i.id})" title="Restore ${materialWorkspace === 'packaging' ? 'packaging material' : 'ingredient'}">
+                                    <i class="fas fa-rotate-left"></i><span>Restore</span>
+                                </button>`
+                            }
                         </div>
                     </td>
                 </tr>
@@ -1595,6 +1603,31 @@
             } catch (error) {
                 console.error('Error archiving ingredient:', error);
                 showToast('Error archiving ingredient', 'error');
+            }
+        }
+
+        async function restoreRecord(id) {
+            const itemLabel = materialWorkspace === 'packaging' ? 'packaging material' : 'raw material';
+            const confirmed = await AuthService.confirmAction({
+                title: `Restore ${itemLabel}`,
+                message: `Restore this ${itemLabel}? It will become available for supplier linking and active workflows again.`,
+                confirmText: 'Restore',
+                tone: 'success',
+                icon: 'fa-rotate-left'
+            });
+            if (!confirmed) return;
+
+            try {
+                const response = await AdminService.updateIngredient(id, { is_active: 1 });
+                if (response.success) {
+                    showToast(response.message || `${itemLabel} restored successfully`, 'success');
+                    loadData();
+                } else {
+                    showToast(response.message || `Failed to restore ${itemLabel}`, 'error');
+                }
+            } catch (error) {
+                console.error('Error restoring ingredient:', error);
+                showToast(`Error restoring ${itemLabel}`, 'error');
             }
         }
 

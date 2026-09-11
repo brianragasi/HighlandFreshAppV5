@@ -51,13 +51,24 @@
         const method = payment.method || transaction.payment_method || 'cash';
         const isCash = String(method).toLowerCase() === 'cash';
         const itemRows = items.map(item => {
-            const quantity = Number(item.quantity) || 0;
+            const baseQuantity = Number(item.quantity) || 0;
+            const savedSaleQuantity = Number(item.sale_quantity);
+            const quantity = Number.isFinite(savedSaleQuantity) && savedSaleQuantity > 0
+                ? savedSaleQuantity
+                : baseQuantity;
+            const saleUnit = String(item.sale_unit || 'piece').toLowerCase() === 'box' ? 'box' : 'piece';
+            const piecesPerBox = Math.max(1, Number(item.pieces_per_box_snapshot || item.pieces_per_box) || 1);
             const unitPrice = Number(item.unit_price) || 0;
             const lineTotal = Number(item.line_total ?? item.total_price ?? (quantity * unitPrice)) || 0;
             const variant = String(item.variant || '').trim();
+            const quantityLabel = `${quantity} ${quantity === 1 ? saleUnit : (saleUnit === 'box' ? 'boxes' : 'pieces')}`;
+            const boxDetail = saleUnit === 'box'
+                ? `<div class="muted">${piecesPerBox} units/box · ${baseQuantity || quantity * piecesPerBox} units deducted</div>`
+                : '';
             return `<div class="item">
                 <div class="item-name">${escapeHtml(item.product_name || item.name || 'Product')}${variant ? ` <span class="muted">(${escapeHtml(variant)})</span>` : ''}</div>
-                <div class="item-calc"><span>${quantity} x ${money(unitPrice)}</span><strong>${money(lineTotal)}</strong></div>
+                <div class="item-calc"><span>${escapeHtml(quantityLabel)} x ${money(unitPrice)}</span><strong>${money(lineTotal)}</strong></div>
+                ${boxDetail}
             </div>`;
         }).join('');
 

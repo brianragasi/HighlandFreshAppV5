@@ -247,6 +247,88 @@ function handleGet($db, $action) {
             }
 
             if (!$items) {
+                // A compact QC label can be perfectly readable while its stock
+                // is intentionally unavailable for dispatch. Diagnose that
+                // exact batch/SKU before falling back to the generic message so
+                // phone users know whether the issue is receiving, stock, or
+                // the seven-day QC/reprocessing window.
+                if ($compactLabel) {
+                    $diagnosticStmt = $db->prepare("
+                        SELECT
+                            pb.id AS batch_id,
+                            pb.batch_code,
+                            p.id AS product_id,
+                            p.product_name,
+                            fgi.id AS inventory_id,
+                            fgi.status AS inventory_status,
+                            fgi.expiry_date,
+                            COALESCE(fgi.boxes_available, 0) AS boxes_available,
+                            COALESCE(fgi.pieces_available, 0) AS pieces_available,
+                            COALESCE(fgi.quantity_available, 0) AS quantity_available,
+                            DATEDIFF(fgi.expiry_date, CURDATE()) AS days_until_expiry
+                        FROM production_batches pb
+                        JOIN products p ON p.id = ?
+                        LEFT JOIN finished_goods_inventory fgi
+                          ON fgi.batch_id = pb.id AND fgi.product_id = p.id
+                        WHERE pb.id = ?
+                        ORDER BY fgi.id DESC
+                        LIMIT 1
+                    ");
+                    $diagnosticStmt->execute([$compactProductId, $compactBatchId]);
+                    $diagnostic = $diagnosticStmt->fetch(PDO::FETCH_ASSOC);
+
+                    if ($diagnostic && empty($diagnostic['inventory_id'])) {
+                        Response::error(
+                            'This QC label is valid, but its batch and SKU have not been received into Finished Goods yet.',
+                            409
+                        );
+                    }
+
+                    if ($diagnostic) {
+                        $status = strtolower(trim((string) ($diagnostic['inventory_status'] ?? '')));
+                        $availableUnits = (int) $diagnostic['quantity_available']
+                            + (int) $diagnostic['boxes_available']
+                            + (int) $diagnostic['pieces_available'];
+
+                        if ($status !== 'available') {
+                            Response::error(
+                                'This label was recognized, but the Finished Goods stock is ' . ($status ?: 'not available') . ' and cannot be dispatched.',
+                                409
+                            );
+                        }
+
+                        if ($availableUnits <= 0) {
+                            Response::error(
+                                'This label was recognized, but no available stock remains for this batch and SKU.',
+                                409
+                            );
+                        }
+
+                        if (empty($diagnostic['expiry_date'])) {
+                            Response::error(
+                                'This label was recognized, but the Finished Goods expiry date is missing. Correct the receiving record before dispatch.',
+                                409
+                            );
+                        }
+
+                        $daysUntilExpiry = (int) $diagnostic['days_until_expiry'];
+                        if ($daysUntilExpiry <= HF_NEAR_EXPIRY_DAYS) {
+                            $expiryLabel = date('M j, Y', strtotime($diagnostic['expiry_date']));
+                            if ($daysUntilExpiry < 0) {
+                                $reason = "expired on {$expiryLabel}";
+                            } elseif ($daysUntilExpiry === 0) {
+                                $reason = "expires today ({$expiryLabel})";
+                            } else {
+                                $reason = "expires on {$expiryLabel} ({$daysUntilExpiry} day" . ($daysUntilExpiry === 1 ? '' : 's') . ' remaining)';
+                            }
+                            Response::error(
+                                "This label was recognized, but the batch {$reason}. It is inside the 7-day QC/reprocessing window and cannot be dispatched.",
+                                409
+                            );
+                        }
+                    }
+                }
+
                 Response::error(
                     'Barcode is not dispatchable. Scan the full QC label and confirm the batch is received in Finished Goods with more than 7 days before expiry.',
                     404

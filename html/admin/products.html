@@ -46,6 +46,114 @@
 
         .sku-row {
             animation: fadeIn 0.2s ease;
+            border: 1px solid oklch(var(--b3));
+            background: oklch(var(--b1));
+            box-shadow: 0 1px 2px rgb(0 0 0 / 0.04);
+        }
+
+        /* Product/SKU editor: wide working area with fixed actions. */
+        .product-editor-modal {
+            display: flex;
+            flex-direction: column;
+            width: min(94vw, 72rem);
+            max-width: 72rem;
+            max-height: 92vh;
+            overflow: hidden;
+        }
+        .product-editor-form {
+            flex: 1 1 auto;
+            min-height: 0;
+            margin-right: -0.5rem;
+            padding-right: 0.5rem;
+            overflow-x: hidden;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+        }
+        .product-editor-actions {
+            flex: 0 0 auto;
+            margin: 0.75rem -1.5rem -1.5rem;
+            padding: 0.9rem 1.5rem;
+            border-top: 1px solid oklch(var(--b3));
+            background: oklch(var(--b1));
+            box-shadow: 0 -10px 24px -18px rgb(0 0 0 / 0.35);
+        }
+        .product-editor-steps {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+            gap: 0.35rem;
+            min-width: 0;
+        }
+
+        /* Auto-fit keeps 3-field and 4-field SKU rows balanced. */
+        .sku-fields-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+            align-items: start;
+            gap: 1rem;
+            min-width: 0;
+        }
+        .sku-row .sku-field-label {
+            font-size: 0.875rem;
+            font-weight: 600;
+            line-height: 1.25rem;
+        }
+        .sku-dispatch-pack-panel {
+            grid-column: 1 / -1;
+            min-width: 0;
+            padding: 1rem;
+            border: 1px solid oklch(var(--b3));
+            border-radius: 0.75rem;
+            background: oklch(var(--b2) / 0.48);
+        }
+        .sku-dispatch-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 0.75rem;
+            min-width: 0;
+        }
+        .sku-dispatch-detail {
+            min-width: 0;
+            transition: opacity 0.15s ease;
+        }
+        .sku-dispatch-detail.is-disabled {
+            opacity: 0.48;
+        }
+        .sku-row-action {
+            width: 2rem;
+            height: 2rem;
+            min-height: 2rem;
+        }
+
+        @media (max-width: 1023px) {
+            .sku-dispatch-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+
+        @media (max-width: 639px) {
+            .product-editor-modal {
+                width: calc(100vw - 1rem);
+                max-height: 96vh;
+                padding: 1rem;
+            }
+            .product-editor-actions {
+                margin-right: -1rem;
+                margin-bottom: -1rem;
+                margin-left: -1rem;
+                padding: 0.75rem 1rem;
+            }
+            .product-editor-actions .btn {
+                flex: 1;
+                min-width: 0;
+            }
+            .product-editor-steps {
+                grid-template-columns: repeat(5, 7rem);
+                padding-bottom: 0.25rem;
+                overflow-x: auto;
+            }
+            .sku-dispatch-grid {
+                grid-template-columns: minmax(0, 1fr);
+            }
         }
 
         @keyframes fadeIn {
@@ -591,17 +699,17 @@
 
     <!-- ====================== ADD/EDIT BASE PRODUCT MODAL ====================== -->
     <dialog id="baseProductModal" class="modal">
-        <div class="modal-box w-11/12 max-w-4xl max-h-[90vh] overflow-y-auto">
+        <div class="modal-box product-editor-modal">
             <form method="dialog">
                 <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
             </form>
             <h3 class="font-bold text-lg mb-1" id="baseModalTitle">Product Setup — Details &amp; Package Sizes</h3>
             <p class="text-sm text-base-content/60 mb-3" id="baseModalSubtitle">Create the product as a draft, then continue its recipe and packaging from the guided setup.</p>
-            <div class="grid grid-cols-5 gap-1 text-[11px] mb-5">
+            <div class="product-editor-steps text-[11px] mb-5">
                 <span class="badge badge-primary h-auto py-2">1 Details</span><span class="badge badge-primary h-auto py-2">2 Sizes</span><span class="badge badge-ghost h-auto py-2">3 Recipe</span><span class="badge badge-ghost h-auto py-2">4 Packaging</span><span class="badge badge-ghost h-auto py-2">5 Review</span>
             </div>
 
-            <form id="baseProductForm" onsubmit="saveBaseProduct(event)">
+            <form id="baseProductForm" class="product-editor-form scrollbar-thin" onsubmit="saveBaseProduct(event)">
                 <input type="hidden" id="baseRecordId" value="">
                 <input type="hidden" id="baseOriginalName" value="">
                 <input type="hidden" id="baseOriginalCategory" value="">
@@ -708,9 +816,9 @@
                     <div class="divider my-4 text-sm font-semibold text-base-content/60" id="skuSectionDivider">
                         <i class="fas fa-tags mr-1"></i> <span id="skuSectionTitle">Sellable Packaging SKUs</span>
                     </div>
-                    <div class="alert alert-info py-2 mb-3 text-xs" id="skuFormulaRule">
+                    <div class="alert alert-info py-3 mb-3 text-sm" id="skuFormulaRule">
                         <i class="fas fa-circle-info"></i>
-                        <span>SKUs inherit this formula/flavor. Add only packaging type, size, and price here. A different flavor must be a new base product with its own recipe.</span>
+                        <span>All SKUs share this product's recipe. Add only package, size, dispatch pack, and price. Create a separate product for another flavor.</span>
                     </div>
                     <p class="text-xs text-base-content/50 mb-3" id="skuSectionHelp">Add every packaging size you sell.
                         Each becomes a separate SKU with its own product code, packaging BOM, and price.</p>
@@ -726,17 +834,17 @@
                     </button>
                 </div>
 
-                <div class="modal-action">
-                    <button type="button" class="btn btn-ghost"
-                        onclick="document.getElementById('baseProductModal').close()">Cancel</button>
-                    <button type="button" class="btn btn-outline" id="baseModalDraftBtn" onclick="saveProductAsDraft()">
-                        <i class="fas fa-file-pen mr-2"></i>Save as Draft
-                    </button>
-                    <button type="submit" class="btn btn-primary" id="baseModalSaveBtn">
-                        <i class="fas fa-save mr-2"></i><span id="baseModalSaveLabel">Save &amp; Continue</span>
-                    </button>
-                </div>
             </form>
+            <div class="modal-action product-editor-actions">
+                <button type="button" class="btn btn-ghost"
+                    onclick="document.getElementById('baseProductModal').close()">Cancel</button>
+                <button type="button" class="btn btn-outline" id="baseModalDraftBtn" onclick="saveProductAsDraft()">
+                    <i class="fas fa-file-pen mr-2"></i>Save as Draft
+                </button>
+                <button type="submit" form="baseProductForm" class="btn btn-primary" id="baseModalSaveBtn">
+                    <i class="fas fa-save mr-2"></i><span id="baseModalSaveLabel">Save &amp; Continue</span>
+                </button>
+            </div>
         </div>
         <form method="dialog" class="modal-backdrop"><button>close</button></form>
     </dialog>
@@ -802,7 +910,7 @@
                     </div>
                     <div class="form-control sku-edit-pack-detail">
                         <label class="label"><span class="label-text">Pack Unit</span></label>
-                        <select id="sku_edit_box_unit" class="select select-bordered">
+                        <select id="sku_edit_box_unit" class="select select-bordered" onchange="updateSkuEditPackValue()">
                             <option value="box">Box</option>
                             <option value="case">Case</option>
                             <option value="crate">Crate</option>
@@ -812,15 +920,23 @@
                         <label class="label"><span class="label-text">Units per Pack</span></label>
                         <input type="number" id="sku_edit_pieces_per_box" class="input input-bordered" value="1"
                             min="2" max="1000000" step="1" inputmode="numeric"
-                            onkeydown="return blockNegativeNumberKey(event)" />
+                            onkeydown="return blockNegativeNumberKey(event)" oninput="updateSkuEditPackValue()" />
                         <label class="label py-0"><span class="label-text-alt">Existing FG stock is safely re-split while preserving its total units.</span></label>
                     </div>
+                    <div class="form-control sku-edit-pack-detail">
+                        <label class="label"><span class="label-text">Wholesale Full-Pack Price (₱)</span></label>
+                        <input type="number" id="sku_edit_wholesale_box_price" class="input input-bordered"
+                            min="0.01" max="9999999999.99" step="0.01" placeholder="Price for one full pack"
+                            inputmode="decimal" onkeydown="return blockNegativeNumberKey(event)"
+                            oninput="updateSkuEditPackValue()" />
+                        <label class="label py-0"><span id="sku_edit_pack_value" class="label-text-alt">Price for the entire box, case, or crate.</span></label>
+                    </div>
                     <div class="form-control">
-                        <label class="label"><span class="label-text">Selling Price (₱) <span class="text-error">*</span></span></label>
+                        <label class="label"><span class="label-text">Retail Unit Price (₱) <span class="text-error">*</span></span></label>
                         <input type="number" id="sku_edit_selling_price" class="input input-bordered"
                             min="0.01" max="9999999999.99" step="0.01" required placeholder="0.01"
                             inputmode="decimal"
-                            onkeydown="return blockNegativeNumberKey(event)" />
+                            onkeydown="return blockNegativeNumberKey(event)" oninput="updateSkuEditPackValue()" />
                         <label class="label py-0 hidden" id="sku_edit_price_error">
                             <span class="label-text-alt text-error">Price must be greater than zero</span>
                         </label>
@@ -2295,16 +2411,16 @@
         /** Scroll modal SKU block into view; optionally focus the last (newest) size input. */
         function focusSkuSection(focusNewestRow) {
             const section = document.getElementById('skuSection');
-            const modalBox = document.querySelector('#baseProductModal .modal-box');
+            const scrollArea = document.getElementById('baseProductForm');
             if (section) {
                 section.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             }
-            if (modalBox && section) {
+            if (scrollArea && section) {
                 const top = section.offsetTop - 12;
-                if (typeof modalBox.scrollTo === 'function') {
-                    modalBox.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+                if (typeof scrollArea.scrollTo === 'function') {
+                    scrollArea.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
                 } else {
-                    modalBox.scrollTop = Math.max(0, top);
+                    scrollArea.scrollTop = Math.max(0, top);
                 }
             }
             if (focusNewestRow) {
@@ -2383,6 +2499,7 @@
                 const containerSelect = row.querySelector('.sku-primary-container');
                 const dispatchPackMode = row.querySelector('.sku-dispatch-pack-mode');
                 const piecesPerBoxInput = row.querySelector('.sku-pieces-per-box');
+                const wholesalePriceInput = row.querySelector('.sku-wholesale-box-price');
                 if (!baseUnit) {
                     ok = false;
                     row.querySelector('[name^="sku_base_unit_"]')?.classList.add('select-error');
@@ -2421,6 +2538,7 @@
 
                 const size = parseFloat(sizeInput.value);
                 const price = parseFloat(priceInput?.value);
+                const wholesalePrice = parseFloat(wholesalePriceInput?.value);
 
                 const sizeErr = row.querySelector('.sku-size-error');
                 const priceErr = row.querySelector('.sku-price-error');
@@ -2446,6 +2564,13 @@
                 } else if (priceInput) {
                     priceInput.classList.remove('input-error');
                     if (priceErr) priceErr.classList.add('hidden');
+                }
+                if (packedForDispatch && (!Number.isFinite(wholesalePrice) || wholesalePrice <= 0)) {
+                    ok = false;
+                    wholesalePriceInput?.classList.add('input-error');
+                    if (!firstBad && wholesalePriceInput) firstBad = wholesalePriceInput;
+                } else {
+                    wholesalePriceInput?.classList.remove('input-error');
                 }
             });
 
@@ -2477,8 +2602,10 @@
 
             const dispatchPackMode = document.getElementById('sku_edit_dispatch_pack_mode');
             const piecesPerBoxInput = document.getElementById('sku_edit_pieces_per_box');
+            const wholesalePriceInput = document.getElementById('sku_edit_wholesale_box_price');
             const packedForDispatch = dispatchPackMode?.value === 'packed';
             const packSize = parseInt(piecesPerBoxInput?.value, 10);
+            const wholesalePrice = parseFloat(wholesalePriceInput?.value);
             if (!dispatchPackMode?.value) {
                 ok = false;
                 dispatchPackMode?.classList.add('select-error');
@@ -2490,6 +2617,12 @@
                 piecesPerBoxInput?.classList.add('input-error');
             } else {
                 piecesPerBoxInput?.classList.remove('input-error');
+            }
+            if (packedForDispatch && (!Number.isFinite(wholesalePrice) || wholesalePrice <= 0)) {
+                ok = false;
+                wholesalePriceInput?.classList.add('input-error');
+            } else {
+                wholesalePriceInput?.classList.remove('input-error');
             }
 
             const packageStyle = document.getElementById('sku_edit_base_unit')?.value || '';
@@ -2569,6 +2702,7 @@
             const packed = mode === 'packed';
             const boxUnit = document.getElementById('sku_edit_box_unit');
             const piecesPerBox = document.getElementById('sku_edit_pieces_per_box');
+            const wholesalePrice = document.getElementById('sku_edit_wholesale_box_price');
             document.querySelectorAll('#skuEditModal .sku-edit-pack-detail').forEach(field => {
                 field.classList.toggle('opacity-50', !packed);
             });
@@ -2578,6 +2712,35 @@
                 piecesPerBox.required = packed;
                 if (!packed) piecesPerBox.value = '1';
                 if (packed && (parseInt(piecesPerBox.value, 10) || 0) < 2) piecesPerBox.value = '';
+            }
+            if (wholesalePrice) {
+                wholesalePrice.disabled = !packed;
+                wholesalePrice.required = packed;
+                if (!packed) wholesalePrice.value = '';
+            }
+            updateSkuEditPackValue();
+        }
+
+        function updateSkuEditPackValue() {
+            const guide = document.getElementById('sku_edit_pack_value');
+            if (!guide) return;
+            const packed = document.getElementById('sku_edit_dispatch_pack_mode')?.value === 'packed';
+            const units = parseInt(document.getElementById('sku_edit_pieces_per_box')?.value, 10);
+            const retailPrice = parseFloat(document.getElementById('sku_edit_selling_price')?.value);
+            const wholesalePrice = parseFloat(document.getElementById('sku_edit_wholesale_box_price')?.value);
+            const packUnit = document.getElementById('sku_edit_box_unit')?.value || 'pack';
+
+            guide.classList.remove('text-error', 'font-semibold');
+            if (!packed || !Number.isInteger(units) || units < 2 || !(retailPrice > 0)) {
+                guide.textContent = 'Price for the entire box, case, or crate.';
+                return;
+            }
+
+            const retailValue = units * retailPrice;
+            guide.textContent = `${units} units × ₱${retailPrice.toFixed(2)} = ₱${retailValue.toFixed(2)} retail value per ${packUnit}.`;
+            if (wholesalePrice > 0 && wholesalePrice <= retailPrice) {
+                guide.textContent += ` Check the wholesale price—it covers the whole ${packUnit}.`;
+                guide.classList.add('text-error', 'font-semibold');
             }
         }
 
@@ -2594,7 +2757,6 @@
 
             const idx = skuRowCounter++;
             const div = document.createElement('div');
-            // Single horizontal row on md+: 4 equal columns, items aligned to bottom labels
             div.className = 'sku-row bg-base-200 rounded-xl p-3 space-y-2 relative';
             div.id = `skuRow_${idx}`;
             const productId = skuData && skuData.id ? Number(skuData.id) : '';
@@ -2618,11 +2780,17 @@
                             ? '<span class="badge badge-ghost badge-xs sku-status-badge">existing</span>'
                             : '<span class="badge badge-primary badge-outline badge-xs sku-status-badge">new</span>'}
                         <span class="badge badge-error badge-outline badge-xs hidden sku-will-disable-badge">will deactivate</span>
+                        <button type="button" class="btn btn-ghost btn-sm text-error sku-row-action sku-remove-btn" onclick="removeSkuRow(${idx})" aria-label="${isExisting ? 'Deactivate this SKU' : 'Remove this unsaved SKU'}" title="${isExisting ? 'Deactivate SKU (soft delete)' : 'Remove unsaved row'}">
+                            <i class="fas fa-times"></i>
+                        </button>
+                        <button type="button" class="btn btn-ghost btn-sm text-success sku-row-action hidden sku-undo-btn" onclick="undoSoftDeleteSkuRow(${idx})" aria-label="Keep this SKU active" title="Keep this SKU active">
+                            <i class="fas fa-undo"></i>
+                        </button>
                     </div>
                 </div>
-                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-end">
+                <div class="sku-fields-grid">
                     <div class="form-control w-full min-w-0 hidden sku-container-field">
-                        <label class="label py-0"><span class="label-text text-xs">Primary Package <span class="text-error">*</span></span></label>
+                        <label class="label py-0"><span class="label-text sku-field-label">Primary Package <span class="text-error">*</span></span></label>
                         <select name="sku_primary_container_id_${idx}"
                             class="select select-sm select-bordered w-full sku-field sku-primary-container"
                             onchange="applySkuRowContainer(this.closest('.sku-row'))"></select>
@@ -2630,7 +2798,7 @@
                         <a href="ingredients.html?view=packaging" class="link link-primary text-[11px] mt-1"><i class="fas fa-plus-circle mr-1"></i>Create packaging material</a>
                     </div>
                     <div class="form-control w-full min-w-0">
-                        <label class="label py-0"><span class="label-text text-xs">Size <span class="text-error">*</span></span></label>
+                        <label class="label py-0"><span class="label-text sku-field-label">Size <span class="text-error">*</span></span></label>
                         <div class="join w-full">
                             <input type="number" name="sku_unit_size_${idx}"
                                 class="input input-sm input-bordered join-item w-full min-w-0 sku-field sku-unit-size"
@@ -2651,7 +2819,7 @@
                         </label>
                     </div>
                     <div class="form-control w-full min-w-0">
-                        <label class="label py-0"><span class="label-text text-xs">Package Style <span class="text-error">*</span></span></label>
+                        <label class="label py-0"><span class="label-text sku-field-label">Package Style <span class="text-error">*</span></span></label>
                         <select name="sku_base_unit_${idx}" class="select select-sm select-bordered w-full sku-field"
                             onchange="syncSkuRowContainerControl(this.closest('.sku-row'))" required>
                             <option value="">Choose style</option>
@@ -2665,49 +2833,61 @@
                         </select>
                     </div>
                     <div class="form-control w-full min-w-0">
-                        <label class="label py-0"><span class="label-text text-xs">Selling Price (₱) <span class="text-error">*</span></span></label>
-                        <div class="flex items-center gap-1 w-full min-w-0">
-                            <input type="number" name="sku_selling_price_${idx}"
-                                class="input input-sm input-bordered flex-1 min-w-0 sku-field sku-selling-price"
-                                placeholder="0.01" min="0.01" max="9999999999.99" step="0.01" required
-                                inputmode="decimal"
-                                onkeydown="return blockNegativeNumberKey(event)"
-                                oninput="clearSkuFieldError(this)"
-                                title="Price must be greater than zero (min ₱0.01)" />
-                            <button type="button" class="btn btn-ghost btn-sm text-error shrink-0 sku-remove-btn" onclick="removeSkuRow(${idx})" title="${isExisting ? 'Deactivate SKU (soft delete)' : 'Remove unsaved row'}">
-                                <i class="fas fa-times"></i>
-                            </button>
-                            <button type="button" class="btn btn-ghost btn-sm text-success shrink-0 hidden sku-undo-btn" onclick="undoSoftDeleteSkuRow(${idx})" title="Keep this SKU active">
-                                <i class="fas fa-undo"></i>
-                            </button>
-                        </div>
+                        <label class="label py-0"><span class="label-text sku-field-label">Retail Unit Price (₱) <span class="text-error">*</span></span></label>
+                        <input type="number" name="sku_selling_price_${idx}"
+                            class="input input-sm input-bordered w-full min-w-0 sku-field sku-selling-price"
+                            placeholder="Price per unit" min="0.01" max="9999999999.99" step="0.01" required
+                            inputmode="decimal"
+                            onkeydown="return blockNegativeNumberKey(event)"
+                            oninput="clearSkuFieldError(this); updateSkuRowPackValue(this.closest('.sku-row'))"
+                            title="Price must be greater than zero (min ₱0.01)" />
                         <label class="label py-0 hidden sku-price-error">
                             <span class="label-text-alt text-error">Price must be greater than zero</span>
                         </label>
                     </div>
-                    <div class="form-control w-full min-w-0 lg:col-span-4 rounded-lg border border-base-300 bg-base-100 p-3 sku-dispatch-pack-panel">
-                        <label class="label py-0"><span class="label-text text-xs font-semibold">Dispatch Packing <span class="text-error">*</span></span></label>
-                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                            <select name="sku_dispatch_pack_mode_${idx}"
-                                class="select select-sm select-bordered w-full sku-field sku-dispatch-pack-mode"
-                                onchange="syncSkuRowDispatchPackControl(this.closest('.sku-row'))" required>
-                                <option value="">Choose packing</option>
-                                <option value="individual">Individual units</option>
-                                <option value="packed">Packed in box / case / crate</option>
-                            </select>
-                            <select name="sku_box_unit_${idx}"
-                                class="select select-sm select-bordered w-full sku-field sku-box-unit" disabled>
-                                <option value="box">Box</option>
-                                <option value="case">Case</option>
-                                <option value="crate">Crate</option>
-                            </select>
-                            <input type="number" name="sku_pieces_per_box_${idx}"
-                                class="input input-sm input-bordered w-full sku-field sku-pieces-per-box"
-                                placeholder="Units per box (e.g. 12)" min="2" max="1000000" step="1"
-                                inputmode="numeric" onkeydown="return blockNegativeNumberKey(event)" disabled />
+                    <fieldset class="sku-dispatch-pack-panel">
+                        <legend class="px-1 text-sm font-semibold">Dispatch Packing <span class="text-error">*</span></legend>
+                        <div class="sku-dispatch-grid">
+                            <label class="form-control min-w-0">
+                                <span class="label-text sku-field-label mb-1">Dispatch Method</span>
+                                <select name="sku_dispatch_pack_mode_${idx}"
+                                    class="select select-sm select-bordered w-full sku-field sku-dispatch-pack-mode"
+                                    onchange="syncSkuRowDispatchPackControl(this.closest('.sku-row'))" required>
+                                    <option value="">Choose packing</option>
+                                    <option value="individual">Individual units</option>
+                                    <option value="packed">Full box / case / crate</option>
+                                </select>
+                            </label>
+                            <label class="form-control sku-dispatch-detail min-w-0">
+                                <span class="label-text sku-field-label mb-1">Pack Type</span>
+                                <select name="sku_box_unit_${idx}"
+                                    class="select select-sm select-bordered w-full sku-field sku-box-unit"
+                                    onchange="updateSkuRowPackValue(this.closest('.sku-row'))" disabled>
+                                    <option value="box">Box</option>
+                                    <option value="case">Case</option>
+                                    <option value="crate">Crate</option>
+                                </select>
+                            </label>
+                            <label class="form-control sku-dispatch-detail min-w-0">
+                                <span class="label-text sku-field-label mb-1">Units per Pack</span>
+                                <input type="number" name="sku_pieces_per_box_${idx}"
+                                    class="input input-sm input-bordered w-full sku-field sku-pieces-per-box"
+                                    placeholder="e.g. 12" min="2" max="1000000" step="1"
+                                    inputmode="numeric" onkeydown="return blockNegativeNumberKey(event)"
+                                    oninput="updateSkuRowPackValue(this.closest('.sku-row'))" disabled />
+                            </label>
+                            <label class="form-control sku-dispatch-detail min-w-0">
+                                <span class="label-text sku-field-label mb-1">Wholesale Full-Pack Price (₱)</span>
+                                <input type="number" name="sku_wholesale_box_price_${idx}"
+                                    class="input input-sm input-bordered w-full sku-field sku-wholesale-box-price"
+                                    placeholder="Price per full pack" min="0.01" max="9999999999.99" step="0.01"
+                                    inputmode="decimal" onkeydown="return blockNegativeNumberKey(event)"
+                                    oninput="updateSkuRowPackValue(this.closest('.sku-row'))" disabled />
+                            </label>
                         </div>
-                        <label class="label py-0"><span class="label-text-alt sku-dispatch-pack-help">Choose how Warehouse FG counts this SKU during dispatch.</span></label>
-                    </div>
+                        <p class="sku-dispatch-pack-help mt-2 text-xs text-base-content/60">Choose how Warehouse FG counts this SKU during dispatch.</p>
+                        <p class="sku-pack-value mt-1 text-xs text-base-content/70 hidden"></p>
+                    </fieldset>
                 </div>`;
             document.getElementById('skuList').appendChild(div);
 
@@ -2733,6 +2913,7 @@
                 const dispatchPackMode = div.querySelector(`[name="sku_dispatch_pack_mode_${idx}"]`);
                 const boxUnitSelect = div.querySelector(`[name="sku_box_unit_${idx}"]`);
                 const piecesPerBoxInput = div.querySelector(`[name="sku_pieces_per_box_${idx}"]`);
+                const wholesalePriceInput = div.querySelector(`[name="sku_wholesale_box_price_${idx}"]`);
                 if (sizeInput) sizeInput.value = skuData.unit_size != null ? skuData.unit_size : '';
                 setSelectValue(measureSel, skuData.unit_measure, 'ml');
                 setSelectValue(baseUnitSel, skuData.base_unit, 'piece');
@@ -2740,6 +2921,7 @@
                 setSelectValue(dispatchPackMode, existingPiecesPerBox > 1 ? 'packed' : 'individual', 'individual');
                 setSelectValue(boxUnitSelect, skuData.box_unit, 'box');
                 if (piecesPerBoxInput) piecesPerBoxInput.value = existingPiecesPerBox > 1 ? existingPiecesPerBox : '';
+                if (wholesalePriceInput) wholesalePriceInput.value = skuData.wholesale_box_price || '';
                 if (priceInput) {
                     priceInput.value = skuData.selling_price != null && skuData.selling_price !== ''
                         ? skuData.selling_price
@@ -2857,6 +3039,7 @@
                 const dispatchPackMode = row.querySelector(`[name="sku_dispatch_pack_mode_${idx}"]`)?.value || '';
                 const boxUnit = row.querySelector(`[name="sku_box_unit_${idx}"]`)?.value || 'box';
                 const configuredPiecesPerBox = parseInt(row.querySelector(`[name="sku_pieces_per_box_${idx}"]`)?.value, 10);
+                const wholesaleBoxPrice = parseFloat(row.querySelector(`[name="sku_wholesale_box_price_${idx}"]`)?.value);
                 if (!Number.isFinite(unitSize) || unitSize <= 0) return;
                 if (!baseUnit || (requiresPrimaryPackage(baseUnit) && !(primaryContainerId > 0))) return;
                 if (!dispatchPackMode) return;
@@ -2870,6 +3053,9 @@
                     primary_container_id: requiresPrimaryPackage(baseUnit) ? primaryContainerId : null,
                     box_unit: dispatchPackMode === 'packed' ? boxUnit : 'box',
                     pieces_per_box: piecesPerBox,
+                    wholesale_box_price: dispatchPackMode === 'packed' && Number.isFinite(wholesaleBoxPrice)
+                        ? wholesaleBoxPrice
+                        : null,
                     selling_price: Number.isFinite(sellingPrice) ? sellingPrice : 0,
                     unit_price: Number.isFinite(sellingPrice) ? sellingPrice : 0
                 });
@@ -3189,8 +3375,10 @@
                     document.getElementById('sku_edit_dispatch_pack_mode').value = existingPiecesPerBox > 1 ? 'packed' : 'individual';
                     document.getElementById('sku_edit_box_unit').value = data.box_unit || 'box';
                     document.getElementById('sku_edit_pieces_per_box').value = existingPiecesPerBox;
+                    document.getElementById('sku_edit_wholesale_box_price').value = data.wholesale_box_price || '';
                     syncSkuEditDispatchPackControl();
                     document.getElementById('sku_edit_selling_price').value = data.selling_price || data.unit_price || 0;
+                    updateSkuEditPackValue();
                     document.getElementById('sku_edit_product_code').value = data.product_code || '';
                     document.getElementById('skuEditModal').showModal();
                 }
@@ -3223,6 +3411,9 @@
                 pieces_per_box: dispatchPackMode === 'packed'
                     ? parseInt(document.getElementById('sku_edit_pieces_per_box').value, 10)
                     : 1,
+                wholesale_box_price: dispatchPackMode === 'packed'
+                    ? parseFloat(document.getElementById('sku_edit_wholesale_box_price').value)
+                    : null,
                 selling_price: parseFloat(document.getElementById('sku_edit_selling_price').value),
                 unit_price: parseFloat(document.getElementById('sku_edit_selling_price').value)
             };
@@ -3582,22 +3773,54 @@
             const locked = row.dataset.softDeleted === '1';
             const boxUnit = row.querySelector('.sku-box-unit');
             const piecesPerBox = row.querySelector('.sku-pieces-per-box');
+            const wholesalePrice = row.querySelector('.sku-wholesale-box-price');
             const panel = row.querySelector('.sku-dispatch-pack-panel');
             const help = row.querySelector('.sku-dispatch-pack-help');
 
             panel?.classList.toggle('border-warning', mode === '');
+            row.querySelectorAll('.sku-dispatch-detail').forEach(field => {
+                field.classList.toggle('is-disabled', !packed || locked);
+            });
             if (boxUnit) boxUnit.disabled = locked || !packed;
             if (piecesPerBox) {
                 piecesPerBox.disabled = locked || !packed;
                 piecesPerBox.required = packed && !locked;
                 if (!packed && mode === 'individual') piecesPerBox.value = '';
             }
+            if (wholesalePrice) {
+                wholesalePrice.disabled = locked || !packed;
+                wholesalePrice.required = packed && !locked;
+                if (!packed && mode === 'individual') wholesalePrice.value = '';
+            }
             if (help) {
                 help.textContent = mode === 'packed'
-                    ? 'Enter the number of sellable units inside one selected pack.'
+                    ? 'Enter the units inside one pack and its approved wholesale price.'
                     : (mode === 'individual'
                         ? 'Warehouse FG will dispatch this SKU as individual units.'
                         : 'Choose how Warehouse FG counts this SKU during dispatch.');
+            }
+            updateSkuRowPackValue(row);
+        }
+
+        function updateSkuRowPackValue(row) {
+            if (!row) return;
+            const guide = row.querySelector('.sku-pack-value');
+            if (!guide) return;
+            const packed = row.querySelector('.sku-dispatch-pack-mode')?.value === 'packed';
+            const units = parseInt(row.querySelector('.sku-pieces-per-box')?.value, 10);
+            const retailPrice = parseFloat(row.querySelector('.sku-selling-price')?.value);
+            const wholesalePrice = parseFloat(row.querySelector('.sku-wholesale-box-price')?.value);
+            const packUnit = row.querySelector('.sku-box-unit')?.value || 'pack';
+
+            guide.classList.toggle('hidden', !packed || !Number.isInteger(units) || units < 2 || !(retailPrice > 0));
+            guide.classList.remove('text-error', 'font-semibold');
+            if (guide.classList.contains('hidden')) return;
+
+            const retailValue = units * retailPrice;
+            guide.textContent = `${units} units × ₱${retailPrice.toFixed(2)} = ₱${retailValue.toFixed(2)} retail value per ${packUnit}.`;
+            if (wholesalePrice > 0 && wholesalePrice <= retailPrice) {
+                guide.textContent += ` Check the wholesale price—it covers the whole ${packUnit}.`;
+                guide.classList.add('text-error', 'font-semibold');
             }
         }
 

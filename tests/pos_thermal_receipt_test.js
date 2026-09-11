@@ -19,6 +19,24 @@ assert.match(receipt, /VATable Sales[\s\S]*₱491\.07/, 'receipt must disclose s
 assert.match(receipt, /VAT \(12%, included\)[\s\S]*₱58\.93/, 'receipt must disclose the included 12% VAT amount');
 assert.doesNotMatch(receipt, /Quick Sale \(POS\)/, 'receipt must not print the application shell');
 
+const wholesaleReceipt = printer.buildSalesReceiptHtml({
+    transaction: { customer_name: 'Alias Boyet', payment_method: 'cash', sale_mode: 'wholesale' },
+    items: [{
+        product_name: 'Strawberry Smoothie',
+        quantity: 48,
+        sale_quantity: 2,
+        sale_unit: 'box',
+        pieces_per_box_snapshot: 24,
+        unit_price: 550,
+        line_total: 1100
+    }],
+    payment: { total: 1100, amount_tendered: 1100, method: 'cash' }
+});
+assert.match(wholesaleReceipt, /2 boxes x[\s\S]*₱550\.00/,
+    'wholesale receipt must print the selected box quantity and box price');
+assert.match(wholesaleReceipt, /24 units\/box · 48 units deducted/,
+    'wholesale receipt must disclose the box conversion and base-unit deduction');
+
 const root = path.resolve(__dirname, '..');
 const salePage = fs.readFileSync(path.join(root, 'html/pos/sale.html'), 'utf8');
 const historyPage = fs.readFileSync(path.join(root, 'html/pos/history.html'), 'utf8');

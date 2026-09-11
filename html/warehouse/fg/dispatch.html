@@ -1018,7 +1018,30 @@
                 
             } catch (error) {
                 console.error('Scan error:', error);
-                showToast('Failed to lookup barcode', 'error');
+                currentScanResult = null;
+                playErrorSound();
+
+                const message = error?.response?.data?.message
+                    || error?.message
+                    || 'The barcode could not be checked. Please try again.';
+                const resultDiv = document.getElementById('scanResult');
+                const contentDiv = document.getElementById('scanResultContent');
+                if (resultDiv && contentDiv) {
+                    contentDiv.className = 'rounded-lg p-4 bg-error/10 border-2 border-error';
+                    contentDiv.innerHTML = `
+                        <div class="flex items-start gap-3">
+                            <i class="fas fa-triangle-exclamation text-error text-2xl mt-0.5"></i>
+                            <div>
+                                <p class="font-semibold">Barcode cannot be dispatched</p>
+                                <p class="text-sm text-base-content/70 mt-1">${escapeHtml(message)}</p>
+                            </div>
+                        </div>`;
+                    resultDiv.classList.remove('hidden');
+                }
+
+                document.getElementById('barcodeInput').value = '';
+                document.getElementById('barcodeInput').focus();
+                showToast(message, 'error');
             }
         }
         

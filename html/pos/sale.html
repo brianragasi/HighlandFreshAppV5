@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Quick Sale - Cashier POS | Highland Fresh</title>
+    <title>Cashier Sale | Highland Fresh</title>
 
     <!-- Tailwind + DaisyUI (pre-built, no CDN runtime) -->
     <link rel="stylesheet" href="../../css/tailwind.css">
@@ -28,6 +28,15 @@
         .product-card {
             transition: all 0.2s ease-out;
             cursor: pointer;
+            appearance: none;
+            width: 100%;
+            min-width: 0;
+            height: 100%;
+            padding: 0;
+            overflow: hidden;
+            color: inherit;
+            font: inherit;
+            text-align: left;
         }
         .product-card:hover {
             transform: translateY(-2px);
@@ -38,6 +47,118 @@
         .product-card.out-of-stock {
             opacity: 0.5;
             cursor: not-allowed;
+        }
+        .product-card:focus-visible {
+            outline: 3px solid oklch(var(--p) / 0.28);
+            outline-offset: 2px;
+        }
+
+        /* Size cards from the product pane, not the full browser viewport. */
+        .product-grid {
+            grid-template-columns: repeat(auto-fill, minmax(min(100%, 13rem), 1fr));
+            align-content: start;
+        }
+        .pos-products-pane {
+            min-width: 0;
+        }
+        .product-card__body {
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+            height: 100%;
+        }
+        .product-card__name {
+            display: -webkit-box;
+            min-height: 2.5rem;
+            overflow: hidden;
+            overflow-wrap: anywhere;
+            -webkit-box-orient: vertical;
+            -webkit-line-clamp: 2;
+        }
+        .product-card__variant {
+            min-height: 1.125rem;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .product-card__sale {
+            margin-top: auto;
+            padding-top: 0.75rem;
+        }
+        .product-card__price-row {
+            display: flex;
+            align-items: baseline;
+            min-width: 0;
+            gap: 0.25rem;
+            color: oklch(var(--p));
+        }
+        .product-card__price {
+            font-size: 1.125rem;
+            font-weight: 800;
+            line-height: 1.25;
+            white-space: nowrap;
+        }
+        .product-card__unit {
+            min-width: 0;
+            overflow: hidden;
+            color: oklch(var(--bc) / 0.58);
+            font-size: 0.75rem;
+            font-weight: 500;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .product-card__stock {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.4rem;
+            min-width: 0;
+            margin-top: 0.65rem;
+            padding-top: 0.6rem;
+            border-top: 1px solid oklch(var(--b3));
+            font-size: 0.75rem;
+            font-weight: 600;
+            line-height: 1.35;
+        }
+        .product-card__stock i {
+            flex: 0 0 auto;
+            margin-top: 0.12rem;
+        }
+        .product-card__stock-copy {
+            min-width: 0;
+            overflow-wrap: anywhere;
+        }
+        .product-card__pack-detail {
+            display: block;
+            margin-top: 0.1rem;
+            color: oklch(var(--bc) / 0.58);
+            font-weight: 500;
+        }
+
+        @media (max-width: 639px) {
+            .sale-mode-banner {
+                align-items: stretch;
+                flex-wrap: wrap;
+            }
+            .sale-mode-banner__switch {
+                width: 100%;
+            }
+            .sale-mode-banner__switch .btn {
+                flex: 1;
+            }
+            .product-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+            .product-card__price-row {
+                align-items: flex-start;
+                flex-direction: column;
+                gap: 0.05rem;
+            }
+        }
+
+        @media (max-width: 399px) {
+            .product-grid {
+                grid-template-columns: minmax(0, 1fr);
+            }
         }
 
         /* ── Cart panel layout ── */
@@ -422,10 +543,17 @@
                 <h2 class="text-xs font-semibold text-base-content/40 uppercase tracking-wider mb-2 px-3">Sales</h2>
                 <ul class="menu menu-sm p-0 gap-1">
                     <li>
-                        <a href="sale.html"
-                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-primary-content">
+                        <a href="sale.html?mode=retail" id="retailSaleNav"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
                             <i class="fas fa-bolt w-5 text-center"></i>
-                            <span class="flex-1">Quick Sale (POS)</span>
+                            <span class="flex-1">Retail Sale</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="sale.html?mode=wholesale" id="wholesaleSaleNav"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-base-200">
+                            <i class="fas fa-boxes-stacked w-5 text-center"></i>
+                            <span class="flex-1">Wholesale Sale</span>
                         </a>
                     </li>
                     <li>
@@ -519,8 +647,8 @@
             </div>
             <div class="flex-1">
                 <div class="flex items-center gap-2">
-                    <i class="fas fa-bolt text-warning"></i>
-                    <span class="font-semibold">Quick Sale (POS)</span>
+                    <i id="salePageIcon" class="fas fa-bolt text-warning"></i>
+                    <span id="salePageTitle" class="font-semibold">Retail Sale</span>
                 </div>
             </div>
             <div class="flex-none flex items-center gap-2">
@@ -540,7 +668,18 @@
         <main class="flex-1 flex flex-col lg:flex-row">
 
             <!-- Products Section (Left) -->
-            <div class="flex-1 flex flex-col p-4 lg:p-6 overflow-hidden">
+            <div class="pos-products-pane flex-1 flex flex-col p-4 lg:p-6 overflow-hidden">
+                <div class="alert sale-mode-banner mb-4 border border-primary/20 bg-primary/5 py-3">
+                    <i id="saleModeBannerIcon" class="fas fa-bottle-water text-primary"></i>
+                    <div class="flex-1">
+                        <div id="saleModeBannerTitle" class="font-semibold">Retail — sell individual units</div>
+                        <div id="saleModeBannerHelp" class="text-xs text-base-content/65">Stock and quantity are shown as individual sellable units.</div>
+                    </div>
+                    <div class="join sale-mode-banner__switch">
+                        <button id="retailModeButton" type="button" class="btn btn-sm join-item" onclick="navigateSaleMode('retail')">Individual</button>
+                        <button id="wholesaleModeButton" type="button" class="btn btn-sm join-item" onclick="navigateSaleMode('wholesale')">Box</button>
+                    </div>
+                </div>
                 <!-- Search & Filter -->
                 <div class="flex flex-col sm:flex-row gap-3 mb-4">
                     <div class="flex-1">
@@ -566,7 +705,7 @@
 
                 <!-- Product Grid -->
                 <div class="flex-1 overflow-y-auto scrollbar-thin">
-                    <div id="productGrid" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+                    <div id="productGrid" class="product-grid grid gap-3">
                         <!-- Products will be loaded here -->
                         <div class="col-span-full flex items-center justify-center py-12">
                             <span class="loading loading-spinner loading-lg text-primary"></span>
@@ -621,7 +760,7 @@
                             <span id="vatAmount">₱0.00</span>
                         </div>
                         <div class="checkout-totals__row">
-                            <span>Items</span>
+                            <span id="totalItemsLabel">Units</span>
                             <span id="totalItems">0</span>
                         </div>
                         <div class="checkout-totals__grand">
@@ -825,7 +964,49 @@
         let cart = [];
         let currentPaymentMethod = 'cash';
         let lastSaleData = null;
+        const saleMode = new URLSearchParams(window.location.search).get('mode') === 'wholesale'
+            ? 'wholesale'
+            : 'retail';
         const POS_VAT_RATE = 0.12;
+
+        function applySaleMode() {
+            const wholesale = saleMode === 'wholesale';
+            document.title = `${wholesale ? 'Wholesale' : 'Retail'} Sale - Cashier POS | Highland Fresh`;
+            document.getElementById('salePageTitle').textContent = wholesale ? 'Wholesale Sale (by box)' : 'Retail Sale (individual units)';
+            document.getElementById('salePageIcon').className = `fas ${wholesale ? 'fa-boxes-stacked text-primary' : 'fa-bolt text-warning'}`;
+            document.getElementById('saleModeBannerIcon').className = `fas ${wholesale ? 'fa-boxes-stacked' : 'fa-bottle-water'} text-primary`;
+            document.getElementById('saleModeBannerTitle').textContent = wholesale
+                ? 'Wholesale — sell full boxes only'
+                : 'Retail — sell individual units';
+            document.getElementById('saleModeBannerHelp').textContent = wholesale
+                ? 'Only complete boxes are available. Each product shows its units per box and approved box price.'
+                : 'Stock and quantity are shown as individual sellable units.';
+            document.getElementById('totalItemsLabel').textContent = wholesale ? 'Boxes' : 'Units';
+
+            const retailNav = document.getElementById('retailSaleNav');
+            const wholesaleNav = document.getElementById('wholesaleSaleNav');
+            const retailButton = document.getElementById('retailModeButton');
+            const wholesaleButton = document.getElementById('wholesaleModeButton');
+            [retailNav, wholesaleNav].forEach(link => link?.classList.remove('bg-primary', 'text-primary-content'));
+            (wholesale ? wholesaleNav : retailNav)?.classList.add('bg-primary', 'text-primary-content');
+            retailButton?.classList.toggle('btn-primary', !wholesale);
+            wholesaleButton?.classList.toggle('btn-primary', wholesale);
+        }
+
+        async function navigateSaleMode(mode) {
+            if (mode === saleMode) return;
+            if (cart.length > 0) {
+                const confirmed = await AuthService.confirmAction({
+                    title: 'Switch sale mode?',
+                    message: 'Switching between pieces and boxes clears the current cart.',
+                    confirmText: 'Switch Mode',
+                    tone: 'warning',
+                    icon: 'fa-right-left'
+                });
+                if (!confirmed) return;
+            }
+            window.location.href = `sale.html?mode=${mode}`;
+        }
 
         function vatInclusiveBreakdown(amount) {
             const gross = Math.max(0, Number(amount) || 0);
@@ -882,6 +1063,7 @@
 
         // Initialize
         document.addEventListener('DOMContentLoaded', async function () {
+            applySaleMode();
             if (typeof AuthService !== 'undefined') {
                 const user = AuthService.getCurrentUser();
                 if (user) {
@@ -935,8 +1117,14 @@
                             code: p.product_code || '',
                             name: p.product_name,
                             variant: p.variant || sizeLabel || '',
-                            price: parseFloat(p.selling_price) || parseFloat(p.unit_price) || 0,
-                            stock: parseInt(p.total_pieces, 10) || parseInt(p.stock_available, 10) || 0,
+                            retailPrice: parseFloat(p.selling_price) || parseFloat(p.unit_price) || 0,
+                            wholesaleBoxPrice: parseFloat(p.wholesale_box_price) || 0,
+                            totalPieces: parseInt(p.total_pieces, 10) || parseInt(p.stock_available, 10) || 0,
+                            piecesPerBox: Math.max(1, parseInt(p.pieces_per_box, 10) || 1),
+                            fullBoxesAvailable: Math.max(0, parseInt(p.full_boxes_available, 10) || 0),
+                            loosePieces: Math.max(0, parseInt(p.pieces_available, 10) || 0),
+                            baseUnit: p.base_unit || 'piece',
+                            boxUnit: p.box_unit || 'box',
                             category: (p.category || 'other').toLowerCase(),
                             image: null,
                             expiring_soon: p.expiring_soon,
@@ -970,6 +1158,36 @@
         }
 
         // Render products
+        function productSalePrice(product) {
+            return saleMode === 'wholesale' ? product.wholesaleBoxPrice : product.retailPrice;
+        }
+
+        function productSaleStock(product) {
+            return saleMode === 'wholesale' ? product.fullBoxesAvailable : product.totalPieces;
+        }
+
+        function productIsAvailableInMode(product) {
+            if (saleMode === 'wholesale') {
+                return product.piecesPerBox > 1 && product.wholesaleBoxPrice > 0 && product.fullBoxesAvailable > 0;
+            }
+            return product.retailPrice > 0 && product.totalPieces > 0;
+        }
+
+        function formatSaleUnit(unit) {
+            return String(unit || 'unit')
+                .trim()
+                .replace(/[_-]+/g, ' ')
+                .replace(/\s+/g, ' ');
+        }
+
+        function pluralizeSaleUnit(unit, quantity) {
+            const value = formatSaleUnit(unit);
+            if (Number(quantity) === 1 || /s$/i.test(value)) return value;
+            if (/(s|x|z|ch|sh)$/i.test(value)) return `${value}es`;
+            if (/[^aeiou]y$/i.test(value)) return `${value.slice(0, -1)}ies`;
+            return `${value}s`;
+        }
+
         function renderProducts() {
             const grid = document.getElementById('productGrid');
             const search = document.getElementById('productSearch').value.toLowerCase();
@@ -978,47 +1196,67 @@
             let filtered = products.filter(p => {
                 const matchSearch = p.name.toLowerCase().includes(search) || (p.variant && p.variant.toLowerCase().includes(search));
                 const matchCategory = !category || p.category.toLowerCase() === category.toLowerCase();
-                return matchSearch && matchCategory;
+                return matchSearch && matchCategory && productIsAvailableInMode(p);
             });
 
             if (filtered.length === 0) {
                 grid.innerHTML = `
                     <div class="col-span-full text-center py-12 text-base-content/60">
                         <i class="fas fa-search text-4xl mb-3 opacity-30"></i>
-                        <p>No sellable products found</p>
-                        <p class="text-sm mt-1">Batches with 7 days or less before expiry are handled by QC.</p>
+                        <p>${saleMode === 'wholesale' ? 'No wholesale-ready products' : 'No sellable products found'}</p>
+                        <p class="text-sm mt-1">${saleMode === 'wholesale'
+                            ? 'Set units per pack, a wholesale full-pack price, and stock at least one complete pack.'
+                            : 'Batches with 7 days or less before expiry are handled by QC.'}</p>
                     </div>
                 `;
                 return;
             }
 
             grid.innerHTML = filtered.map(product => {
-                const isOutOfStock = product.stock <= 0;
-                const stockClass = product.stock <= 5 ? 'text-error' : 'text-success';
+                const available = productSaleStock(product);
+                const price = productSalePrice(product);
+                const isOutOfStock = available <= 0;
+                const stockClass = available <= 5 ? 'text-error' : 'text-success';
+                const saleUnit = saleMode === 'wholesale' ? product.boxUnit : product.baseUnit;
+                const availabilityLabel = isOutOfStock
+                    ? 'Out of stock'
+                    : `${available} ${escapeHtml(pluralizeSaleUnit(
+                        saleMode === 'wholesale' ? product.boxUnit : product.baseUnit,
+                        available
+                    ))} available`;
+                const packDetail = saleMode === 'wholesale'
+                    ? `<span class="product-card__pack-detail">${product.piecesPerBox} ${escapeHtml(formatSaleUnit(product.baseUnit))} per ${escapeHtml(formatSaleUnit(product.boxUnit))}</span>`
+                    : '';
                 const expiryWarning = product.expiring_soon ?
                     `<span class="badge badge-warning badge-xs">Exp: ${product.days_to_expiry}d</span>` : '';
 
                 return `
-                    <div class="product-card card bg-base-100 border border-base-300 ${isOutOfStock ? 'out-of-stock' : ''}"
-                         onclick="${isOutOfStock ? '' : `addToCart(${product.id})`}">
-                        <div class="card-body p-3">
-                            <div class="w-full h-16 bg-base-200 rounded-lg flex items-center justify-center mb-2 relative">
+                    <button type="button"
+                         class="product-card card bg-base-100 border border-base-300 ${isOutOfStock ? 'out-of-stock' : ''}"
+                         ${isOutOfStock ? 'disabled' : `onclick="addToCart(${product.id})"`}
+                         aria-label="${escapeHtml(isOutOfStock ? `${product.name}, out of stock` : `Add ${product.name} to current sale`)}">
+                        <div class="product-card__body card-body p-3">
+                            <div class="w-full h-16 bg-base-200 rounded-lg flex items-center justify-center mb-3 relative shrink-0">
                                 ${product.image
                         ? `<img src="${escapeHtml(product.image)}" alt="${escapeHtml(product.name)}" class="h-full object-contain">`
                         : `<i class="fas fa-${getCategoryIcon(product.category)} text-2xl text-base-content/30"></i>`
                     }
                                 ${expiryWarning ? `<div class="absolute top-1 right-1">${expiryWarning}</div>` : ''}
                             </div>
-                            <h3 class="font-semibold text-sm leading-tight">${escapeHtml(product.name)}</h3>
-                            <p class="text-xs text-base-content/60">${escapeHtml(product.variant || '')}</p>
-                            <div class="flex justify-between items-end mt-2">
-                                <span class="text-lg font-bold text-primary">${formatCurrency(product.price)}</span>
-                                <span class="text-xs ${stockClass}">
-                                    ${isOutOfStock ? 'Out of stock' : `${product.stock} left`}
-                                </span>
+                            <h3 class="product-card__name font-semibold text-sm leading-tight" title="${escapeHtml(product.name)}">${escapeHtml(product.name)}</h3>
+                            <p class="product-card__variant text-xs text-base-content/60" title="${escapeHtml(product.variant || '')}">${escapeHtml(product.variant || '')}</p>
+                            <div class="product-card__sale">
+                                <div class="product-card__price-row">
+                                    <span class="product-card__price">${formatCurrency(price)}</span>
+                                    <span class="product-card__unit">per ${escapeHtml(formatSaleUnit(saleUnit))}</span>
+                                </div>
+                                <div class="product-card__stock ${stockClass}">
+                                    <i class="fas ${isOutOfStock ? 'fa-circle-xmark' : 'fa-box-open'}" aria-hidden="true"></i>
+                                    <span class="product-card__stock-copy">${availabilityLabel}${packDetail}</span>
+                                </div>
                             </div>
                         </div>
-                    </div>
+                    </button>
                 `;
             }).join('');
         }
@@ -1044,11 +1282,12 @@
         // Add to cart
         function addToCart(productId) {
             const product = products.find(p => p.id === productId);
-            if (!product || product.stock <= 0) return;
+            const available = product ? productSaleStock(product) : 0;
+            if (!product || available <= 0) return;
 
             const existingItem = cart.find(item => item.id === productId);
             if (existingItem) {
-                if (existingItem.quantity < product.stock) {
+                if (existingItem.quantity < available) {
                     existingItem.quantity++;
                 } else {
                     showToast('Maximum stock reached', 'warning');
@@ -1059,9 +1298,13 @@
                     id: product.id,
                     name: product.name,
                     variant: product.variant,
-                    price: product.price,
+                    price: productSalePrice(product),
                     quantity: 1,
-                    maxStock: product.stock
+                    maxStock: available,
+                    saleUnit: saleMode === 'wholesale' ? 'box' : 'piece',
+                    baseUnit: product.baseUnit,
+                    boxUnit: product.boxUnit,
+                    piecesPerBox: product.piecesPerBox
                 });
             }
 
@@ -1092,11 +1335,14 @@
                 const lineTotal = formatCurrency(item.price * item.quantity);
                 const unitPrice = formatCurrency(item.price);
                 const variant = item.variant || '—';
+                const unitMeta = item.saleUnit === 'box'
+                    ? `${unitPrice} per ${escapeHtml(formatSaleUnit(item.boxUnit))} · ${item.piecesPerBox} ${escapeHtml(formatSaleUnit(item.baseUnit))}/${escapeHtml(formatSaleUnit(item.boxUnit))}`
+                    : `${unitPrice} per ${escapeHtml(formatSaleUnit(item.baseUnit))}`;
                 return `
                 <div class="cart-item">
                     <div class="min-w-0">
                         <div class="cart-item__name" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</div>
-                        <div class="cart-item__meta">${escapeHtml(variant)} · ${unitPrice} each</div>
+                        <div class="cart-item__meta">${escapeHtml(variant)} · ${unitMeta}</div>
                     </div>
                     <div class="cart-item__qty-wrap">
                         <div class="qty-stepper" role="group" aria-label="Quantity">
@@ -1158,7 +1404,7 @@
             }
 
             if (quantity > item.maxStock) {
-                return { valid: false, message: `Only ${item.maxStock} units are available` };
+                return { valid: false, message: `Only ${item.maxStock} ${item.saleUnit === 'box' ? 'full boxes' : 'pieces'} are available` };
             }
 
             return { valid: true, quantity, item };
@@ -1362,12 +1608,12 @@
             const saleData = {
                 customer_name: document.getElementById('customerName').value.trim() || 'Walk-in Customer',
                 customer_type: 'walk-in',
+                sale_mode: saleMode,
                 items: cart.map(item => ({
                     product_id: item.id,
+                    sale_quantity: item.quantity,
                     quantity: item.quantity,
-                    unit_price: item.price,
-                    product_name: item.name,
-                    variant: item.variant
+                    product_name: item.name
                 })),
                 payment_method: paymentMethod,
                 amount_paid: tendered,
@@ -1406,8 +1652,15 @@
                         payment_method: currentPaymentMethod,
                         change: savedChange,
                         customer_name: saleData.customer_name,
+                        sale_mode: result.sale_mode || saleMode,
                         completed_at: new Date().toISOString(),
-                        items: cart.map(item => ({ ...item }))
+                        items: cart.map(item => ({
+                            ...item,
+                            sale_quantity: item.quantity,
+                            quantity: item.saleUnit === 'box' ? item.quantity * item.piecesPerBox : item.quantity,
+                            sale_unit: item.saleUnit,
+                            pieces_per_box_snapshot: item.piecesPerBox
+                        }))
                     };
 
                     // Show success modal
@@ -1516,8 +1769,11 @@
                     product_name: item.name,
                     variant: item.variant,
                     quantity: item.quantity,
+                    sale_quantity: item.sale_quantity,
+                    sale_unit: item.sale_unit,
+                    pieces_per_box_snapshot: item.pieces_per_box_snapshot,
                     unit_price: item.price,
-                    line_total: item.quantity * item.price
+                    line_total: item.sale_quantity * item.price
                 })),
                 payment: {
                     subtotal: lastSaleData.subtotal,

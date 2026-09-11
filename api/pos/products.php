@@ -13,6 +13,7 @@
 
 require_once dirname(__DIR__) . '/bootstrap.php';
 require_once dirname(__DIR__) . '/helpers/sellable_expiry_policy.php';
+require_once dirname(__DIR__) . '/helpers/pos_wholesale.php';
 
 // Require Cashier or GM role
 $currentUser = Auth::requireRole(['cashier', 'general_manager']);
@@ -21,6 +22,7 @@ $action = getParam('action', 'list');
 
 try {
     $db = Database::getInstance()->getConnection();
+    hfEnsurePosWholesaleSchema($db);
     
     switch ($requestMethod) {
         case 'GET':
@@ -177,10 +179,13 @@ function enrichPosProducts(PDO $db, array &$products): void {
         $p['total_pieces'] = posSellableUnits($p);
         $p['stock_display'] = formatMultiUnitDisplay(
             $p['boxes_available'],
-            $p['pieces_available'] > 0 ? $p['pieces_available'] : $p['total_pieces'],
+            $p['pieces_available'],
             $p['box_unit'] ?? 'box',
             $p['base_unit'] ?? 'piece'
         );
+        $p['full_boxes_available'] = $p['pieces_per_box'] > 1
+            ? intdiv($p['total_pieces'], (int) $p['pieces_per_box'])
+            : 0;
 
         if (!empty($p['earliest_expiry'])) {
             $daysToExpiry = (strtotime($p['earliest_expiry']) - strtotime('today')) / 86400;
@@ -238,6 +243,7 @@ function handleGet($db, $action) {
                     COALESCE(p.box_unit, 'box') AS box_unit,
                     COALESCE(p.pieces_per_box, 1) AS pieces_per_box,
                     COALESCE(p.selling_price, p.unit_price, 0) AS selling_price,
+                    p.wholesale_box_price,
                     COALESCE(p.unit_price, 0) AS unit_price,
                     p.is_active,
                     COALESCE(inv.total_available, 0) AS stock_available,
@@ -306,6 +312,7 @@ function handleGet($db, $action) {
                     COALESCE(p.box_unit, 'box') AS box_unit,
                     COALESCE(p.pieces_per_box, 1) AS pieces_per_box,
                     COALESCE(p.selling_price, p.unit_price, 0) AS selling_price,
+                    p.wholesale_box_price,
                     COALESCE(inv.total_available, 0) AS stock_available,
                     COALESCE(inv.total_boxes, 0) AS boxes_available,
                     COALESCE(inv.total_pieces, 0) AS pieces_available,

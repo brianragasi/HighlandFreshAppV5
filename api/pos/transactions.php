@@ -17,6 +17,7 @@ require_once dirname(__DIR__) . '/bootstrap.php';
 require_once dirname(__DIR__) . '/warehouse/fg/inventory_helpers.php';
 require_once dirname(__DIR__) . '/helpers/pos_vat.php';
 require_once dirname(__DIR__) . '/helpers/sellable_expiry_policy.php';
+require_once dirname(__DIR__) . '/helpers/pos_wholesale.php';
 
 // Require Cashier or GM role
 $currentUser = Auth::requireRole(['cashier', 'general_manager']);
@@ -25,6 +26,7 @@ $action = getParam('action', 'list');
 
 try {
     $db = Database::getInstance()->getConnection();
+    hfEnsurePosWholesaleSchema($db);
     
     switch ($requestMethod) {
         case 'GET':
@@ -620,6 +622,7 @@ function handlePost($db, $action, $currentUser) {
             $customerName = $data['customer_name'] ?? 'Walk-in Customer';
             $customerId = $data['customer_id'] ?? null;
             $notes = $data['notes'] ?? null;
+            $saleMode = hfPosSaleMode($data['sale_mode'] ?? 'retail');
             
             try {
                 $db->beginTransaction();
@@ -629,13 +632,15 @@ function handlePost($db, $action, $currentUser) {
                 $itemsData = [];
                 
                 foreach ($data['items'] as $item) {
-                    if (empty($item['product_id']) || empty($item['quantity'])) {
+                    $rawSaleQuantity = $item['sale_quantity'] ?? $item['quantity'] ?? null;
+                    if (empty($item['product_id']) || empty($rawSaleQuantity)) {
                         throw new Exception('Each item must have a product and quantity');
                     }
                     
                     // Verify product exists and get details
                     $prodStmt = $db->prepare("
-                        SELECT id, product_code, product_name, variant, selling_price, unit_price
+                        SELECT id, product_code, product_name, variant, selling_price, unit_price,
+                               pieces_per_box, box_unit, base_unit, wholesale_box_price
                         FROM products
                         WHERE id = ? AND is_active = 1
                     ");
@@ -647,29 +652,21 @@ function handlePost($db, $action, $currentUser) {
                     }
                     
                     try {
-                        $quantity = hfParseBusinessInteger(
-                            $item['quantity'],
+                        $saleQuantity = hfParseBusinessInteger(
+                            $rawSaleQuantity,
                             "Quantity for {$product['product_name']}",
                             1,
                             1000000
                         );
-                        // The saved product master is authoritative. A browser
-                        // request cannot replace the selling price used by POS.
-                        $savedPrice = $product['selling_price'];
-                        if ($savedPrice === null || $savedPrice === '' || (float) $savedPrice <= 0) {
-                            $savedPrice = $product['unit_price'] ?? null;
-                        }
-                        $unitPrice = hfParseBusinessDecimal(
-                            $savedPrice,
-                            "Selling price for {$product['product_name']}",
-                            0.01,
-                            9999999999.99,
-                            2
-                        );
+                        // Product master data is authoritative for retail price,
+                        // box capacity, and wholesale box price.
+                        $pricedLine = hfPosPriceLine($product, $saleMode, $saleQuantity);
                     } catch (InvalidArgumentException $error) {
                         throw new Exception($error->getMessage());
                     }
-                    $lineTotal = $quantity * $unitPrice;
+                    $quantity = $pricedLine['base_quantity'];
+                    $unitPrice = $pricedLine['unit_price'];
+                    $lineTotal = $pricedLine['line_total'];
                     if (!is_finite($lineTotal) || $lineTotal > 9999999999.99) {
                         throw new Exception("The total for {$product['product_name']} is outside the supported sales range");
                     }
@@ -681,6 +678,9 @@ function handlePost($db, $action, $currentUser) {
                         'product_name' => $product['product_name'],
                         'variant' => $product['variant'],
                         'quantity' => $quantity,
+                        'sale_unit' => $pricedLine['sale_unit'],
+                        'sale_quantity' => $pricedLine['sale_quantity'],
+                        'pieces_per_box' => $pricedLine['pieces_per_box'],
                         'unit_price' => $unitPrice,
                         'line_total' => $lineTotal
                     ];
@@ -709,11 +709,11 @@ function handlePost($db, $action, $currentUser) {
                 
                 $stmt = $db->prepare("
                     INSERT INTO sales_transactions 
-                    (transaction_code, transaction_type, customer_id, customer_name,
+                    (transaction_code, transaction_type, sale_mode, customer_id, customer_name,
                      subtotal_amount, discount_value, discount_amount, tax_amount, total_amount,
                      amount_paid, change_amount, payment_status, payment_method,
                      payment_reference, cashier_id, notes)
-                    VALUES (?, 'cash', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'paid', ?, ?, ?, ?)
+                    VALUES (?, 'cash', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'paid', ?, ?, ?, ?)
                 ");
                 
                 // Build payment reference for check/bank/gcash
@@ -728,6 +728,7 @@ function handlePost($db, $action, $currentUser) {
                 
                 $stmt->execute([
                     $transactionCode,
+                    $saleMode,
                     $customerId,
                     $customerName,
                     $subtotal,
@@ -748,8 +749,10 @@ function handlePost($db, $action, $currentUser) {
                 // Insert items and deduct inventory
                 $itemStmt = $db->prepare("
                     INSERT INTO sales_transaction_items 
-                    (transaction_id, product_id, product_code, product_name, variant, quantity, unit_price, line_total, inventory_deductions)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (transaction_id, product_id, product_code, product_name, variant, quantity,
+                     sale_unit, sale_quantity, pieces_per_box_snapshot,
+                     unit_price, line_total, inventory_deductions)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ");
                 
                 $allDeductions = [];
@@ -772,6 +775,9 @@ function handlePost($db, $action, $currentUser) {
                         $item['product_name'],
                         $item['variant'],
                         $item['quantity'],
+                        $item['sale_unit'],
+                        $item['sale_quantity'],
+                        $item['pieces_per_box'],
                         $item['unit_price'],
                         $item['line_total'],
                         json_encode($deductions)
@@ -791,7 +797,7 @@ function handlePost($db, $action, $currentUser) {
                     'sales_transactions',
                     $transactionId,
                     null,
-                    ['transaction_code' => $transactionCode, 'total' => $totalAmount, 'tax_amount' => $taxAmount, 'items' => count($itemsData)]
+                    ['transaction_code' => $transactionCode, 'sale_mode' => $saleMode, 'total' => $totalAmount, 'tax_amount' => $taxAmount, 'items' => count($itemsData)]
                 );
                 
                 $db->commit();
@@ -812,7 +818,9 @@ function handlePost($db, $action, $currentUser) {
                     'change' => $changeAmount,
                     'change_amount' => $changeAmount,
                     'payment_method' => $paymentMethod,
+                    'sale_mode' => $saleMode,
                     'items_count' => count($itemsData),
+                    'items' => $itemsData,
                     'inventory_deductions' => $allDeductions
                 ], 'Cash sale created successfully');
                 

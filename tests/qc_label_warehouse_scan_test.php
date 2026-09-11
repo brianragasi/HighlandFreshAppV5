@@ -102,6 +102,14 @@ qcLabelScanAssert(
     'Warehouse scanners must explain detection, permission, and secure-context failures'
 );
 qcLabelScanAssert(
+    str_contains($warehouseDispatchPage, "error?.response?.data?.message")
+        && str_contains($warehouseDispatchPage, 'Barcode cannot be dispatched')
+        && !str_contains($warehouseDispatchPage, "showToast('Failed to lookup barcode', 'error')")
+        && str_contains($dispatchSource, 'This label was recognized, but the batch')
+        && str_contains($dispatchSource, 'inside the 7-day QC/reprocessing window'),
+    'Warehouse dispatch must show the real server reason when a readable label is blocked'
+);
+qcLabelScanAssert(
     str_contains($warehousePickingPage, 'window.location.href = `dispatch.html?pick=${encodeURIComponent(pickingTicketId)}`')
         && str_contains($warehousePickingPage, 'goToPickItems(pickId);')
         && !str_contains($warehousePickingPage, 'await openPickingModal(pickId);'),

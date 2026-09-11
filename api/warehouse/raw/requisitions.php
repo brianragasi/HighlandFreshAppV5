@@ -281,9 +281,11 @@ function handleGet($db, $currentUser) {
             // round trip to requisition_stock_warnings.
             foreach ($itemList as &$row) {
                 $requested = (float) ($row['requested_quantity'] ?? 0);
+                $issued = (float) ($row['issued_quantity'] ?? 0);
+                $remaining = max(0.0, $requested - $issued);
                 $available = (float) ($row['available_stock'] ?? 0);
-                $row['stock_shortage'] = $requested > $available ? ($requested - $available) : 0.0;
-                $row['stock_sufficient'] = $requested <= $available;
+                $row['stock_shortage'] = $remaining > $available ? ($remaining - $available) : 0.0;
+                $row['stock_sufficient'] = $remaining <= $available;
             }
             unset($row);
 
@@ -447,6 +449,40 @@ function handlePut($db, $currentUser) {
                 $itemsById = [];
                 foreach ($itemList as $item) {
                     $itemsById[(int) $item['id']] = $item;
+                }
+
+                // Packaging handovers are deliberately all-or-nothing. Production
+                // cannot package a run with only some of its bottles, caps, labels,
+                // or wraps, so Warehouse must wait until every remaining line can
+                // be released in full. Cooking requests retain partial issuance.
+                if (($reqData['request_type'] ?? 'cooking') === 'packaging') {
+                    foreach ($itemList as $item) {
+                        $itemId = (int) $item['id'];
+                        $itemLabel = trim((string) ($item['item_name'] ?? 'Packaging material')) ?: 'Packaging material';
+                        $remaining = max(
+                            0.0,
+                            (float) ($item['requested_quantity'] ?? 0) - (float) ($item['issued_quantity'] ?? 0)
+                        );
+                        if ($remaining <= 0.0005) {
+                            continue;
+                        }
+                        if (!array_key_exists($itemId, $issuedQuantities)) {
+                            throw new Exception(
+                                "Cannot fulfill packaging request: {$itemLabel} is still outstanding. " .
+                                'Every packaging line must be released together.'
+                            );
+                        }
+                        $submitted = parseWarehouseIssueQuantity(
+                            $issuedQuantities[$itemId],
+                            "Quantity for {$itemLabel}"
+                        );
+                        if (abs($submitted - $remaining) > 0.0005) {
+                            throw new Exception(
+                                "Cannot partially issue packaging request: {$itemLabel} needs " .
+                                number_format($remaining, 3, '.', '') . '. Replenish stock and fulfill the complete request.'
+                            );
+                        }
+                    }
                 }
 
                 // Validate the entire request before changing any inventory row.
@@ -650,6 +686,13 @@ function handlePut($db, $currentUser) {
                     throw new Exception(
                         'Issue quantity exceeds the remaining request. Remaining: ' .
                         number_format($remainingQuantity, 3, '.', '') . '.'
+                    );
+                }
+                if (($itemData['request_type'] ?? 'cooking') === 'packaging'
+                    && abs($issuedQuantity - $remainingQuantity) > 0.0005) {
+                    throw new Exception(
+                        'Packaging requests cannot be issued partially. Replenish stock, then release the full remaining quantity (' .
+                        number_format($remainingQuantity, 3, '.', '') . ').'
                     );
                 }
                 

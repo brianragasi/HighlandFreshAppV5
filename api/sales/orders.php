@@ -626,7 +626,7 @@ function handlePost($db, $action, $currentUser, $validStatuses = null) {
     
     switch ($action) {
         case 'create':
-            Response::error('Use Record Customer Order for phone, walk-in, or message orders. Use Customer PO Inbox for emailed purchase orders.', 409);
+            Response::error('Use Record Phone / Message Order for scheduled customer orders. Use Cashier POS for immediate walk-in sales or Customer PO Inbox for emailed purchase orders.', 409);
             break;
 
         case 'create_customer':
@@ -641,9 +641,9 @@ function handlePost($db, $action, $currentUser, $validStatuses = null) {
             }
 
             $orderSource = strtolower(trim((string) ($data['source_type'] ?? 'manual_phone')));
-            $manualSources = ['manual_phone', 'manual_walk_in', 'manual_message'];
+            $manualSources = ['manual_phone', 'manual_message'];
             if (!in_array($orderSource, $manualSources, true)) {
-                Response::validationError(['source_type' => 'Choose Phone, Walk-in, or Message as the order source.']);
+                Response::validationError(['source_type' => 'Choose Phone or Message as the order source. Immediate walk-in sales belong in Cashier POS.']);
             }
 
             $customerStmt = $db->prepare("

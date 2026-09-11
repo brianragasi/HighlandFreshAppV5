@@ -47,6 +47,30 @@ function hfCustomerUsesPoInbox(string $customerType): bool
     ], true);
 }
 
+function hfFindActiveCustomerByEmail(PDO $db, $email, ?int $excludeCustomerId = null): ?array
+{
+    $normalized = strtolower(trim((string) $email));
+    if ($normalized === '') {
+        return null;
+    }
+
+    $sql = "SELECT id, customer_code, name, email
+            FROM customers
+            WHERE status = 'active'
+              AND LOWER(TRIM(email)) = ?";
+    $params = [$normalized];
+    if ($excludeCustomerId !== null) {
+        $sql .= ' AND id <> ?';
+        $params[] = $excludeCustomerId;
+    }
+    $sql .= ' ORDER BY id ASC LIMIT 1';
+
+    $stmt = $db->prepare($sql);
+    $stmt->execute($params);
+    $customer = $stmt->fetch(PDO::FETCH_ASSOC);
+    return $customer ?: null;
+}
+
 function hfCustomerNormalizePayload(array $data, array $existing = []): array
 {
     if (array_key_exists('phone', $data) && !array_key_exists('contact_number', $data)) {

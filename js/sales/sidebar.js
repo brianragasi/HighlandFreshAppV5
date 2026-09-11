@@ -46,7 +46,7 @@
         },
         {
             title: 'Orders',
-            action: { id: 'direct_order', label: 'Record Customer Order', icon: 'fa-user-tag' },
+            action: { id: 'direct_order', label: 'Record Phone / Message Order', icon: 'fa-phone' },
             items: [
                 { id: 'order_inbox', label: 'Customer PO Inbox', icon: 'fa-inbox', href: 'order_inbox.html' },
                 { id: 'pending_orders', label: 'Pending Orders', icon: 'fa-clock', href: 'orders.html?status=pending', badgeId: 'pendingOrdersBadge', badgeClass: 'badge-warning' },
