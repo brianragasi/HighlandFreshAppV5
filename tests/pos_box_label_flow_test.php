@@ -59,6 +59,7 @@ boxLabelAssert(
         && str_contains($salePage, "classList.toggle('hidden', !wholesale)")
         && str_contains($salePage, 'scanPosBarcodePhoto(event)')
         && str_contains($salePage, 'Open a box for Retail')
+        && str_contains($salePage, 'pos.service.js?v=20260912-open-box1')
         && str_contains($posService, 'openBoxForRetail'),
     'Wholesale Cashier must provide the same visible camera scan flow as Finished Goods'
 );
