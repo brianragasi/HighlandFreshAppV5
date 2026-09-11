@@ -18,6 +18,9 @@ require_once dirname(__DIR__) . '/warehouse/fg/inventory_helpers.php';
 require_once dirname(__DIR__) . '/helpers/pos_vat.php';
 require_once dirname(__DIR__) . '/helpers/sellable_expiry_policy.php';
 require_once dirname(__DIR__) . '/helpers/pos_wholesale.php';
+require_once dirname(__DIR__) . '/helpers/finished_goods_barcode.php';
+require_once dirname(__DIR__) . '/helpers/lookup_normalization.php';
+require_once dirname(__DIR__) . '/helpers/qc_count_discrepancy.php';
 
 // Require Cashier or GM role
 $currentUser = Auth::requireRole(['cashier', 'general_manager']);
@@ -77,9 +80,17 @@ function generateSICode($db) {
  * Deduct from finished goods inventory using FIFO
  * Returns array of inventory deductions made
  */
-function deductInventory($db, $productId, $quantityNeeded, $userId, $transactionId, $transactionCode) {
+function deductInventory($db, $productId, $quantityNeeded, $userId, $transactionId, $transactionCode, $inventoryId = null) {
     $sellableExpiry = hfSellableExpirySql('fg.expiry_date');
     $updateSellableExpiry = hfSellableExpirySql('expiry_date');
+    $exactInventorySql = $inventoryId ? ' AND fg.id = ?' : '';
+    $isWholesaleBox = $inventoryId !== null;
+    $physicalAvailabilitySql = $isWholesaleBox
+        ? 'AND COALESCE(fg.boxes_available, 0) > 0'
+        : "AND (
+            (GREATEST(COALESCE(p.pieces_per_box, 1), 1) > 1 AND COALESCE(fg.pieces_available, 0) > 0)
+            OR (GREATEST(COALESCE(p.pieces_per_box, 1), 1) = 1 AND COALESCE(fg.quantity_available, 0) > 0)
+        )";
 
     // Lock sellable FG rows (FIFO by expiry). Race-safe: SELECT ... FOR UPDATE
     // inside the caller's transaction so two cashiers cannot oversell the last unit.
@@ -100,9 +111,11 @@ function deductInventory($db, $productId, $quantityNeeded, $userId, $transaction
         JOIN products p ON fg.product_id = p.id AND p.is_active = 1
         LEFT JOIN chiller_locations cl ON cl.id = fg.chiller_id
         WHERE fg.product_id = ?
+          {$exactInventorySql}
           AND fg.status = 'available'
           AND {$sellableExpiry}
           AND COALESCE(fg.quantity_available, 0) > 0
+          {$physicalAvailabilitySql}
           AND (cl.id IS NULL OR (cl.is_active = 1 AND cl.status IN ('available', 'full')))
           AND (cl.id IS NULL OR cl.chiller_code NOT LIKE 'FREEZE%')
           AND NOT EXISTS (
@@ -116,12 +129,14 @@ function deductInventory($db, $productId, $quantityNeeded, $userId, $transaction
         ORDER BY fg.expiry_date ASC, fg.id ASC
         FOR UPDATE
     ");
-    $stmt->execute([$productId]);
+    $stmt->execute($inventoryId ? [$productId, (int) $inventoryId] : [$productId]);
     $inventoryItems = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     if (empty($inventoryItems)) {
         throw new Exception(
-            "No POS-sellable inventory for product ID {$productId}. Stock with 7 days or less before expiry is reserved for QC."
+            $isWholesaleBox
+                ? 'The scanned box is no longer available from its recorded batch.'
+                : 'No loose Retail stock is available. Open one sealed box for Retail first; near-expiry stock is reserved for QC.'
         );
     }
 
@@ -134,21 +149,43 @@ function deductInventory($db, $productId, $quantityNeeded, $userId, $transaction
         }
 
         $piecesPerBox = max(1, (int) ($inv['pieces_per_box'] ?: 1));
-        // quantity_available is authoritative. The pack columns are mirrors only.
+        // Total units and physical packaging are both authoritative: a sealed
+        // box cannot silently become loose retail stock, or vice versa.
         $totalAvailable = max(0, (int)($inv['quantity_available'] ?? 0));
-        $availableBoxes = intdiv($totalAvailable, $piecesPerBox);
-        $availablePieces = $totalAvailable % $piecesPerBox;
+        $availableBoxes = max(0, (int)($inv['boxes_available'] ?? 0));
+        $availablePieces = max(0, (int)($inv['pieces_available'] ?? 0));
 
         if ($totalAvailable <= 0) {
             continue;
         }
 
-        $deductAmount = min($remaining, $totalAvailable);
+        if ($isWholesaleBox) {
+            if ($remaining % $piecesPerBox !== 0) {
+                throw new Exception('Wholesale stock must be deducted as complete sealed boxes.');
+            }
+            $boxesToDeduct = min(intdiv($remaining, $piecesPerBox), $availableBoxes);
+            $deductAmount = $boxesToDeduct * $piecesPerBox;
+            $newBoxes = $availableBoxes - $boxesToDeduct;
+            $newPieces = $availablePieces;
+        } elseif ($piecesPerBox > 1) {
+            $deductAmount = min($remaining, $availablePieces, $totalAvailable);
+            $newBoxes = $availableBoxes;
+            $newPieces = $availablePieces - $deductAmount;
+        } else {
+            $deductAmount = min($remaining, $totalAvailable);
+            $piecesUsed = min($deductAmount, $availablePieces);
+            $boxesUsed = $deductAmount - $piecesUsed;
+            $newPieces = max(0, $availablePieces - $piecesUsed);
+            $newBoxes = max(0, $availableBoxes - $boxesUsed);
+        }
+
+        if ($deductAmount <= 0) {
+            continue;
+        }
+
         $remaining -= $deductAmount;
 
         $newTotal = $totalAvailable - $deductAmount;
-        $newBoxes = intdiv($newTotal, $piecesPerBox);
-        $newPieces = $newTotal % $piecesPerBox;
 
         // Conditional update: refuse if another transaction already depleted stock
         $updateStmt = $db->prepare("
@@ -227,17 +264,125 @@ function deductInventory($db, $productId, $quantityNeeded, $userId, $transaction
         $deductions[] = [
             'inventory_id' => $inv['id'],
             'quantity_deducted' => $deductAmount,
+            'boxes_deducted' => $availableBoxes - $newBoxes,
+            'pieces_deducted' => $availablePieces - $newPieces,
             'expiry_date' => $inv['expiry_date']
         ];
     }
     
     if ($remaining > 0) {
         throw new Exception(
-            "Insufficient POS-sellable inventory. Short by {$remaining} units for product ID {$productId}; near-expiry stock is reserved for QC."
+            $isWholesaleBox
+                ? 'Not enough sealed boxes remain in the scanned batch.'
+                : "Not enough loose Retail stock. Open a sealed box first; {$remaining} more item(s) are needed, and near-expiry stock is reserved for QC."
         );
     }
     
     return $deductions;
+}
+
+/**
+ * Validate every outside-box label and lock its exact Finished Goods row.
+ * One physical box label is required for every wholesale box in the cart.
+ */
+function resolveWholesaleBoxLabels(PDO $db, array $product, array $rawLabels, int $saleQuantity, array &$seenLabels): array
+{
+    if (count($rawLabels) !== $saleQuantity) {
+        throw new Exception('Scan the outside label of every wholesale box before checkout.');
+    }
+
+    $piecesPerBox = max(1, (int) ($product['pieces_per_box'] ?? 1));
+    $sellableExpiry = hfSellableExpirySql('fgi.expiry_date');
+    $resolved = [];
+    $requiredByInventory = [];
+    $printedCountByBatch = [];
+
+    foreach ($rawLabels as $rawLabel) {
+        $code = hfNormalizeBarcodeLookup($rawLabel);
+        $parsed = hfParseCompactFinishedGoodsBoxLabel($code);
+        if (!$parsed) {
+            throw new Exception('One scanned code is not an outside-box label.');
+        }
+        if ((int) $parsed['product_id'] !== (int) $product['id']) {
+            throw new Exception('A scanned box belongs to a different product.');
+        }
+        if ((int) $parsed['units_per_pack'] !== $piecesPerBox) {
+            throw new Exception('A scanned label has an old box size. Print a new outside-box label.');
+        }
+
+        $batchId = (int) $parsed['batch_id'];
+        if (!array_key_exists($batchId, $printedCountByBatch)) {
+            $releasedUnits = qcGetReleasedSkuQuantity($db, $batchId, (int) $product['id']);
+            $printedCountByBatch[$batchId] = intdiv($releasedUnits, $piecesPerBox);
+        }
+        if ($printedCountByBatch[$batchId] < 1 || (int) $parsed['sequence'] > $printedCountByBatch[$batchId]) {
+            throw new Exception('One box number was not issued for its batch.');
+        }
+        if (isset($seenLabels[$parsed['label_code']])) {
+            throw new Exception('The same box label was scanned more than once.');
+        }
+        $seenLabels[$parsed['label_code']] = true;
+
+        $usedStmt = $db->prepare("SELECT transaction_id FROM pos_sold_box_labels WHERE label_code = ? LIMIT 1 FOR UPDATE");
+        $usedStmt->execute([$parsed['label_code']]);
+        if ($usedStmt->fetchColumn()) {
+            throw new Exception('This box label was already sold. Use a different sealed box.');
+        }
+
+        $openedStmt = $db->prepare("SELECT opened_at FROM pos_opened_box_labels WHERE label_code = ? LIMIT 1 FOR UPDATE");
+        $openedStmt->execute([$parsed['label_code']]);
+        if ($openedStmt->fetchColumn()) {
+            throw new Exception('This box was opened for Retail and cannot be sold as a sealed box.');
+        }
+
+        $inventoryStmt = $db->prepare("
+            SELECT fgi.id AS inventory_id, fgi.batch_id, fgi.quantity_available,
+                   fgi.boxes_available,
+                   fgi.expiry_date, COALESCE(pb.batch_code, CONCAT('Batch ', fgi.batch_id)) AS batch_code
+            FROM finished_goods_inventory fgi
+            LEFT JOIN production_batches pb ON pb.id = fgi.batch_id
+            LEFT JOIN chiller_locations cl ON cl.id = fgi.chiller_id
+            WHERE fgi.batch_id = ?
+              AND fgi.product_id = ?
+              AND fgi.status = 'available'
+              AND {$sellableExpiry}
+              AND COALESCE(fgi.boxes_available, 0) > 0
+              AND (cl.id IS NULL OR (cl.is_active = 1 AND cl.status IN ('available', 'full')))
+              AND (cl.id IS NULL OR cl.chiller_code NOT LIKE 'FREEZE%')
+              AND NOT EXISTS (
+                  SELECT 1 FROM disposals open_disposal
+                  WHERE open_disposal.source_type = 'finished_goods'
+                    AND open_disposal.source_id = fgi.id
+                    AND open_disposal.status IN ('pending', 'approved')
+                    AND COALESCE(open_disposal.notes, '') NOT LIKE 'Auto-created from delivery return.%'
+              )
+            ORDER BY fgi.id ASC
+            LIMIT 1
+            FOR UPDATE
+        ");
+        $inventoryStmt->execute([$parsed['batch_id'], $parsed['product_id']]);
+        $inventory = $inventoryStmt->fetch(PDO::FETCH_ASSOC);
+        if (!$inventory) {
+            throw new Exception('A scanned box is no longer available from its recorded batch.');
+        }
+
+        $inventoryId = (int) $inventory['inventory_id'];
+        $requiredByInventory[$inventoryId] = ($requiredByInventory[$inventoryId] ?? 0) + 1;
+        if ($requiredByInventory[$inventoryId] > (int) $inventory['boxes_available']) {
+            throw new Exception("There is not enough stock left in batch {$inventory['batch_code']} for all scanned boxes.");
+        }
+
+        $resolved[] = [
+            'label_code' => $parsed['label_code'],
+            'batch_id' => (int) $parsed['batch_id'],
+            'product_id' => (int) $parsed['product_id'],
+            'inventory_id' => $inventoryId,
+            'batch_code' => $inventory['batch_code'],
+            'expiry_date' => $inventory['expiry_date'],
+        ];
+    }
+
+    return $resolved;
 }
 
 // ========================================
@@ -630,6 +775,7 @@ function handlePost($db, $action, $currentUser) {
                 // Calculate totals and validate items
                 $subtotal = 0;
                 $itemsData = [];
+                $seenBoxLabels = [];
                 
                 foreach ($data['items'] as $item) {
                     $rawSaleQuantity = $item['sale_quantity'] ?? $item['quantity'] ?? null;
@@ -671,6 +817,18 @@ function handlePost($db, $action, $currentUser) {
                         throw new Exception("The total for {$product['product_name']} is outside the supported sales range");
                     }
                     $subtotal += $lineTotal;
+
+                    $boxLabels = [];
+                    if ($saleMode === 'wholesale') {
+                        $rawBoxLabels = is_array($item['box_labels'] ?? null) ? $item['box_labels'] : [];
+                        $boxLabels = resolveWholesaleBoxLabels(
+                            $db,
+                            $product,
+                            $rawBoxLabels,
+                            $pricedLine['sale_quantity'],
+                            $seenBoxLabels
+                        );
+                    }
                     
                     $itemsData[] = [
                         'product_id' => $item['product_id'],
@@ -682,7 +840,8 @@ function handlePost($db, $action, $currentUser) {
                         'sale_quantity' => $pricedLine['sale_quantity'],
                         'pieces_per_box' => $pricedLine['pieces_per_box'],
                         'unit_price' => $unitPrice,
-                        'line_total' => $lineTotal
+                        'line_total' => $lineTotal,
+                        'box_labels' => $boxLabels,
                     ];
                 }
                 
@@ -758,15 +917,58 @@ function handlePost($db, $action, $currentUser) {
                 $allDeductions = [];
                 
                 foreach ($itemsData as $item) {
-                    // Deduct from inventory (FIFO)
-                    $deductions = deductInventory(
-                        $db,
-                        $item['product_id'],
-                        $item['quantity'],
-                        $currentUser['user_id'],
-                        $transactionId,
-                        $transactionCode
-                    );
+                    $deductions = [];
+                    if ($saleMode === 'wholesale') {
+                        $labelsByInventory = [];
+                        foreach ($item['box_labels'] as $boxLabel) {
+                            $inventoryId = (int) $boxLabel['inventory_id'];
+                            $labelsByInventory[$inventoryId][] = $boxLabel;
+                        }
+                        foreach ($labelsByInventory as $inventoryId => $labels) {
+                            $batchDeductions = deductInventory(
+                                $db,
+                                $item['product_id'],
+                                count($labels) * $item['pieces_per_box'],
+                                $currentUser['user_id'],
+                                $transactionId,
+                                $transactionCode,
+                                $inventoryId
+                            );
+                            $deductions = array_merge($deductions, $batchDeductions);
+                        }
+
+                        $labelInsert = $db->prepare("
+                            INSERT INTO pos_sold_box_labels
+                                (label_code, batch_id, product_id, inventory_id, transaction_id)
+                            VALUES (?, ?, ?, ?, ?)
+                        ");
+                        foreach ($item['box_labels'] as $boxLabel) {
+                            try {
+                                $labelInsert->execute([
+                                    $boxLabel['label_code'],
+                                    $boxLabel['batch_id'],
+                                    $boxLabel['product_id'],
+                                    $boxLabel['inventory_id'],
+                                    $transactionId,
+                                ]);
+                            } catch (PDOException $error) {
+                                if ((string) $error->getCode() === '23000') {
+                                    throw new Exception('This box label was already sold. Use a different sealed box.');
+                                }
+                                throw $error;
+                            }
+                        }
+                    } else {
+                        // Retail stays automatic: take the earliest-expiring sellable units.
+                        $deductions = deductInventory(
+                            $db,
+                            $item['product_id'],
+                            $item['quantity'],
+                            $currentUser['user_id'],
+                            $transactionId,
+                            $transactionCode
+                        );
+                    }
                     
                     $itemStmt->execute([
                         $transactionId,
@@ -870,16 +1072,28 @@ function handlePost($db, $action, $currentUser) {
                     $deductions = json_decode($item['inventory_deductions'], true);
                     if ($deductions) {
                         foreach ($deductions as $ded) {
-                            // Restore the exact lot and keep every quantity column
-                            // plus its location occupancy synchronized.
-                            fgInventoryRestockBaseUnits(
-                                $db,
-                                (int)$ded['inventory_id'],
-                                (int)$ded['quantity_deducted']
-                            );
+                            if (array_key_exists('boxes_deducted', $ded) && array_key_exists('pieces_deducted', $ded)) {
+                                fgInventoryRestockPhysicalUnits(
+                                    $db,
+                                    (int)$ded['inventory_id'],
+                                    (int)$ded['boxes_deducted'],
+                                    (int)$ded['pieces_deducted']
+                                );
+                            } else {
+                                // Older receipts did not record the package shape.
+                                fgInventoryRestockBaseUnits(
+                                    $db,
+                                    (int)$ded['inventory_id'],
+                                    (int)$ded['quantity_deducted']
+                                );
+                            }
                         }
                     }
                 }
+
+                // A voided wholesale sale returns its sealed labels to usable stock.
+                $releaseLabels = $db->prepare("DELETE FROM pos_sold_box_labels WHERE transaction_id = ?");
+                $releaseLabels->execute([$id]);
                 
                 // Mark transaction as voided
                 $updateStmt = $db->prepare("

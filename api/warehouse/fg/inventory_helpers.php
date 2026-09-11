@@ -429,6 +429,67 @@ if (!function_exists('fgInventoryEffectiveBaseUnits')) {
     }
 
     /**
+     * Restore stock while preserving whether it was sold as sealed boxes or
+     * loose Retail items. Used when a POS sale is voided.
+     */
+    function fgInventoryRestockPhysicalUnits(PDO $db, $inventoryId, $boxes, $pieces)
+    {
+        $inventoryId = (int)$inventoryId;
+        $boxes = max(0, (int)$boxes);
+        $pieces = max(0, (int)$pieces);
+        if ($inventoryId <= 0 || ($boxes === 0 && $pieces === 0)) {
+            throw new Exception('Invalid packaged inventory restock.');
+        }
+
+        $stmt = $db->prepare("
+            SELECT fgi.*,
+                   COALESCE(NULLIF(p.pieces_per_box, 0), 1) AS pieces_per_box
+            FROM finished_goods_inventory fgi
+            LEFT JOIN products p ON p.id = fgi.product_id
+            WHERE fgi.id = ?
+            FOR UPDATE
+        ");
+        $stmt->execute([$inventoryId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$row) {
+            throw new Exception("Inventory row #{$inventoryId} not found for restock.");
+        }
+
+        $ppb = max(1, (int)$row['pieces_per_box']);
+        $baseQty = ($boxes * $ppb) + $pieces;
+        $newBoxes = max(0, (int)($row['boxes_available'] ?? 0)) + $boxes;
+        $newPieces = max(0, (int)($row['pieces_available'] ?? 0)) + $pieces;
+        $newTotal = max(0, (int)($row['quantity_available'] ?? 0)) + $baseQty;
+
+        $update = $db->prepare("
+            UPDATE finished_goods_inventory
+            SET boxes_available = ?, quantity_boxes = ?,
+                pieces_available = ?, quantity_pieces = ?,
+                quantity_available = ?, remaining_quantity = ?, quantity = ?,
+                status = CASE WHEN status IN ('dispatched', 'reserved') THEN 'available' ELSE status END,
+                last_movement_at = NOW()
+            WHERE id = ?
+        ");
+        $update->execute([
+            $newBoxes, $newBoxes,
+            $newPieces, $newPieces,
+            $newTotal, $newTotal, $newTotal,
+            $inventoryId,
+        ]);
+
+        if (!empty($row['chiller_id'])) {
+            fgSyncChillerCount($db, (int)$row['chiller_id']);
+        }
+
+        return [
+            'inventory_id' => $inventoryId,
+            'boxes_restocked' => $boxes,
+            'pieces_restocked' => $pieces,
+            'quantity_restocked' => $baseQty,
+        ];
+    }
+
+    /**
      * Keep a per-delivery record of stock that has left saleable inventory.
      */
     function fgDeliveryRecordAllocation(

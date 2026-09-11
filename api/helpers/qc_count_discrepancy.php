@@ -75,6 +75,9 @@ function qcGetBatchPackagingLines(PDO $db, $batchId, $runId)
                COALESCE(pri.size_ml, p.unit_size) AS size_ml,
                COALESCE(NULLIF(pri.unit_measure, ''), p.unit_measure, 'ml') AS unit_measure,
                p.product_code,
+               COALESCE(NULLIF(p.base_unit, ''), 'piece') AS base_unit,
+               COALESCE(NULLIF(p.box_unit, ''), 'box') AS box_unit,
+               COALESCE(NULLIF(p.pieces_per_box, 0), 1) AS pieces_per_box,
                pri.quantity
         FROM packaging_run_items pri
         JOIN packaging_runs pr ON pri.packaging_run_id = pr.id
@@ -170,4 +173,18 @@ function qcGetEffectiveReleasedPackagingLines(PDO $db, $batchId, $runId)
     }
     unset($line);
     return $lines;
+}
+
+function qcGetReleasedSkuQuantity(PDO $db, int $batchId, int $productId): int
+{
+    $runStmt = $db->prepare('SELECT run_id FROM production_batches WHERE id = ? LIMIT 1');
+    $runStmt->execute([$batchId]);
+    $runId = (int) ($runStmt->fetchColumn() ?: 0);
+    $quantity = 0;
+    foreach (qcGetEffectiveReleasedPackagingLines($db, $batchId, $runId) as $line) {
+        if ((int) ($line['product_id'] ?? 0) === $productId) {
+            $quantity += max(0, (int) ($line['quantity'] ?? 0));
+        }
+    }
+    return $quantity;
 }

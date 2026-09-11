@@ -683,12 +683,26 @@
                 <!-- Search & Filter -->
                 <div class="flex flex-col sm:flex-row gap-3 mb-4">
                     <div class="flex-1">
-                        <label class="input input-bordered flex items-center gap-2">
-                            <i class="fas fa-search text-base-content/40"></i>
-                            <input type="text" id="productSearch" placeholder="Search products..." class="grow"
-                                onkeyup="filterProducts()">
-                            <kbd class="kbd kbd-sm">Enter</kbd>
-                        </label>
+                        <div class="join w-full">
+                            <label class="input input-bordered join-item flex flex-1 items-center gap-2">
+                                <i id="productSearchIcon" class="fas fa-search text-base-content/40"></i>
+                                <input type="text" id="productSearch" placeholder="Search or scan products..." class="grow min-w-0"
+                                    onkeydown="handleProductSearchKey(event)" onkeyup="if (event.key !== 'Enter') filterProducts()">
+                                <kbd class="kbd kbd-sm hidden md:inline-flex">Enter</kbd>
+                            </label>
+                            <button id="cameraScanButton" type="button" class="btn btn-secondary join-item px-4"
+                                onclick="openPosCameraScanner()" title="Scan with camera" aria-label="Scan barcode with camera">
+                                <i class="fas fa-camera"></i>
+                                <span class="hidden xl:inline">Scan</span>
+                            </button>
+                        </div>
+                        <div class="mt-1.5 ml-1 flex flex-wrap items-center justify-between gap-2">
+                            <p id="productSearchHelp" class="text-xs text-base-content/55">Search by product name or code.</p>
+                            <button id="openBoxForRetailButton" type="button" class="btn btn-ghost btn-xs hidden"
+                                onclick="startOpenBoxForRetail()">
+                                <i class="fas fa-box-open"></i> Open a box for Retail
+                            </button>
+                        </div>
                     </div>
                     <div class="flex gap-2">
                         <select id="categoryFilter" class="select select-bordered" onchange="filterProducts()">
@@ -901,6 +915,45 @@
         </main>
     </div>
 
+    <!-- Camera Scanner Modal -->
+    <dialog id="posCameraScannerModal" class="modal">
+        <div class="modal-box max-w-md">
+            <h3 class="font-bold text-lg mb-4">
+                <i class="fas fa-camera mr-2"></i>
+                <span id="posCameraScannerTitle">Scan Barcode</span>
+            </h3>
+
+            <div id="posCameraPreview" style="width: 100%; min-height: 250px;" class="rounded-lg overflow-hidden bg-base-200"></div>
+
+            <div id="posScanFeedback" class="mt-3 p-2 text-center hidden">
+                <i class="fas fa-check-circle text-success text-2xl"></i>
+                <p class="font-medium break-all" id="posScannedCode"></p>
+            </div>
+
+            <div id="posCameraScanStatus" class="alert alert-info mt-3 py-2 text-sm" role="status" aria-live="polite">
+                <i class="fas fa-spinner fa-spin"></i>
+                <span id="posCameraScanStatusText">Starting camera…</span>
+            </div>
+
+            <p id="posCameraScanHelp" class="text-sm text-base-content/60 mt-3 text-center">
+                Fit the complete barcode inside the guide and hold the phone steady.
+            </p>
+
+            <input id="posBarcodePhotoInput" type="file" accept="image/*" capture="environment" class="hidden"
+                onchange="scanPosBarcodePhoto(event)">
+
+            <div class="modal-action">
+                <button type="button" class="btn btn-outline btn-primary" onclick="document.getElementById('posBarcodePhotoInput').click()">
+                    <i class="fas fa-camera-retro"></i> Take Photo Instead
+                </button>
+                <button type="button" class="btn" onclick="closePosCameraScanner()">
+                    <i class="fas fa-times"></i> Close
+                </button>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+
     <!-- Success Modal -->
     <dialog id="successModal" class="modal">
         <div class="modal-box text-center">
@@ -951,6 +1004,7 @@
 
     <!-- Scripts -->
     <script src="../../js/vendor/axios.min.js"></script>
+    <script src="../../js/vendor/html5-qrcode.min.js"></script>
     <script src="../../js/config/api.js"></script>
     <script src="../../js/config/auth.js?v=20260814-3"></script>
     <script src="../../js/security/role-guard.js" data-allowed-roles="cashier,general_manager"></script>
@@ -979,9 +1033,16 @@
                 ? 'Wholesale — sell full boxes only'
                 : 'Retail — sell individual units';
             document.getElementById('saleModeBannerHelp').textContent = wholesale
-                ? 'Only complete boxes are available. Each product shows its units per box and approved box price.'
+                ? 'Scan the label on the outside of each sealed box. You do not need to open it.'
                 : 'Stock and quantity are shown as individual sellable units.';
             document.getElementById('totalItemsLabel').textContent = wholesale ? 'Boxes' : 'Units';
+            document.getElementById('productSearch').placeholder = wholesale ? 'Scan outside box label...' : 'Search products...';
+            document.getElementById('productSearchHelp').textContent = wholesale
+                ? 'Each scan adds one sealed box and confirms its batch.'
+                : 'Tap a product card to add one individual item.';
+            document.getElementById('cameraScanButton').classList.toggle('hidden', !wholesale);
+            document.getElementById('openBoxForRetailButton').classList.toggle('hidden', !wholesale);
+            document.getElementById('productSearchIcon').className = `fas ${wholesale ? 'fa-barcode' : 'fa-search'} text-base-content/40`;
 
             const retailNav = document.getElementById('retailSaleNav');
             const wholesaleNav = document.getElementById('wholesaleSaleNav');
@@ -1112,26 +1173,7 @@
                         if (!id || seen.has(id)) continue;
                         seen.add(id);
                         const sizeLabel = [p.unit_size, p.unit_measure].filter(Boolean).join(' ').trim();
-                        products.push({
-                            id,
-                            code: p.product_code || '',
-                            name: p.product_name,
-                            variant: p.variant || sizeLabel || '',
-                            retailPrice: parseFloat(p.selling_price) || parseFloat(p.unit_price) || 0,
-                            wholesaleBoxPrice: parseFloat(p.wholesale_box_price) || 0,
-                            totalPieces: parseInt(p.total_pieces, 10) || parseInt(p.stock_available, 10) || 0,
-                            piecesPerBox: Math.max(1, parseInt(p.pieces_per_box, 10) || 1),
-                            fullBoxesAvailable: Math.max(0, parseInt(p.full_boxes_available, 10) || 0),
-                            loosePieces: Math.max(0, parseInt(p.pieces_available, 10) || 0),
-                            baseUnit: p.base_unit || 'piece',
-                            boxUnit: p.box_unit || 'box',
-                            category: (p.category || 'other').toLowerCase(),
-                            image: null,
-                            expiring_soon: p.expiring_soon,
-                            days_to_expiry: p.days_to_expiry,
-                            stock_display: p.stock_display,
-                            batch_count: Number(p.batch_count || 0)
-                        });
+                        products.push(mapApiProduct(p));
                     }
                 } else {
                     products = [];
@@ -1161,6 +1203,327 @@
         function productSalePrice(product) {
             return saleMode === 'wholesale' ? product.wholesaleBoxPrice : product.retailPrice;
         }
+
+        function mapApiProduct(p) {
+            const sizeLabel = [p.unit_size, p.unit_measure].filter(Boolean).join(' ').trim();
+            return {
+                id: Number(p.id),
+                code: p.product_code || '',
+                name: p.product_name,
+                variant: p.variant || sizeLabel || '',
+                retailPrice: parseFloat(p.selling_price) || parseFloat(p.unit_price) || 0,
+                wholesaleBoxPrice: parseFloat(p.wholesale_box_price) || 0,
+                totalPieces: Number.isFinite(Number(p.retail_available))
+                    ? Math.max(0, parseInt(p.retail_available, 10) || 0)
+                    : (parseInt(p.total_pieces, 10) || parseInt(p.stock_available, 10) || 0),
+                piecesPerBox: Math.max(1, parseInt(p.pieces_per_box, 10) || 1),
+                fullBoxesAvailable: Math.max(0, parseInt(p.full_boxes_available, 10) || parseInt(p.boxes_available, 10) || 0),
+                loosePieces: Math.max(0, parseInt(p.pieces_available, 10) || 0),
+                baseUnit: p.base_unit || 'piece',
+                boxUnit: p.box_unit || 'box',
+                category: (p.category || 'other').toLowerCase(),
+                image: null,
+                expiring_soon: p.expiring_soon,
+                days_to_expiry: p.days_to_expiry,
+                stock_display: p.stock_display,
+                batch_count: Number(p.batch_count || 0)
+            };
+        }
+
+        async function handleProductSearchKey(event) {
+            if (event.key !== 'Enter') return;
+            event.preventDefault();
+            const input = document.getElementById('productSearch');
+            const code = input.value.trim();
+            if (!code) return;
+
+            if (saleMode !== 'wholesale') {
+                const exact = products.find(product => product.code.toLowerCase() === code.toLowerCase());
+                if (exact) {
+                    addToCart(exact.id);
+                    input.value = '';
+                    filterProducts();
+                }
+                return;
+            }
+
+            input.disabled = true;
+            try {
+                const response = await POSService.getProductByBarcode(code);
+                const scanned = response?.data || null;
+                if (!scanned || scanned.scan_type !== 'wholesale_box') {
+                    throw new Error('Scan the outside label of a sealed box.');
+                }
+
+                const labelCode = scanned.box_label?.label_code || scanned.scanned_barcode;
+                if (cart.some(item => (item.boxLabels || []).some(label => label.code === labelCode))) {
+                    showToast('That box is already in the cart.', 'warning');
+                    return;
+                }
+
+                const product = products.find(item => item.id === Number(scanned.id)) || mapApiProduct(scanned);
+                const label = {
+                    code: labelCode,
+                    batchCode: scanned.batch_code || `Batch ${scanned.batch_id}`,
+                    inventoryId: Number(scanned.inventory_id),
+                    expiryDate: scanned.expiry_date || ''
+                };
+                const existing = cart.find(item => item.id === product.id);
+                if (existing) {
+                    existing.boxLabels.push(label);
+                    existing.quantity = existing.boxLabels.length;
+                } else {
+                    cart.push({
+                        id: product.id,
+                        name: product.name,
+                        variant: product.variant,
+                        price: product.wholesaleBoxPrice,
+                        quantity: 1,
+                        maxStock: product.fullBoxesAvailable,
+                        saleUnit: 'box',
+                        baseUnit: product.baseUnit,
+                        boxUnit: product.boxUnit,
+                        piecesPerBox: product.piecesPerBox,
+                        boxLabels: [label]
+                    });
+                }
+
+                input.value = '';
+                renderCart();
+                filterProducts();
+                showToast(`${product.name}: ${label.batchCode} added`, 'success');
+            } catch (error) {
+                const message = error?.response?.data?.message || error?.message || 'Box label could not be read.';
+                showToast(message, 'error');
+                input.select();
+            } finally {
+                input.disabled = false;
+                input.focus();
+            }
+        }
+
+        // Camera scanning matches the Finished Goods workflow: open the camera,
+        // read one code, place it in the scan field, and process it as Enter.
+        let posHtml5QrCode = null;
+        let posCameraScanHintTimer = null;
+        let posCameraResultPending = false;
+        let posScanPurpose = 'sale';
+
+        function setPosCameraScanStatus(message, tone = 'info', icon = 'fa-camera') {
+            const status = document.getElementById('posCameraScanStatus');
+            const text = document.getElementById('posCameraScanStatusText');
+            if (!status || !text) return;
+            status.className = `alert alert-${tone} mt-3 py-2 text-sm`;
+            status.querySelector('i').className = `fas ${icon}`;
+            text.textContent = message;
+        }
+
+        function posCameraStartMessage(error) {
+            const name = String(error?.name || '');
+            const message = String(error?.message || error || '');
+            if (!window.isSecureContext && !['localhost', '127.0.0.1'].includes(location.hostname)) {
+                return 'Live camera is blocked on this local address. Tap “Take Photo Instead” below.';
+            }
+            if (name === 'NotAllowedError' || /permission|denied/i.test(message)) {
+                return 'Camera permission was denied. Allow camera access for this page, then try again.';
+            }
+            if (name === 'NotFoundError' || /not found|no camera/i.test(message)) {
+                return 'No usable camera was found on this device.';
+            }
+            if (name === 'NotReadableError' || /could not start|in use/i.test(message)) {
+                return 'The camera is being used by another app. Close that app, then try again.';
+            }
+            return `Camera could not start: ${message || 'unknown camera error'}`;
+        }
+
+        async function openPosCameraScanner(purpose = 'sale') {
+            if (saleMode !== 'wholesale') {
+                showToast('Retail items are added by tapping their product card.', 'info');
+                return;
+            }
+            const modal = document.getElementById('posCameraScannerModal');
+            if (modal.open) return;
+
+            posScanPurpose = purpose === 'open_box' ? 'open_box' : 'sale';
+            posCameraResultPending = false;
+            document.getElementById('posScanFeedback').classList.add('hidden');
+            document.getElementById('posCameraScannerTitle').textContent = posScanPurpose === 'open_box'
+                ? 'Scan Box to Open for Retail'
+                : 'Scan Outside Box Label';
+            document.getElementById('posCameraScanHelp').textContent = posScanPurpose === 'open_box'
+                ? 'Scan the exact sealed box that will be opened for individual sales.'
+                : 'Aim at the label attached to the outside of the sealed box.';
+            setPosCameraScanStatus('Requesting camera access…', 'info', 'fa-spinner fa-spin');
+            modal.showModal();
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            try {
+                if (!navigator.mediaDevices?.getUserMedia || typeof Html5Qrcode === 'undefined') {
+                    throw new Error('Live camera is unavailable here. Tap “Take Photo Instead” below.');
+                }
+
+                posHtml5QrCode = new Html5Qrcode('posCameraPreview');
+                await posHtml5QrCode.start(
+                    { facingMode: 'environment' },
+                    {
+                        fps: 10,
+                        qrbox: { width: 280, height: 140 },
+                        formatsToSupport: [
+                            Html5QrcodeSupportedFormats.CODE_128,
+                            Html5QrcodeSupportedFormats.EAN_13,
+                            Html5QrcodeSupportedFormats.CODE_39,
+                            Html5QrcodeSupportedFormats.QR_CODE
+                        ]
+                    },
+                    onPosCameraScanSuccess,
+                    () => {}
+                );
+                setPosCameraScanStatus('Camera ready. Hold the full barcode inside the guide.', 'info', 'fa-camera');
+                clearTimeout(posCameraScanHintTimer);
+                posCameraScanHintTimer = setTimeout(() => {
+                    setPosCameraScanStatus('Move closer, avoid glare, and keep both ends of the barcode visible.', 'warning', 'fa-lightbulb');
+                }, 8000);
+            } catch (error) {
+                console.error('Failed to start POS camera:', error);
+                const message = posCameraStartMessage(error);
+                setPosCameraScanStatus(message, 'error', 'fa-triangle-exclamation');
+                showToast(message, 'error');
+                if (posHtml5QrCode) {
+                    try { posHtml5QrCode.clear(); } catch (_) {}
+                    posHtml5QrCode = null;
+                }
+            }
+        }
+
+        async function scanPosBarcodePhoto(event) {
+            const input = event.target;
+            const file = input.files?.[0];
+            input.value = '';
+            if (!file || posCameraResultPending) return;
+
+            clearTimeout(posCameraScanHintTimer);
+            setPosCameraScanStatus('Reading the box label from the photo…', 'info', 'fa-spinner fa-spin');
+
+            try {
+                await stopPosCameraScanner();
+                const photoScanner = new Html5Qrcode('posCameraPreview', {
+                    formatsToSupport: [
+                        Html5QrcodeSupportedFormats.CODE_128,
+                        Html5QrcodeSupportedFormats.EAN_13,
+                        Html5QrcodeSupportedFormats.CODE_39,
+                        Html5QrcodeSupportedFormats.QR_CODE
+                    ]
+                });
+                const decodedText = await photoScanner.scanFile(file, true);
+                try { photoScanner.clear(); } catch (_) {}
+                await onPosCameraScanSuccess(decodedText);
+            } catch (error) {
+                console.error('Failed to read POS barcode photo:', error);
+                setPosCameraScanStatus('The barcode was not clear. Retake the photo closer and avoid glare.', 'error', 'fa-triangle-exclamation');
+                showToast('Barcode not found in the photo. Please try again.', 'error');
+            }
+        }
+
+        async function onPosCameraScanSuccess(decodedText) {
+            if (posCameraResultPending) return;
+            posCameraResultPending = true;
+            clearTimeout(posCameraScanHintTimer);
+
+            document.getElementById('posScanFeedback').classList.remove('hidden');
+            document.getElementById('posScannedCode').textContent = decodedText;
+            setPosCameraScanStatus('Barcode recognized. Checking the item…', 'success', 'fa-circle-check');
+            document.getElementById('productSearch').value = decodedText;
+
+            await new Promise(resolve => setTimeout(resolve, 350));
+            await closePosCameraScanner();
+            if (posScanPurpose === 'open_box') {
+                await openScannedBoxForRetail(decodedText);
+            } else {
+                await handleProductSearchKey({ key: 'Enter', preventDefault() {} });
+            }
+        }
+
+        function apiErrorMessage(error, fallback) {
+            return error?.response?.data?.message || error?.message || fallback;
+        }
+
+        async function startOpenBoxForRetail() {
+            const input = document.getElementById('productSearch');
+            const code = input.value.trim();
+            if (code) {
+                await openScannedBoxForRetail(code);
+                return;
+            }
+            await openPosCameraScanner('open_box');
+        }
+
+        async function openScannedBoxForRetail(code) {
+            const input = document.getElementById('productSearch');
+            input.disabled = true;
+            try {
+                const lookup = await POSService.getProductByBarcode(code);
+                const box = lookup?.data;
+                if (!box || box.scan_type !== 'wholesale_box') {
+                    throw new Error('Scan the outside label of one sealed box.');
+                }
+
+                const pieces = Math.max(1, parseInt(box.pieces_per_box, 10) || 1);
+                const batch = box.batch_code || `Batch ${box.batch_id}`;
+                const confirmed = await AuthService.confirmAction({
+                    title: 'Open this sealed box?',
+                    message: `${box.product_name} · ${batch}\n\nThis moves ${pieces} items from one sealed box into Retail. The total stock will stay the same.`,
+                    confirmText: 'Open for Retail',
+                    tone: 'warning',
+                    icon: 'fa-box-open'
+                });
+                if (!confirmed) return;
+
+                const result = await POSService.openBoxForRetail(code);
+                const openedLabel = box.box_label?.label_code || box.scanned_barcode || code;
+
+                cart = cart.map(item => {
+                    if (item.saleUnit !== 'box') return item;
+                    item.boxLabels = (item.boxLabels || []).filter(label => label.code !== openedLabel);
+                    item.quantity = item.boxLabels.length;
+                    return item;
+                }).filter(item => item.saleUnit !== 'box' || item.quantity > 0);
+
+                input.value = '';
+                await loadProducts();
+                renderCart();
+                showToast(result?.message || `${pieces} items are now ready for Retail.`, 'success');
+            } catch (error) {
+                showToast(apiErrorMessage(error, 'The box could not be opened for Retail.'), 'error');
+                input.select();
+            } finally {
+                input.disabled = false;
+                input.focus();
+            }
+        }
+
+        async function stopPosCameraScanner() {
+            clearTimeout(posCameraScanHintTimer);
+            const scanner = posHtml5QrCode;
+            posHtml5QrCode = null;
+            if (!scanner) return;
+            try {
+                await scanner.stop();
+            } catch (_) {
+                // It may already be stopped when the window closes.
+            }
+            try { scanner.clear(); } catch (_) {}
+        }
+
+        async function closePosCameraScanner() {
+            const modal = document.getElementById('posCameraScannerModal');
+            await stopPosCameraScanner();
+            if (modal.open) modal.close();
+            document.getElementById('productSearch').focus();
+        }
+
+        document.getElementById('posCameraScannerModal').addEventListener('close', () => {
+            stopPosCameraScanner();
+        });
 
         function productSaleStock(product) {
             return saleMode === 'wholesale' ? product.fullBoxesAvailable : product.totalPieces;
@@ -1194,7 +1557,9 @@
             const category = document.getElementById('categoryFilter').value.toLowerCase();
 
             let filtered = products.filter(p => {
-                const matchSearch = p.name.toLowerCase().includes(search) || (p.variant && p.variant.toLowerCase().includes(search));
+                const matchSearch = p.name.toLowerCase().includes(search)
+                    || p.code.toLowerCase().includes(search)
+                    || (p.variant && p.variant.toLowerCase().includes(search));
                 const matchCategory = !category || p.category.toLowerCase() === category.toLowerCase();
                 return matchSearch && matchCategory && productIsAvailableInMode(p);
             });
@@ -1225,7 +1590,7 @@
                         available
                     ))} available`;
                 const packDetail = saleMode === 'wholesale'
-                    ? `<span class="product-card__pack-detail">${product.piecesPerBox} ${escapeHtml(formatSaleUnit(product.baseUnit))} per ${escapeHtml(formatSaleUnit(product.boxUnit))}</span>`
+                    ? `<span class="product-card__pack-detail">${product.piecesPerBox} ${escapeHtml(formatSaleUnit(product.baseUnit))} per ${escapeHtml(formatSaleUnit(product.boxUnit))} · scan outside label</span>`
                     : '';
                 const expiryWarning = product.expiring_soon ?
                     `<span class="badge badge-warning badge-xs">Exp: ${product.days_to_expiry}d</span>` : '';
@@ -1281,6 +1646,11 @@
 
         // Add to cart
         function addToCart(productId) {
+            if (saleMode === 'wholesale') {
+                document.getElementById('productSearch').focus();
+                showToast('Scan the label on the outside of the sealed box.', 'info');
+                return;
+            }
             const product = products.find(p => p.id === productId);
             const available = product ? productSaleStock(product) : 0;
             if (!product || available <= 0) return;
@@ -1321,7 +1691,7 @@
                     <div class="text-center py-12 text-base-content/60">
                         <i class="fas fa-cart-shopping text-5xl mb-3 opacity-30"></i>
                         <p>Cart is empty</p>
-                        <p class="text-sm">Click on products to add them</p>
+                        <p class="text-sm">${saleMode === 'wholesale' ? 'Scan an outside box label to begin' : 'Click on products to add them'}</p>
                     </div>
                 `;
                 document.getElementById('btnClearCart').disabled = true;
@@ -1335,17 +1705,24 @@
                 const lineTotal = formatCurrency(item.price * item.quantity);
                 const unitPrice = formatCurrency(item.price);
                 const variant = item.variant || '—';
+                const scannedBatches = [...new Set((item.boxLabels || []).map(label => label.batchCode))];
+                const batchMeta = scannedBatches.length === 1
+                    ? `Batch ${scannedBatches[0]}`
+                    : `${scannedBatches.length} batches`;
                 const unitMeta = item.saleUnit === 'box'
-                    ? `${unitPrice} per ${escapeHtml(formatSaleUnit(item.boxUnit))} · ${item.piecesPerBox} ${escapeHtml(formatSaleUnit(item.baseUnit))}/${escapeHtml(formatSaleUnit(item.boxUnit))}`
+                    ? `${unitPrice} per ${escapeHtml(formatSaleUnit(item.boxUnit))} · ${item.piecesPerBox} ${escapeHtml(formatSaleUnit(item.baseUnit))}/${escapeHtml(formatSaleUnit(item.boxUnit))} · ${escapeHtml(batchMeta)}`
                     : `${unitPrice} per ${escapeHtml(formatSaleUnit(item.baseUnit))}`;
-                return `
-                <div class="cart-item">
-                    <div class="min-w-0">
-                        <div class="cart-item__name" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</div>
-                        <div class="cart-item__meta">${escapeHtml(variant)} · ${unitMeta}</div>
-                    </div>
-                    <div class="cart-item__qty-wrap">
-                        <div class="qty-stepper" role="group" aria-label="Quantity">
+                const quantityControl = item.saleUnit === 'box'
+                    ? `<div class="qty-stepper" role="group" aria-label="Scanned boxes">
+                            <button type="button" class="qty-btn" onclick="removeLastScannedBox(${index})" aria-label="Remove last scanned box">
+                                <i class="fas fa-minus"></i>
+                            </button>
+                            <input type="number" class="qty-value" value="${item.quantity}" readonly aria-label="Scanned boxes for ${escapeHtml(item.name)}" title="Scan another outside label to add a box">
+                            <button type="button" class="qty-btn" disabled aria-label="Scan another label to add a box" title="Scan another outside label to add a box">
+                                <i class="fas fa-barcode"></i>
+                            </button>
+                        </div>`
+                    : `<div class="qty-stepper" role="group" aria-label="Quantity">
                             <button type="button" class="qty-btn" onclick="updateQuantity(${index}, -1)" aria-label="Decrease quantity">
                                 <i class="fas fa-minus"></i>
                             </button>
@@ -1362,7 +1739,15 @@
                                 id="cartQtyPlus${index}" ${atMax ? 'disabled' : ''} aria-label="Increase quantity">
                                 <i class="fas fa-plus"></i>
                             </button>
-                        </div>
+                        </div>`;
+                return `
+                <div class="cart-item">
+                    <div class="min-w-0">
+                        <div class="cart-item__name" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</div>
+                        <div class="cart-item__meta">${escapeHtml(variant)} · ${unitMeta}</div>
+                    </div>
+                    <div class="cart-item__qty-wrap">
+                        ${quantityControl}
                         <div class="cart-item__qty-error" id="cartQtyError${index}" aria-live="polite"></div>
                     </div>
                     <div class="cart-item__line-total" id="cartLineTotal${index}">${lineTotal}</div>
@@ -1389,6 +1774,19 @@
                 item.quantity = newQty;
                 renderCart();
             }
+        }
+
+        function removeLastScannedBox(index) {
+            const item = cart[index];
+            if (!item || item.saleUnit !== 'box') return;
+            item.boxLabels.pop();
+            if (item.boxLabels.length === 0) {
+                cart.splice(index, 1);
+            } else {
+                item.quantity = item.boxLabels.length;
+            }
+            renderCart();
+            document.getElementById('productSearch').focus();
         }
 
         function parseCartQuantity(index, rawValue) {
@@ -1613,7 +2011,8 @@
                     product_id: item.id,
                     sale_quantity: item.quantity,
                     quantity: item.quantity,
-                    product_name: item.name
+                    product_name: item.name,
+                    box_labels: (item.boxLabels || []).map(label => label.code)
                 })),
                 payment_method: paymentMethod,
                 amount_paid: tendered,

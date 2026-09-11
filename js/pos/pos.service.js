@@ -246,6 +246,19 @@ const POSService = {
     },
 
     /**
+     * Convert one scanned sealed box into loose Retail stock.
+     * The total number of items does not change.
+     */
+    async openBoxForRetail(barcode) {
+        try {
+            return await api.post(`${this.baseUrl}/products.php?action=open_box`, { barcode });
+        } catch (error) {
+            console.error('Error opening box for Retail:', error);
+            throw error;
+        }
+    },
+
+    /**
      * Get product categories
      */
     async getProductCategories() {

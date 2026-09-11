@@ -6,6 +6,7 @@
  * Lists available products with current stock, prices, batch/expiry info
  * 
  * GET - List products, search, lookup by barcode
+ * POST - Open one sealed wholesale box for retail pieces
  * 
  * @package HighlandFresh
  * @version 4.0
@@ -14,6 +15,9 @@
 require_once dirname(__DIR__) . '/bootstrap.php';
 require_once dirname(__DIR__) . '/helpers/sellable_expiry_policy.php';
 require_once dirname(__DIR__) . '/helpers/pos_wholesale.php';
+require_once dirname(__DIR__) . '/helpers/finished_goods_barcode.php';
+require_once dirname(__DIR__) . '/helpers/lookup_normalization.php';
+require_once dirname(__DIR__) . '/helpers/qc_count_discrepancy.php';
 
 // Require Cashier or GM role
 $currentUser = Auth::requireRole(['cashier', 'general_manager']);
@@ -27,6 +31,9 @@ try {
     switch ($requestMethod) {
         case 'GET':
             handleGet($db, $action);
+            break;
+        case 'POST':
+            handlePost($db, $action, $currentUser);
             break;
         default:
             Response::error('Method not allowed', 405);
@@ -129,14 +136,21 @@ function posInventoryJoinSql(): string {
             SELECT
                 fgi.product_id,
                 SUM(GREATEST(COALESCE(fgi.quantity_available, 0), 0)) AS total_available,
-                SUM(FLOOR(
-                    GREATEST(COALESCE(fgi.quantity_available, 0), 0)
-                    / GREATEST(COALESCE(p2.pieces_per_box, 1), 1)
-                )) AS total_boxes,
-                SUM(MOD(
-                    GREATEST(COALESCE(fgi.quantity_available, 0), 0),
-                    GREATEST(COALESCE(p2.pieces_per_box, 1), 1)
-                )) AS total_pieces,
+                SUM(CASE
+                    WHEN GREATEST(COALESCE(p2.pieces_per_box, 1), 1) > 1
+                        THEN GREATEST(COALESCE(fgi.boxes_available, 0), 0)
+                    ELSE 0
+                END) AS total_boxes,
+                SUM(CASE
+                    WHEN GREATEST(COALESCE(p2.pieces_per_box, 1), 1) > 1
+                        THEN GREATEST(COALESCE(fgi.pieces_available, 0), 0)
+                    ELSE GREATEST(COALESCE(fgi.quantity_available, 0), 0)
+                END) AS total_pieces,
+                SUM(CASE
+                    WHEN GREATEST(COALESCE(p2.pieces_per_box, 1), 1) > 1
+                        THEN GREATEST(COALESCE(fgi.pieces_available, 0), 0)
+                    ELSE GREATEST(COALESCE(fgi.quantity_available, 0), 0)
+                END) AS retail_available,
                 MIN(fgi.expiry_date) AS earliest_expiry,
                 COUNT(*) AS batch_count
             FROM finished_goods_inventory fgi
@@ -174,6 +188,7 @@ function enrichPosProducts(PDO $db, array &$products): void {
         $p['selling_price'] = (float) ($p['selling_price'] ?? $p['unit_price']);
 
         $p['stock_available'] = (int) ($p['stock_available'] ?? 0);
+        $p['retail_available'] = (int) ($p['retail_available'] ?? $p['stock_available']);
         $p['boxes_available'] = (int) ($p['boxes_available'] ?? 0);
         $p['pieces_available'] = (int) ($p['pieces_available'] ?? 0);
         $p['total_pieces'] = posSellableUnits($p);
@@ -184,7 +199,7 @@ function enrichPosProducts(PDO $db, array &$products): void {
             $p['base_unit'] ?? 'piece'
         );
         $p['full_boxes_available'] = $p['pieces_per_box'] > 1
-            ? intdiv($p['total_pieces'], (int) $p['pieces_per_box'])
+            ? $p['boxes_available']
             : 0;
 
         if (!empty($p['earliest_expiry'])) {
@@ -249,6 +264,7 @@ function handleGet($db, $action) {
                     COALESCE(inv.total_available, 0) AS stock_available,
                     COALESCE(inv.total_boxes, 0) AS boxes_available,
                     COALESCE(inv.total_pieces, 0) AS pieces_available,
+                    COALESCE(inv.retail_available, 0) AS retail_available,
                     inv.earliest_expiry,
                     COALESCE(inv.batch_count, 0) AS batch_count
                 FROM products p
@@ -316,6 +332,7 @@ function handleGet($db, $action) {
                     COALESCE(inv.total_available, 0) AS stock_available,
                     COALESCE(inv.total_boxes, 0) AS boxes_available,
                     COALESCE(inv.total_pieces, 0) AS pieces_available,
+                    COALESCE(inv.retail_available, 0) AS retail_available,
                     inv.earliest_expiry
                 FROM products p
                 {$invJoin}
@@ -356,10 +373,107 @@ function handleGet($db, $action) {
             break;
             
         case 'by_barcode':
-            $barcode = getParam('barcode');
+            $barcode = hfNormalizeBarcodeLookup(getParam('barcode'));
             
             if (!$barcode) {
                 Response::error('Barcode is required', 400);
+            }
+
+            $boxLabel = hfParseCompactFinishedGoodsBoxLabel($barcode);
+            if ($boxLabel) {
+                $usedStmt = $db->prepare("SELECT transaction_id FROM pos_sold_box_labels WHERE label_code = ? LIMIT 1");
+                $usedStmt->execute([$boxLabel['label_code']]);
+                if ($usedStmt->fetchColumn()) {
+                    Response::error('This box label was already sold. Use a different sealed box.', 409);
+                }
+
+                $openedStmt = $db->prepare("SELECT opened_at FROM pos_opened_box_labels WHERE label_code = ? LIMIT 1");
+                $openedStmt->execute([$boxLabel['label_code']]);
+                if ($openedStmt->fetchColumn()) {
+                    Response::error('This box was already opened for Retail and cannot be sold as a sealed box.', 409);
+                }
+
+                $boxStmt = $db->prepare("
+                    SELECT
+                        p.id,
+                        p.product_code,
+                        p.product_name,
+                        p.category,
+                        p.variant,
+                        p.unit_size,
+                        p.unit_measure,
+                        COALESCE(NULLIF(p.base_unit, ''), 'piece') AS base_unit,
+                        COALESCE(NULLIF(p.box_unit, ''), 'box') AS box_unit,
+                        COALESCE(NULLIF(p.pieces_per_box, 0), 1) AS pieces_per_box,
+                        COALESCE(p.selling_price, p.unit_price, 0) AS selling_price,
+                        p.wholesale_box_price,
+                        fgi.id AS inventory_id,
+                        fgi.batch_id,
+                        COALESCE(pb.batch_code, CONCAT('Batch ', fgi.batch_id)) AS batch_code,
+                        fgi.expiry_date,
+                        COALESCE(fgi.quantity_available, 0) AS batch_units_available,
+                        COALESCE(fgi.boxes_available, 0) AS batch_boxes_available,
+                        COALESCE(fgi.pieces_available, 0) AS batch_pieces_available
+                    FROM finished_goods_inventory fgi
+                    JOIN products p ON p.id = fgi.product_id AND p.is_active = 1
+                    LEFT JOIN production_batches pb ON pb.id = fgi.batch_id
+                    LEFT JOIN chiller_locations cl ON cl.id = fgi.chiller_id
+                    WHERE fgi.batch_id = ?
+                      AND fgi.product_id = ?
+                      AND fgi.status = 'available'
+                      AND {$fgiSellableExpiry}
+                      AND COALESCE(fgi.boxes_available, 0) > 0
+                      AND (cl.id IS NULL OR (cl.is_active = 1 AND cl.status IN ('available', 'full')))
+                      AND (cl.id IS NULL OR cl.chiller_code NOT LIKE 'FREEZE%')
+                      AND NOT EXISTS (
+                          SELECT 1 FROM disposals open_disposal
+                          WHERE open_disposal.source_type = 'finished_goods'
+                            AND open_disposal.source_id = fgi.id
+                            AND open_disposal.status IN ('pending', 'approved')
+                            AND COALESCE(open_disposal.notes, '') NOT LIKE 'Auto-created from delivery return.%'
+                      )
+                    ORDER BY fgi.id ASC
+                    LIMIT 1
+                ");
+                $boxStmt->execute([$boxLabel['batch_id'], $boxLabel['product_id']]);
+                $product = $boxStmt->fetch(PDO::FETCH_ASSOC);
+
+                if (!$product) {
+                    Response::error('This box is not available for sale. Check its batch, expiry, and Finished Goods stock.', 409);
+                }
+
+                $piecesPerBox = max(1, (int) $product['pieces_per_box']);
+                if ($piecesPerBox < 2 || (float) ($product['wholesale_box_price'] ?? 0) <= 0) {
+                    Response::error('This product is not ready for wholesale. Check its box size and wholesale price.', 409);
+                }
+                if ((int) $boxLabel['units_per_pack'] !== $piecesPerBox) {
+                    Response::error('This label has an old box size. Print a new outside-box label.', 409);
+                }
+
+                $releasedUnits = qcGetReleasedSkuQuantity(
+                    $db,
+                    (int) $boxLabel['batch_id'],
+                    (int) $boxLabel['product_id']
+                );
+                $printedBoxCount = intdiv($releasedUnits, $piecesPerBox);
+                if ($printedBoxCount < 1 || (int) $boxLabel['sequence'] > $printedBoxCount) {
+                    Response::error('This box number was not issued for the selected batch.', 409);
+                }
+
+                $batchUnits = max(0, (int) $product['batch_units_available']);
+                $product['stock_available'] = $batchUnits;
+                $product['total_pieces'] = $batchUnits;
+                $product['boxes_available'] = max(0, (int) $product['batch_boxes_available']);
+                $product['pieces_available'] = max(0, (int) $product['batch_pieces_available']);
+                $product['full_boxes_available'] = $product['boxes_available'];
+                $product['unit_price'] = (float) $product['selling_price'];
+                $product['scan_type'] = 'wholesale_box';
+                $product['scanned_barcode'] = $boxLabel['label_code'];
+                $product['box_label'] = $boxLabel;
+                $product['printed_box_count'] = $printedBoxCount;
+
+                Response::success($product, 'Sealed box found');
+                break;
             }
             
             // Search in products table first
@@ -670,5 +784,155 @@ function handleGet($db, $action) {
             
         default:
             Response::error('Invalid action', 400);
+    }
+}
+
+function handlePost(PDO $db, string $action, array $currentUser): void
+{
+    if ($action !== 'open_box') {
+        Response::error('Invalid action', 400);
+    }
+
+    $barcode = hfNormalizeBarcodeLookup(getParam('barcode'));
+    $boxLabel = hfParseCompactFinishedGoodsBoxLabel($barcode);
+    if (!$boxLabel) {
+        Response::error('Scan a valid outside-box label.', 400);
+    }
+
+    $sellableExpiry = hfSellableExpirySql('fgi.expiry_date');
+    $db->beginTransaction();
+
+    try {
+        $soldStmt = $db->prepare("SELECT transaction_id FROM pos_sold_box_labels WHERE label_code = ? LIMIT 1 FOR UPDATE");
+        $soldStmt->execute([$boxLabel['label_code']]);
+        if ($soldStmt->fetchColumn()) {
+            throw new Exception('This box was already sold and cannot be opened for Retail.');
+        }
+
+        $openedStmt = $db->prepare("SELECT opened_at FROM pos_opened_box_labels WHERE label_code = ? LIMIT 1 FOR UPDATE");
+        $openedStmt->execute([$boxLabel['label_code']]);
+        if ($openedStmt->fetchColumn()) {
+            throw new Exception('This box was already opened for Retail.');
+        }
+
+        $inventoryStmt = $db->prepare("
+            SELECT fgi.id AS inventory_id, fgi.batch_id, fgi.product_id,
+                   fgi.quantity_available, fgi.boxes_available, fgi.pieces_available,
+                   fgi.chiller_id, fgi.expiry_date,
+                   p.product_name, p.product_code,
+                   COALESCE(NULLIF(p.pieces_per_box, 0), 1) AS pieces_per_box,
+                   COALESCE(NULLIF(p.base_unit, ''), 'piece') AS base_unit,
+                   COALESCE(NULLIF(p.box_unit, ''), 'box') AS box_unit,
+                   COALESCE(pb.batch_code, CONCAT('Batch ', fgi.batch_id)) AS batch_code
+            FROM finished_goods_inventory fgi
+            JOIN products p ON p.id = fgi.product_id AND p.is_active = 1
+            LEFT JOIN production_batches pb ON pb.id = fgi.batch_id
+            LEFT JOIN chiller_locations cl ON cl.id = fgi.chiller_id
+            WHERE fgi.batch_id = ?
+              AND fgi.product_id = ?
+              AND fgi.status = 'available'
+              AND {$sellableExpiry}
+              AND COALESCE(fgi.boxes_available, 0) > 0
+              AND (cl.id IS NULL OR (cl.is_active = 1 AND cl.status IN ('available', 'full')))
+              AND (cl.id IS NULL OR cl.chiller_code NOT LIKE 'FREEZE%')
+            ORDER BY fgi.id ASC
+            LIMIT 1
+            FOR UPDATE
+        ");
+        $inventoryStmt->execute([$boxLabel['batch_id'], $boxLabel['product_id']]);
+        $inventory = $inventoryStmt->fetch(PDO::FETCH_ASSOC);
+        if (!$inventory) {
+            throw new Exception('That sealed box is not available for Retail opening.');
+        }
+
+        $piecesPerBox = max(1, (int) $inventory['pieces_per_box']);
+        if ($piecesPerBox < 2 || (int) $boxLabel['units_per_pack'] !== $piecesPerBox) {
+            throw new Exception('This label has an old or invalid box size. Print a new outside-box label.');
+        }
+
+        $releasedUnits = qcGetReleasedSkuQuantity(
+            $db,
+            (int) $boxLabel['batch_id'],
+            (int) $boxLabel['product_id']
+        );
+        $issuedBoxes = intdiv($releasedUnits, $piecesPerBox);
+        if ($issuedBoxes < 1 || (int) $boxLabel['sequence'] > $issuedBoxes) {
+            throw new Exception('This box number was not issued for its batch.');
+        }
+
+        $newBoxes = max(0, (int) $inventory['boxes_available'] - 1);
+        $newPieces = max(0, (int) $inventory['pieces_available']) + $piecesPerBox;
+        $updateStmt = $db->prepare("
+            UPDATE finished_goods_inventory
+            SET boxes_available = ?, quantity_boxes = ?,
+                pieces_available = ?, quantity_pieces = ?,
+                last_movement_at = NOW()
+            WHERE id = ? AND status = 'available' AND COALESCE(boxes_available, 0) > 0
+        ");
+        $updateStmt->execute([
+            $newBoxes,
+            $newBoxes,
+            $newPieces,
+            $newPieces,
+            (int) $inventory['inventory_id'],
+        ]);
+        if ($updateStmt->rowCount() !== 1) {
+            throw new Exception('Stock changed while opening the box. Please try again.');
+        }
+
+        $openedInsert = $db->prepare("
+            INSERT INTO pos_opened_box_labels
+                (label_code, batch_id, product_id, inventory_id, opened_by)
+            VALUES (?, ?, ?, ?, ?)
+        ");
+        $openedInsert->execute([
+            $boxLabel['label_code'],
+            (int) $boxLabel['batch_id'],
+            (int) $boxLabel['product_id'],
+            (int) $inventory['inventory_id'],
+            (int) $currentUser['user_id'],
+        ]);
+
+        $openingCode = 'BOX-' . date('Ymd-His') . '-' . random_int(10, 99);
+        $logStmt = $db->prepare("
+            INSERT INTO box_opening_log
+                (opening_code, inventory_id, product_id, boxes_opened, pieces_from_opening,
+                 reason, reference_type, opened_by, notes)
+            VALUES (?, ?, ?, 1, ?, 'partial_sale', 'pos_retail', ?, ?)
+        ");
+        $logStmt->execute([
+            $openingCode,
+            (int) $inventory['inventory_id'],
+            (int) $inventory['product_id'],
+            $piecesPerBox,
+            (int) $currentUser['user_id'],
+            "Opened sealed box {$boxLabel['label_code']} for Retail",
+        ]);
+
+        logAudit(
+            (int) $currentUser['user_id'],
+            'open_box',
+            'finished_goods_inventory',
+            (int) $inventory['inventory_id'],
+            ['boxes' => (int) $inventory['boxes_available'], 'pieces' => (int) $inventory['pieces_available']],
+            ['boxes' => $newBoxes, 'pieces' => $newPieces, 'label_code' => $boxLabel['label_code']]
+        );
+
+        $db->commit();
+        Response::success([
+            'label_code' => $boxLabel['label_code'],
+            'product_id' => (int) $inventory['product_id'],
+            'product_name' => $inventory['product_name'],
+            'batch_code' => $inventory['batch_code'],
+            'pieces_released' => $piecesPerBox,
+            'sealed_boxes_remaining' => $newBoxes,
+            'retail_pieces_available' => $newPieces,
+            'total_stock_changed' => false,
+        ], "One sealed box was opened. {$piecesPerBox} items are now ready for Retail.");
+    } catch (Throwable $error) {
+        if ($db->inTransaction()) {
+            $db->rollBack();
+        }
+        Response::error($error->getMessage(), 409);
     }
 }

@@ -43,6 +43,51 @@ if (!function_exists('hfParseCompactFinishedGoodsLabel')) {
 }
 
 /**
+ * Build the short CODE128 value printed on the outside of a wholesale pack.
+ * The B marker keeps a box scan unambiguous from an individual-unit scan.
+ *
+ * Format: HFB-{production batch id}-{product id}-{units per box}-{box sequence}
+ */
+if (!function_exists('hfBuildCompactFinishedGoodsBoxLabel')) {
+    function hfBuildCompactFinishedGoodsBoxLabel(int $batchId, int $productId, int $unitsPerPack, int $sequence): string
+    {
+        if ($batchId < 1 || $productId < 1 || $unitsPerPack < 2 || $sequence < 1) {
+            throw new InvalidArgumentException('A box label needs a valid batch, product, pack size, and sequence.');
+        }
+
+        return "HFB-{$batchId}-{$productId}-{$unitsPerPack}-" . str_pad((string) $sequence, 4, '0', STR_PAD_LEFT);
+    }
+}
+
+/**
+ * Parse the outside-box label without confusing it with HF4 individual labels.
+ */
+if (!function_exists('hfParseCompactFinishedGoodsBoxLabel')) {
+    function hfParseCompactFinishedGoodsBoxLabel($scannedValue): ?array
+    {
+        $scan = strtoupper((string) ($scannedValue ?? ''));
+        $scan = preg_replace('/[\p{Z}\p{C}\s]+/u', '', $scan);
+        if (preg_match('/^HFB-(\d+)-(\d+)-(\d+)-(\d+)$/', trim((string) $scan), $matches) !== 1) {
+            return null;
+        }
+
+        $batchId = (int) $matches[1];
+        $productId = (int) $matches[2];
+        $unitsPerPack = (int) $matches[3];
+        $sequence = (int) $matches[4];
+        if ($batchId < 1 || $productId < 1 || $unitsPerPack < 2 || $sequence < 1) return null;
+
+        return [
+            'label_code' => hfBuildCompactFinishedGoodsBoxLabel($batchId, $productId, $unitsPerPack, $sequence),
+            'batch_id' => $batchId,
+            'product_id' => $productId,
+            'units_per_pack' => $unitsPerPack,
+            'sequence' => $sequence,
+        ];
+    }
+}
+
+/**
  * Match one serialized label printed by QC:
  *   {batch barcode or batch code}-{SKU token}-{unit sequence}
  *
