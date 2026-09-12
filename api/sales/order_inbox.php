@@ -303,7 +303,8 @@ function handleCustomerOrderInboxGet(PDO $db, string $action): void
         $lines = $db->prepare("
             SELECT l.*, p.product_code, p.product_name, p.variant,
                    p.unit_size, p.unit_measure, p.base_unit,
-                   p.box_unit, p.pieces_per_box
+                   p.box_unit, p.pieces_per_box,
+                   p.selling_price, p.wholesale_box_price
             FROM customer_order_import_lines l
             LEFT JOIN products p ON p.id = l.product_id
             WHERE l.import_id = ?

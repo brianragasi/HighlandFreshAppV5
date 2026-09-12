@@ -201,6 +201,7 @@ function handleGet($db, $action) {
                     COALESCE(p.base_unit, 'piece') AS base_unit,
                     COALESCE(p.box_unit, 'box') AS box_unit,
                     COALESCE(p.selling_price, 0) AS selling_price,
+                    COALESCE(p.wholesale_box_price, 0) AS wholesale_box_price,
                     COALESCE(p.pieces_per_box, 1) AS pieces_per_box,
                     p.id AS real_product_id,
                     COALESCE(stock.on_hand, 0) AS on_hand_qty,

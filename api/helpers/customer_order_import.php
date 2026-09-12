@@ -1307,7 +1307,7 @@ function hfMatchCustomerOrderLine(PDO $db, array $row): array
     $poPrice = $enteredPoPrice;
 
     $productStmt = $db->prepare("
-        SELECT id, product_code, product_name, variant, selling_price,
+        SELECT id, product_code, product_name, variant, selling_price, wholesale_box_price,
                COALESCE(base_unit, 'piece') AS base_unit,
                COALESCE(box_unit, 'box') AS box_unit,
                COALESCE(NULLIF(pieces_per_box, 0), 1) AS pieces_per_box
@@ -1362,24 +1362,52 @@ function hfMatchCustomerOrderLine(PDO $db, array $row): array
     }
 
     $systemPrice = $product ? (float) $product['selling_price'] : null;
+    $systemPriceForEnteredUnit = $systemPrice;
+    $systemPriceUnit = $product ? strtolower((string)$product['base_unit']) : '';
+    if ($product) {
+        $pricingBoxAliases = array_unique(array_merge(
+            hfUnitAliases($product['box_unit']),
+            ['box', 'boxes', 'case', 'cases', 'crate', 'crates']
+        ));
+        $unitsPerBox = max(1, (int)$product['pieces_per_box']);
+        $retailPrice = round((float)$product['selling_price'], 2);
+        $wholesalePrice = round((float)($product['wholesale_box_price'] ?? 0), 2);
+        $ordersFullBoxes = in_array($unitEntered, $pricingBoxAliases, true);
+        $priceIsPerBox = in_array($priceUnit, $pricingBoxAliases, true);
+        if ($ordersFullBoxes
+            && ($unitsPerBox < 2 || $wholesalePrice <= 0 || $wholesalePrice >= ($retailPrice * $unitsPerBox))) {
+            $issues[] = 'This product needs a valid discounted wholesale pack price in General Manager Product Setup.';
+        }
+        if ($ordersFullBoxes && $wholesalePrice > 0) {
+            $systemPrice = $wholesalePrice / $unitsPerBox;
+        }
+        if ($priceIsPerBox) {
+            $systemPriceForEnteredUnit = $wholesalePrice;
+            $systemPriceUnit = strtolower((string)$product['box_unit']);
+        } else {
+            $systemPriceForEnteredUnit = $retailPrice;
+            $systemPriceUnit = strtolower((string)$product['base_unit']);
+        }
+    }
     if ($priceInvalid) {
         $issues[] = 'Customer price must be a normal amount up to 99,999,999.99 with no more than two decimal places.';
         $poPrice = null;
-    } elseif ($product && $poPrice !== null && abs((float) $poPrice - $systemPrice) > 0.009) {
+    } elseif ($product && !$issues && $enteredPoPrice !== null
+        && abs((float)$enteredPoPrice - (float)$systemPriceForEnteredUnit) > 0.009) {
         $warnings[] = sprintf(
-            'Customer price %s per %s equals %.2f per %s; the current Highland Fresh price is %.2f per %s.',
+            'Customer price is %s per %s; the current Highland Fresh price is %.2f per %s.',
             number_format((float)$enteredPoPrice, 2),
             $priceUnit,
-            (float)$poPrice,
-            strtolower((string)$product['base_unit']),
-            $systemPrice,
-            strtolower((string)$product['base_unit'])
+            $systemPriceForEnteredUnit,
+            $systemPriceUnit
         );
     }
 
     $raw = $row;
     $raw['price_unit'] = $priceUnit;
     $raw['entered_unit_price'] = $enteredPoPrice;
+    $raw['system_retail_unit_price'] = $product ? round((float)$product['selling_price'], 2) : null;
+    $raw['system_wholesale_box_price'] = $product ? round((float)($product['wholesale_box_price'] ?? 0), 2) : null;
 
     return [
         'customer_product_code' => $code,
@@ -1463,7 +1491,7 @@ function hfImportedOrderAvailableStock(PDO $db, array $productIds): array
 
 function hfListApprovedCustomerOrderProducts(PDO $db): array
 {
-    $stmt = $db->query("\n        SELECT id, product_code, product_name, variant, unit_size, unit_measure,\n               selling_price, base_unit, box_unit, pieces_per_box\n        FROM products\n        WHERE is_active = 1\n          AND product_code IS NOT NULL\n          AND TRIM(product_code) <> ''\n        ORDER BY product_name, unit_size, product_code\n    ");
+    $stmt = $db->query("\n        SELECT id, product_code, product_name, variant, unit_size, unit_measure,\n               selling_price, wholesale_box_price, base_unit, box_unit, pieces_per_box\n        FROM products\n        WHERE is_active = 1\n          AND product_code IS NOT NULL\n          AND TRIM(product_code) <> ''\n        ORDER BY product_name, unit_size, product_code\n    ");
     return $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
 
@@ -1609,6 +1637,8 @@ function hfManualCheckedLines(PDO $db, array $submittedLines): array
             'unit_price' => $price,
             'price_unit' => $priceUnit,
             'entered_unit_price' => $line['raw']['entered_unit_price'] ?? null,
+            'system_retail_unit_price' => $line['raw']['system_retail_unit_price'] ?? null,
+            'system_wholesale_box_price' => $line['raw']['system_wholesale_box_price'] ?? null,
             'remarks' => $remarks,
         ];
         $checked[] = $line;
@@ -2360,10 +2390,19 @@ function hfAdjustCustomerOrderImportLine(
                 'issue_text' => $matched['issue_text'],
                 'delivery_date' => $deliveryDate,
             ];
+            $nextRaw = json_decode((string)($line['raw_data'] ?? '{}'), true) ?: [];
+            $nextRaw['system_retail_unit_price'] = $matched['raw']['system_retail_unit_price'] ?? null;
+            $nextRaw['system_wholesale_box_price'] = $matched['raw']['system_wholesale_box_price'] ?? null;
+            if ($wasReplacement) {
+                $nextRaw['entered_unit_price'] = null;
+                $nextRaw['unit_price'] = null;
+                $nextRaw['price_unit'] = $unit;
+            }
+            $adjusted['raw_data'] = json_encode($nextRaw, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
             $adjustmentType = $wasReplacement ? 'replace_product' : 'change_quantity';
         }
 
-        $lineUpdate = $db->prepare("\n            UPDATE customer_order_import_lines\n            SET customer_product_code = ?, description = ?, product_id = ?,\n                quantity_entered = ?, unit_entered = ?, quantity_base = ?,\n                quantity_boxes = ?, quantity_pieces = ?, po_unit_price = ?,\n                system_unit_price = ?, line_status = ?, issue_text = ?\n            WHERE id = ? AND import_id = ?\n        ");
+        $lineUpdate = $db->prepare("\n            UPDATE customer_order_import_lines\n            SET customer_product_code = ?, description = ?, product_id = ?,\n                quantity_entered = ?, unit_entered = ?, quantity_base = ?,\n                quantity_boxes = ?, quantity_pieces = ?, po_unit_price = ?,\n                system_unit_price = ?, line_status = ?, issue_text = ?, raw_data = ?\n            WHERE id = ? AND import_id = ?\n        ");
         $lineUpdate->execute([
             $adjusted['customer_product_code'],
             $adjusted['description'],
@@ -2377,6 +2416,7 @@ function hfAdjustCustomerOrderImportLine(
             $adjusted['system_unit_price'],
             $adjusted['line_status'],
             $adjusted['issue_text'],
+            $adjusted['raw_data'] ?? ($line['raw_data'] ?? null),
             $lineId,
             $importId,
         ]);
@@ -2454,11 +2494,30 @@ function hfCustomerOrderLinePricing(array $line): array
         ];
     }
 
-    $basePrice = (float)($line['po_unit_price'] ?? $line['system_unit_price'] ?? 0);
+    $packs = max(0, (int)($line['quantity_boxes'] ?? 0));
+    $loose = max(0, (int)($line['quantity_pieces'] ?? 0));
+    if ($packs === 0 && $loose === 0 && $baseQuantity > 0) {
+        $enteredUnit = strtolower(trim((string)($line['unit_entered'] ?? '')));
+        if ($enteredUnit === $boxUnit || in_array($enteredUnit, ['box', 'boxes', 'case', 'cases', 'crate', 'crates'], true)) {
+            $packs = max(1, (int)($line['quantity_entered'] ?? intdiv($baseQuantity, $piecesPerBox)));
+        } else {
+            $loose = $baseQuantity;
+        }
+    }
+    $pricing = hf_sales_pack_pricing([
+        'selling_price' => $raw['system_retail_unit_price']
+            ?? $line['selling_price']
+            ?? $line['system_unit_price']
+            ?? 0,
+        'wholesale_box_price' => $raw['system_wholesale_box_price']
+            ?? $line['wholesale_box_price']
+            ?? 0,
+        'pieces_per_box' => $piecesPerBox,
+    ], $packs, $loose);
     return [
-        'base_price' => $basePrice,
-        'line_total' => $baseQuantity * $basePrice,
-        'price_unit' => $baseUnit,
+        'base_price' => $pricing['base_price'],
+        'line_total' => $pricing['line_total'],
+        'price_unit' => $packs > 0 && $loose === 0 ? $boxUnit : $baseUnit,
     ];
 }
 
@@ -2545,7 +2604,8 @@ function hfConvertCustomerOrderImport(
 
         $linesStmt = $db->prepare("
             SELECT l.*, p.product_name, p.unit_size, p.unit_measure,
-                   p.base_unit, p.box_unit, p.pieces_per_box
+                   p.base_unit, p.box_unit, p.pieces_per_box,
+                   p.selling_price, p.wholesale_box_price
             FROM customer_order_import_lines l
             LEFT JOIN products p ON p.id = l.product_id
             WHERE l.import_id = ?

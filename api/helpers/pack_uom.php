@@ -147,6 +147,51 @@ if (!function_exists('hf_pack_config_from_row')) {
     }
 
     /**
+     * Price a scheduled Sales order that may contain full packs and loose units.
+     * The returned base price is an average used by legacy receipt fields;
+     * line_total remains the exact authoritative amount.
+     *
+     * @return array{base_quantity:int,base_price:float,line_total:float,pack_total:float,loose_total:float}
+     */
+    function hf_sales_pack_pricing(array $product, $packs, $loose)
+    {
+        $packCount = max(0, (int)$packs);
+        $looseCount = max(0, (int)$loose);
+        $unitsPerPack = max(1, (int)($product['pieces_per_box'] ?? $product['units_per_pack'] ?? 1));
+        $retailPrice = round((float)($product['selling_price'] ?? $product['unit_price'] ?? 0), 2);
+        $wholesalePrice = round((float)($product['wholesale_box_price'] ?? 0), 2);
+        $baseQuantity = ($packCount * $unitsPerPack) + $looseCount;
+
+        if ($baseQuantity <= 0) {
+            throw new InvalidArgumentException('Enter at least one full pack or loose unit.');
+        }
+        if ($retailPrice <= 0) {
+            throw new InvalidArgumentException('This product has no approved retail price.');
+        }
+        if ($packCount > 0) {
+            if ($unitsPerPack < 2) {
+                throw new InvalidArgumentException('This product is sold as individual units only.');
+            }
+            $regularPackValue = round($retailPrice * $unitsPerPack, 2);
+            if ($wholesalePrice <= 0 || $wholesalePrice >= $regularPackValue) {
+                throw new InvalidArgumentException('This product needs a valid discounted wholesale pack price in General Manager Product Setup.');
+            }
+        }
+
+        $packTotal = round($packCount * $wholesalePrice, 2);
+        $looseTotal = round($looseCount * $retailPrice, 2);
+        $lineTotal = round($packTotal + $looseTotal, 2);
+
+        return [
+            'base_quantity' => $baseQuantity,
+            'base_price' => round($lineTotal / $baseQuantity, 6),
+            'line_total' => $lineTotal,
+            'pack_total' => $packTotal,
+            'loose_total' => $looseTotal,
+        ];
+    }
+
+    /**
      * Human-readable inventory quantity from total base pieces.
      *
      * Examples:

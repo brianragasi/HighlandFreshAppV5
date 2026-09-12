@@ -680,7 +680,8 @@ function handlePost($db, $action, $currentUser, $validStatuses = null) {
             }
 
             $productStmt = $db->prepare("
-                SELECT id, product_name, variant, unit_size, unit_measure, selling_price
+                SELECT id, product_name, variant, unit_size, unit_measure,
+                       selling_price, wholesale_box_price, pieces_per_box
                 FROM products
                 WHERE id = ? AND is_active = 1
             ");
@@ -708,8 +709,15 @@ function handlePost($db, $action, $currentUser, $validStatuses = null) {
                     Response::error("Product #{$productId} is unavailable.", 400);
                 }
 
-                $unitPrice = round((float) $product['selling_price'], 2);
-                $lineTotal = round($quantity * $unitPrice, 2);
+                try {
+                    $pricing = hf_sales_pack_pricing($product, $boxes, $pieces);
+                } catch (InvalidArgumentException $error) {
+                    Response::validationError([
+                        'items' => "{$product['product_name']}: {$error->getMessage()}"
+                    ]);
+                }
+                $unitPrice = $pricing['base_price'];
+                $lineTotal = $pricing['line_total'];
                 $prepared[] = [
                     'product' => $product,
                     'quantity' => $quantity,
@@ -1222,8 +1230,15 @@ function enrichOrderItemsWithFulfillment(array $rawItems) {
             $returned = max(0, $ordered - $accepted);
         }
 
-        $originalSub = round($ordered * $unitPrice, 2);
-        $billableSub = round($accepted * $unitPrice, 2);
+        $savedLineTotal = isset($item['line_total']) && is_numeric($item['line_total'])
+            ? round((float)$item['line_total'], 2)
+            : null;
+        $originalSub = $savedLineTotal !== null
+            ? $savedLineTotal
+            : round($ordered * $unitPrice, 2);
+        $billableSub = $ordered > 0
+            ? round($originalSub * ($accepted / $ordered), 2)
+            : 0.0;
         $credit = round(max(0, $originalSub - $billableSub), 2);
         $lineHasReturns = ($returned > 0 || $accepted < $ordered);
 

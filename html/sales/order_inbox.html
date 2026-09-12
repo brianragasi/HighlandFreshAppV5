@@ -341,11 +341,19 @@
                 base_unit: String(firstValue(product.base_unit, product.baseUnit, product.unit)).trim(),
                 box_unit: String(firstValue(product.box_unit, product.boxUnit, 'box')).trim(),
                 pieces_per_box: firstValue(product.pieces_per_box, product.piecesPerBox, 1),
+                selling_price: firstValue(product.selling_price, product.unit_price, 0),
+                wholesale_box_price: firstValue(product.wholesale_box_price, product.wholesalePackPrice, 0),
                 available_qty: firstValue(product.available_qty, product.availableQty, product.available, product.on_hand_qty, product.onHandQty, 0),
                 quantity_unit: String(firstValue(product.quantity_unit, product.quantityUnit, product.base_unit, product.baseUnit, 'unit')).trim(),
             })).filter(product => product.product_code && product.product_name);
         }
         function productByCode(code) { return orderProducts.find(product => String(product.product_code).toUpperCase() === String(code || '').toUpperCase()); }
+        function productHasWholesalePrice(product) {
+            const units = Math.max(1, Number(product?.pieces_per_box || 1));
+            const retail = Number(product?.selling_price || 0);
+            const wholesale = Number(product?.wholesale_box_price || 0);
+            return units > 1 && wholesale > 0 && wholesale < retail * units;
+        }
         function productAvailable(product) {
             const quantity = Number(product.available_qty || 0);
             return Number.isFinite(quantity) ? quantity : 0;
@@ -371,7 +379,10 @@
         }
         function unitOptions(code, selected) {
             const product = productByCode(code);
-            const units = product ? [...new Set([product.base_unit, product.box_unit].filter(Boolean).map(value => String(value).toLowerCase()))] : [];
+            const units = product ? [...new Set([
+                product.base_unit,
+                ...(productHasWholesalePrice(product) ? [product.box_unit] : [])
+            ].filter(Boolean).map(value => String(value).toLowerCase()))] : [];
             const selectedUnit = String(selected || '').trim().toLowerCase();
             if (selectedUnit && !units.includes(selectedUnit)) units.unshift(selectedUnit);
             return '<option value="">Choose unit...</option>' + units.map(unit => `<option value="${esc(unit)}" ${unit === selectedUnit ? 'selected' : ''}>${esc(unit.charAt(0).toUpperCase() + unit.slice(1))}${product && ![product.base_unit, product.box_unit].map(value => String(value).toLowerCase()).includes(unit) ? ' (from email)' : ''}</option>`).join('');
@@ -382,7 +393,9 @@
             const baseUnit = String(product.base_unit || 'piece').toLowerCase();
             const boxUnit = String(product.box_unit || 'box').toLowerCase();
             const selectedUnit = String(selected || baseUnit).toLowerCase();
-            return [...new Set([baseUnit, boxUnit])].map(unit => `<option value="${esc(unit)}" ${unit === selectedUnit ? 'selected' : ''}>${esc(unit.charAt(0).toUpperCase() + unit.slice(1))}</option>`).join('');
+            const units = [baseUnit, ...(productHasWholesalePrice(product) ? [boxUnit] : [])];
+            if (selectedUnit && !units.includes(selectedUnit)) units.unshift(selectedUnit);
+            return [...new Set(units)].map(unit => `<option value="${esc(unit)}" ${unit === selectedUnit ? 'selected' : ''}>${esc(unit.charAt(0).toUpperCase() + unit.slice(1))}</option>`).join('');
         }
         function rowCalculation(row) {
             const product = productByCode(row.product_code);
@@ -398,12 +411,23 @@
             const enteredPriceText = String(row.unit_price || '').trim();
             const enteredPrice = /^\d{1,8}(?:\.\d{1,2})?$/.test(enteredPriceText) ? Number(enteredPriceText) : null;
             const systemBasePrice = Number(product.selling_price ?? product.unit_price ?? 0);
+            const systemBoxPrice = Number(product.wholesale_box_price || 0);
+            const hasWholesale = productHasWholesalePrice(product);
             const basePrice = enteredPrice === null ? systemBasePrice : (priceUnit === boxUnit ? enteredPrice / piecesPerBox : enteredPrice);
-            const lineTotal = baseQuantity * basePrice;
+            const lineTotal = enteredPrice === null && orderUnit === boxUnit
+                ? (hasWholesale ? quantity * systemBoxPrice : 0)
+                : baseQuantity * basePrice;
             const available = productAvailable(product);
-            const breakdown = orderUnit === boxUnit
-                ? `${quantity || 0} ${boxUnit} = ${baseQuantity || 0} ${baseUnit}${baseQuantity === 1 ? '' : 's'}; estimated ${money(lineTotal)}`
-                : `${baseQuantity || 0} ${baseUnit}${baseQuantity === 1 ? '' : 's'}; estimated ${money(lineTotal)}`;
+            let breakdown;
+            if (orderUnit === boxUnit && enteredPrice === null && !hasWholesale) {
+                breakdown = 'Set a discounted wholesale price in General Manager Product Setup before ordering full packs.';
+            } else if (orderUnit === boxUnit && enteredPrice !== null && priceUnit !== boxUnit) {
+                breakdown = `${baseQuantity || 0} ${baseUnit}${baseQuantity === 1 ? '' : 's'} × ${money(enteredPrice)}; estimated ${money(lineTotal)}`;
+            } else if (orderUnit === boxUnit) {
+                breakdown = `${quantity || 0} ${boxUnit} × ${money(enteredPrice === null ? systemBoxPrice : enteredPrice)}; estimated ${money(lineTotal)}`;
+            } else {
+                breakdown = `${baseQuantity || 0} ${baseUnit}${baseQuantity === 1 ? '' : 's'}; estimated ${money(lineTotal)}`;
+            }
             return { baseQuantity, lineTotal, breakdown, shortage: baseQuantity > available, available, baseUnit, boxUnit };
         }
         function orderReviewTotals() {

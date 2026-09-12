@@ -468,7 +468,7 @@
                         </label>
                         <label class="form-control">
                             <span class="label-text mb-2" id="directBoxLabel">Boxes</span>
-                            <input id="directBoxes" type="number" class="input input-bordered" min="0" step="1" value="0">
+                            <input id="directBoxes" type="number" class="input input-bordered" min="0" step="1" value="0" disabled>
                         </label>
                         <label class="form-control">
                             <span class="label-text mb-2" id="directPieceLabel">Extra Units</span>
@@ -800,15 +800,30 @@
         function updateDirectProductHint() {
             const product = directProducts.find(item => Number(item.id) === Number(document.getElementById('directProduct').value));
             const hint = document.getElementById('directProductHint');
+            const boxInput = document.getElementById('directBoxes');
             if (!product) {
                 hint.textContent = '';
+                boxInput.disabled = true;
+                boxInput.value = 0;
                 return;
             }
             const box = product.box_unit || 'box';
             const base = product.base_unit || 'piece';
-            hint.textContent = `${product.available_qty} ${base}(s) available; ${product.pack_config_label}`;
+            const unitsPerBox = Math.max(1, Number(product.pieces_per_box) || 1);
+            const retailPrice = Number(product.selling_price || 0);
+            const wholesalePrice = Number(product.wholesale_box_price || 0);
+            const hasWholesalePrice = unitsPerBox > 1
+                && wholesalePrice > 0
+                && wholesalePrice < retailPrice * unitsPerBox;
+            boxInput.disabled = !hasWholesalePrice;
+            if (!hasWholesalePrice) boxInput.value = 0;
+            hint.textContent = hasWholesalePrice
+                ? `${product.available_qty} ${base}(s) available; ${unitsPerBox} per ${box}; ${formatCurrency(wholesalePrice)} per ${box}, ${formatCurrency(retailPrice)} per ${base}.`
+                : `${product.available_qty} ${base}(s) available; individual ${base}s only.`;
             const boxesLabel = box.endsWith('x') ? `${box}es` : (box.endsWith('s') ? box : `${box}s`);
-            document.getElementById('directBoxLabel').textContent = boxesLabel.charAt(0).toUpperCase() + boxesLabel.slice(1);
+            document.getElementById('directBoxLabel').textContent = hasWholesalePrice
+                ? boxesLabel.charAt(0).toUpperCase() + boxesLabel.slice(1)
+                : 'Full packs (not set up)';
             document.getElementById('directPieceLabel').textContent = `Extra ${base}s`;
         }
 
@@ -821,6 +836,12 @@
                 return;
             }
             const unitsPerBox = Math.max(1, Number(product.pieces_per_box) || 1);
+            const retailPrice = Number(product.selling_price || 0);
+            const wholesalePrice = Number(product.wholesale_box_price || 0);
+            if (boxes > 0 && (unitsPerBox < 2 || wholesalePrice <= 0 || wholesalePrice >= retailPrice * unitsPerBox)) {
+                showToast('This product needs a valid discounted wholesale price in General Manager Product Setup.', 'error');
+                return;
+            }
             const quantity = (boxes * unitsPerBox) + pieces;
             if (quantity > Number(product.available_qty || 0)) {
                 showToast(`Only ${product.available_qty} units are available.`, 'error');
@@ -832,7 +853,7 @@
                 quantity_boxes: boxes,
                 quantity_pieces: pieces,
                 quantity,
-                line_total: quantity * Number(product.selling_price || 0)
+                line_total: (boxes * wholesalePrice) + (pieces * retailPrice)
             };
             const existing = directItems.findIndex(item => item.product_id === line.product_id);
             if (existing >= 0) directItems[existing] = line;
@@ -857,8 +878,8 @@
             tbody.innerHTML = directItems.map((item, index) => {
                 const product = item.product;
                 const orderParts = [];
-                if (item.quantity_boxes) orderParts.push(`${item.quantity_boxes} ${product.box_unit || 'box'}`);
-                if (item.quantity_pieces) orderParts.push(`${item.quantity_pieces} ${product.base_unit || 'piece'}`);
+                if (item.quantity_boxes) orderParts.push(`${item.quantity_boxes} ${product.box_unit || 'box'} @ ${formatCurrency(product.wholesale_box_price)}`);
+                if (item.quantity_pieces) orderParts.push(`${item.quantity_pieces} ${product.base_unit || 'piece'} @ ${formatCurrency(product.selling_price)}`);
                 return `<tr>
                     <td><p class="font-semibold">${escapeHtml(ProductDisplay.name(product))}</p><p class="text-xs text-base-content/45">${escapeHtml(product.product_code || '')}</p></td>
                     <td>${escapeHtml(orderParts.join(' + '))}<p class="text-xs text-base-content/45">${item.quantity} total units</p></td>

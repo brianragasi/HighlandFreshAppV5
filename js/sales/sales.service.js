@@ -530,7 +530,7 @@ const SalesService = {
         });
     },
 
-    /** Record a phone, walk-in, or message order for any active customer. */
+    /** Record a phone or message order for any active customer. */
     async createCustomerOrder(data) {
         return await api.post(`${this.baseUrl}/orders.php`, {
             action: 'create_customer',
