@@ -68,6 +68,8 @@ wholesaleAssert(str_contains($salePage, 'fullBoxesAvailable'), 'Wholesale UI mus
 wholesaleAssert(str_contains($transactionApi, 'hfPosPriceLine($product, $saleMode, $saleQuantity)'), 'server must price and convert each line from product master data');
 wholesaleAssert(str_contains($productApi, 'wholesale_box_price'), 'POS product response must expose the approved box price');
 wholesaleAssert(str_contains($adminPage, 'sku_edit_wholesale_box_price'), 'Admin must be able to set the wholesale box price');
+wholesaleAssert(substr_count($adminPage, 'wholesale_box_price: row.wholesale_box_price') >= 2, 'new and edited product saves must send the entered wholesale price');
+wholesaleAssert(str_contains($adminPage, 'Object.values(err.errors).filter(Boolean)'), 'product setup must show the exact validation reason');
 wholesaleAssert(str_contains($adminPage, 'Customer saves'), 'Admin must immediately explain the wholesale savings');
 wholesaleAssert(str_contains($adminPage, 'Must be below'), 'Admin must warn when the pack has no discount');
 wholesaleAssert(!str_contains($ordersPage, 'value="manual_walk_in"'), 'Sales must not offer immediate walk-in entry');
