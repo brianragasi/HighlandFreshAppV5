@@ -76,8 +76,13 @@ $inboxPage = file_get_contents($root . '/html/sales/order_inbox.html');
 $warehouseProducts = file_get_contents($root . '/api/warehouse/fg/products.php');
 
 salesWholesaleAssert(str_contains($ordersApi, 'hf_sales_pack_pricing($product, $boxes, $pieces)'), 'the Sales API must calculate the saved price itself');
+salesWholesaleAssert(str_contains($ordersApi, "\$orderStatus = \$needsCreditOverride ? 'pending' : 'approved'"), 'normal phone and message orders must be approved immediately');
+salesWholesaleAssert(str_contains($ordersApi, 'released to Warehouse Finished Goods by Sales'), 'released orders must keep a clear history entry');
 salesWholesaleAssert(str_contains($warehouseProducts, 'wholesale_box_price'), 'the Sales product list must receive the approved wholesale price');
 salesWholesaleAssert(str_contains($ordersPage, '(boxes * wholesalePrice) + (pieces * retailPrice)'), 'phone and message order totals must preview the mixed price');
+salesWholesaleAssert(str_contains($ordersPage, 'Send Credit Exception to GM'), 'only a credit exception should offer a GM action');
+salesWholesaleAssert(str_contains($ordersPage, 'Release Order'), 'normal orders should clearly offer direct release');
+salesWholesaleAssert(!str_contains($ordersPage, 'Send for GM Approval'), 'normal orders must not claim that GM approval is always required');
 salesWholesaleAssert(str_contains($inboxPage, 'productHasWholesalePrice'), 'email PO review must recognize configured wholesale products');
 
 echo "Sales retail and wholesale order pricing checks passed.\n";

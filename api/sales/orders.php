@@ -784,7 +784,15 @@ function handlePost($db, $action, $currentUser, $validStatuses = null) {
                 'manual_message' => 'Message',
             ];
             $sourceLabel = $sourceLabels[$orderSource];
-            $controlNotes = [sprintf('[CUSTOMER ORDER - %s] GM approval required before Warehouse FG fulfillment.', strtoupper($sourceLabel))];
+            $orderStatus = $needsCreditOverride ? 'pending' : 'approved';
+            $approvedBy = $needsCreditOverride ? null : (int)$currentUser['user_id'];
+            $approvedAt = $needsCreditOverride ? null : date('Y-m-d H:i:s');
+            $controlNotes = [sprintf(
+                $needsCreditOverride
+                    ? '[CUSTOMER ORDER - %s] GM credit-exception approval required before Warehouse FG fulfillment.'
+                    : '[CUSTOMER ORDER - %s] Released by Sales for Warehouse FG fulfillment.',
+                strtoupper($sourceLabel)
+            )];
             if ($needsCreditOverride) {
                 $controlNotes[] = sprintf(
                     '[GM-CREDIT-OVERRIDE] Projected balance PHP %.2f exceeds the PHP %.2f credit limit. Reason: %s',
@@ -803,8 +811,8 @@ function handlePost($db, $action, $currentUser, $validStatuses = null) {
                         source_type, payment_type, payment_terms_days,
                         contact_person, contact_number, delivery_address, delivery_date,
                         total_items, total_quantity, subtotal, total_amount,
-                        balance_due, due_date, status, created_by, notes
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+                        balance_due, due_date, status, approved_by, approved_at, created_by, notes
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ");
                 $orderStmt->execute([
                     $orderNumber,
@@ -825,6 +833,9 @@ function handlePost($db, $action, $currentUser, $validStatuses = null) {
                     $subtotal,
                     $subtotal,
                     $dueDate,
+                    $orderStatus,
+                    $approvedBy,
+                    $approvedAt,
                     $currentUser['user_id'],
                     $notes,
                 ]);
@@ -857,9 +868,12 @@ function handlePost($db, $action, $currentUser, $validStatuses = null) {
 
                 $historyStmt = $db->prepare("
                     INSERT INTO sales_order_status_history (order_id, status, notes, changed_by)
-                    VALUES (?, 'pending', ?, ?)
+                    VALUES (?, ?, ?, ?)
                 ");
-                $historyStmt->execute([$orderId, "Customer order received by {$sourceLabel} and submitted for GM approval.", $currentUser['user_id']]);
+                $historyMessage = $needsCreditOverride
+                    ? "Customer order received by {$sourceLabel} and sent for GM credit-exception approval."
+                    : "Customer order received by {$sourceLabel} and released to Warehouse Finished Goods by Sales.";
+                $historyStmt->execute([$orderId, $orderStatus, $historyMessage, $currentUser['user_id']]);
 
                 logAudit($currentUser['user_id'], 'CREATE_CUSTOMER_ORDER', 'sales_orders', $orderId, null, [
                     'order_number' => $orderNumber,
@@ -867,16 +881,19 @@ function handlePost($db, $action, $currentUser, $validStatuses = null) {
                     'source_type' => $orderSource,
                     'total_amount' => $subtotal,
                     'needs_credit_override' => $needsCreditOverride,
+                    'status' => $orderStatus,
                 ]);
                 $db->commit();
 
                 Response::created([
                     'id' => $orderId,
                     'order_number' => $orderNumber,
-                    'status' => 'pending',
+                    'status' => $orderStatus,
                     'total_amount' => round($subtotal, 2),
                     'needs_credit_override' => $needsCreditOverride,
-                ], 'Customer order sent for GM approval.');
+                ], $needsCreditOverride
+                    ? 'Customer order sent for GM credit-exception approval.'
+                    : 'Customer order released to Warehouse Finished Goods.');
             } catch (Throwable $error) {
                 if ($db->inTransaction()) {
                     $db->rollBack();
