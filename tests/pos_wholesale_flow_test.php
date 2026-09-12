@@ -62,6 +62,8 @@ $ordersPage = file_get_contents($root . '/html/sales/orders.html');
 
 wholesaleAssert(str_contains($salePage, 'sale.html?mode=wholesale'), 'Cashier must expose Wholesale Sale navigation');
 wholesaleAssert(str_contains($salePage, "sale_mode: saleMode"), 'Cashier must send the selected mode');
+wholesaleAssert(!str_contains($salePage, 'id="customerName"'), 'Direct cashier sales must not ask for a free-typed customer name');
+wholesaleAssert(str_contains($salePage, "customer_name: 'Walk-in Customer'"), 'Direct cashier sales must keep a safe internal customer label');
 wholesaleAssert(str_contains($salePage, 'fullBoxesAvailable'), 'Wholesale UI must use full-box availability');
 wholesaleAssert(str_contains($transactionApi, 'hfPosPriceLine($product, $saleMode, $saleQuantity)'), 'server must price and convert each line from product master data');
 wholesaleAssert(str_contains($productApi, 'wholesale_box_price'), 'POS product response must expose the approved box price');
