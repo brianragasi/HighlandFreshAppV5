@@ -9,6 +9,25 @@
 const HF_NEAR_EXPIRY_DAYS = 7;
 const HF_MIN_FINISHED_PRODUCT_SHELF_LIFE_DAYS = HF_NEAR_EXPIRY_DAYS + 1;
 
+if (!function_exists('hfResolveFinishedProductShelfLifeDays')) {
+    /**
+     * Shelf life is maintained on the current product master. The recipe value
+     * is only a legacy fallback for older records that are not linked to a
+     * product/base product yet.
+     */
+    function hfResolveFinishedProductShelfLifeDays($skuDays, $baseProductDays, $legacyRecipeDays): int
+    {
+        foreach ([$skuDays, $baseProductDays, $legacyRecipeDays] as $candidate) {
+            $days = filter_var($candidate, FILTER_VALIDATE_INT);
+            if ($days !== false && $days > 0) {
+                return $days;
+            }
+        }
+
+        return HF_MIN_FINISHED_PRODUCT_SHELF_LIFE_DAYS;
+    }
+}
+
 if (!function_exists('hfFinishedProductShelfLifeError')) {
     function hfFinishedProductShelfLifeError($value): ?string
     {

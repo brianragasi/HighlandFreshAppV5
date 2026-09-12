@@ -1683,7 +1683,7 @@ try {
                     // This replaces the old post-QC packaging step.
                     // =====================================================
                     $packagingItems = getParam('packaging_items', null);
-                    $processLossMl = (float) getParam('process_loss_ml', 0);
+                    $processLossMl = max(0, (float) getParam('process_loss_ml', 0));
 
                     // Decode JSON string if sent as form-encoded
                     if (is_string($packagingItems)) {
@@ -1934,6 +1934,60 @@ try {
                         'product_id' => $packProductId,
                         'pack_formula' => format_pack_config_line($packCfg),
                     ]);
+
+                    // Resolve expiry from the current product master first.
+                    // Recipe shelf life is a legacy snapshot and may be stale.
+                    try {
+                        $slStmt = $db->prepare("
+                            SELECT p.shelf_life_days AS sku_days,
+                                   bp.default_shelf_life_days AS base_product_days,
+                                   mr.shelf_life_days AS legacy_recipe_days
+                            FROM master_recipes mr
+                            LEFT JOIN products p ON p.id = mr.product_id
+                            LEFT JOIN base_products bp ON bp.id = mr.base_product_id
+                            WHERE mr.id = ?
+                            LIMIT 1
+                        ");
+                        $slStmt->execute([(int) $run['recipe_id']]);
+                        $shelfLifeSources = $slStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+                    } catch (Throwable $e) {
+                        $shelfLifeSources = [];
+                    }
+                    $expiryDays = hfResolveFinishedProductShelfLifeDays(
+                        $shelfLifeSources['sku_days'] ?? null,
+                        $shelfLifeSources['base_product_days'] ?? null,
+                        $shelfLifeSources['legacy_recipe_days'] ?? null
+                    );
+                    $shelfLifeError = hfFinishedProductShelfLifeError($expiryDays);
+                    if ($shelfLifeError !== null) {
+                        Response::validationError(
+                            ['shelf_life_days' => $shelfLifeError],
+                            'Product shelf life needs attention before this run can be sent to QC'
+                        );
+                    }
+                    $expiryDate = date('Y-m-d', strtotime("+{$expiryDays} days"));
+
+                    // The packaging rows are the authoritative finished volume.
+                    // Never silently mark a large remainder as reconciled.
+                    $initialVolumeMl = (float) ($run['initial_volume_ml'] ?? 0);
+                    $existingLossMl = (float) ($run['total_loss_ml'] ?? 0);
+                    $totalByproductMl = (float) ($run['total_byproduct_ml'] ?? 0);
+                    $updatedTotalLossMl = $existingLossMl + $processLossMl;
+                    $updatedNetYieldMl = max(0, $initialVolumeMl - $updatedTotalLossMl - $totalByproductMl);
+                    $unaccountedMl = $initialVolumeMl - ($totalPackagedVolumeMl + $updatedTotalLossMl + $totalByproductMl);
+                    $reconciliationToleranceMl = max(50, $initialVolumeMl * 0.01);
+                    if ($initialVolumeMl > 0
+                        && abs($unaccountedMl) > $reconciliationToleranceMl
+                        && $reconNotes === '') {
+                        Response::validationError([
+                            'reconciliation_notes' => sprintf(
+                                'There are %.2f L not explained. Record the real loss or add a short note before sending this run to QC.',
+                                abs($unaccountedMl) / 1000
+                            ),
+                            'unaccounted_ml' => round($unaccountedMl, 2),
+                            'tolerance_ml' => round($reconciliationToleranceMl, 2),
+                        ], 'Explain the remaining production volume');
+                    }
                     
                     $packagingMaterialsConsumed = [];
                     $db->beginTransaction();
@@ -1949,18 +2003,20 @@ try {
                                 output_breakdown = ?,
                                 yield_variance = ?,
                                 variance_reason = ?,
-                                material_reconciled = CASE WHEN ? = 1 OR material_reconciled = 1 THEN 1 ELSE material_reconciled END,
+                                total_loss_ml = ?,
+                                net_yield_ml = ?,
+                                material_reconciled = 1,
                                 reconciliation_notes = COALESCE(?, reconciliation_notes)
                             WHERE id = ?
                         ");
-                        $markReconciled = $reconNotes !== '' ? 1 : 0;
                         $stmt->execute([
                             $currentUser['user_id'],
                             $totalPieces,
                             $outputBreakdown,
                             $variance,
                             $varianceReason,
-                            $markReconciled,
+                            $updatedTotalLossMl,
+                            $updatedNetYieldMl,
                             $reconNotes !== '' ? $reconNotes : null,
                             $runId
                         ]);
@@ -1974,43 +2030,6 @@ try {
                         
                         // Generate batch code
                         $batchCode = 'BATCH-' . date('Ymd') . '-' . str_pad($runId, 4, '0', STR_PAD_LEFT);
-                        
-                        // Expiry from recipe/product shelf_life_days (not hard-coded product-type map).
-                        // Butter recipe stores 30; products.shelf_life_days and base_products also 30.
-                        $expiryDays = 0;
-                        if (!empty($run['shelf_life_days']) && (int) $run['shelf_life_days'] > 0) {
-                            $expiryDays = (int) $run['shelf_life_days'];
-                        } else {
-                            try {
-                                $slStmt = $db->prepare("
-                                    SELECT COALESCE(
-                                        NULLIF(p.shelf_life_days, 0),
-                                        NULLIF(mr.shelf_life_days, 0),
-                                        NULLIF(bp.default_shelf_life_days, 0),
-                                        " . HF_MIN_FINISHED_PRODUCT_SHELF_LIFE_DAYS . "
-                                    ) AS days
-                                    FROM master_recipes mr
-                                    LEFT JOIN products p ON p.id = mr.product_id
-                                    LEFT JOIN base_products bp ON bp.id = mr.base_product_id
-                                    WHERE mr.id = ?
-                                    LIMIT 1
-                                ");
-                                $slStmt->execute([(int) $run['recipe_id']]);
-                                $expiryDays = (int) ($slStmt->fetchColumn() ?: HF_MIN_FINISHED_PRODUCT_SHELF_LIFE_DAYS);
-                            } catch (Throwable $e) {
-                                $expiryDays = HF_MIN_FINISHED_PRODUCT_SHELF_LIFE_DAYS;
-                            }
-                        }
-                        if ($expiryDays < HF_MIN_FINISHED_PRODUCT_SHELF_LIFE_DAYS) {
-                            throw new RuntimeException(
-                                'Production cannot create a finished batch with a shelf life inside the 7-day QC handling window. '
-                                . 'Update the product shelf life to at least '
-                                . HF_MIN_FINISHED_PRODUCT_SHELF_LIFE_DAYS
-                                . ' days.'
-                            );
-                        }
-
-                        $expiryDate = date('Y-m-d', strtotime("+{$expiryDays} days"));
                         
                         // Pull verified CCP temperatures from production logs so QC
                         // sees actual production inputs without re-entry.

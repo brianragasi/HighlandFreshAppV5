@@ -695,8 +695,8 @@ function createRecipe($conn) {
                     recipe_code, product_id, base_product_id, product_name, product_type,
                     milk_type_id, description, base_milk_liters, expected_yield, bulk_yield_liters, max_batch_liters, yield_unit,
                     pasteurization_temp, pasteurization_time_mins, cooling_temp, special_instructions,
-                    is_active, created_by
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                    shelf_life_days, is_active, created_by
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
         $stmt = $conn->prepare($sql);
         $stmt->execute([
@@ -716,6 +716,7 @@ function createRecipe($conn) {
             isset($data['pasteurization_time_mins']) ? (int) $data['pasteurization_time_mins'] : 15,
             isset($data['cooling_temp']) ? (float) $data['cooling_temp'] : 4.00,
             $data['special_instructions'] ?? null,
+            (int) $master['shelf_life_days'],
             isset($data['is_active']) ? intval($data['is_active']) : 1,
             $user['user_id'] ?? $user['id'] ?? null
         ]);
@@ -866,6 +867,7 @@ function updateRecipe($conn, $id) {
                     pasteurization_time_mins = ?,
                     cooling_temp = ?,
                     special_instructions = ?,
+                    shelf_life_days = ?,
                     is_active = ?
                 WHERE id = ?";
 
@@ -886,6 +888,7 @@ function updateRecipe($conn, $id) {
             isset($data['pasteurization_time_mins']) ? (int) $data['pasteurization_time_mins'] : $existing['pasteurization_time_mins'],
             isset($data['cooling_temp']) ? (float) $data['cooling_temp'] : $existing['cooling_temp'],
             array_key_exists('special_instructions', $data) ? $data['special_instructions'] : $existing['special_instructions'],
+            (int) $master['shelf_life_days'],
             isset($data['is_active']) ? intval($data['is_active']) : (int) $existing['is_active'],
             $id
         ]);

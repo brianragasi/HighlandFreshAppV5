@@ -17,10 +17,14 @@ shelfLifeAssert(hfFinishedProductShelfLifeError(7) !== null, 'seven days must be
 shelfLifeAssert(hfFinishedProductShelfLifeError(8) === null, 'eight days must be accepted');
 shelfLifeAssert(hfFinishedProductShelfLifeError('8') === null, 'an integer form value must be accepted');
 shelfLifeAssert(hfFinishedProductShelfLifeError('8.5') !== null, 'fractional shelf life must be rejected');
+shelfLifeAssert(hfResolveFinishedProductShelfLifeDays(null, 8, 7) === 8, 'current base-product shelf life must override an older recipe copy');
+shelfLifeAssert(hfResolveFinishedProductShelfLifeDays(30, 8, 7) === 30, 'a directly linked SKU shelf life must have first priority');
+shelfLifeAssert(hfResolveFinishedProductShelfLifeDays(null, null, 14) === 14, 'legacy unlinked recipes must retain their shelf-life fallback');
 
 $productApi = file_get_contents(dirname(__DIR__) . '/api/admin/products.php');
 $productPage = file_get_contents(dirname(__DIR__) . '/html/admin/products.html');
 $recipeApi = file_get_contents(dirname(__DIR__) . '/api/production/recipes.php');
+$adminRecipeApi = file_get_contents(dirname(__DIR__) . '/api/admin/recipes.php');
 $productionApi = file_get_contents(dirname(__DIR__) . '/api/production/runs.php');
 $migration = file_get_contents(dirname(__DIR__) . '/sql/enforce_minimum_finished_product_shelf_life.sql');
 
@@ -42,9 +46,14 @@ shelfLifeAssert(
     'the legacy recipe write endpoint must enforce the same rule'
 );
 shelfLifeAssert(
-    str_contains($productionApi, '$expiryDays < HF_MIN_FINISHED_PRODUCT_SHELF_LIFE_DAYS')
-        && str_contains($productionApi, 'Production cannot create a finished batch'),
-    'production completion must not create an immediately near-expiry finished batch'
+    str_contains($productionApi, 'hfResolveFinishedProductShelfLifeDays(')
+        && str_contains($productionApi, 'hfFinishedProductShelfLifeError($expiryDays)'),
+    'production completion must use the current product shelf life and reject immediately near-expiry output'
+);
+shelfLifeAssert(
+    str_contains($adminRecipeApi, 'shelf_life_days, is_active, created_by')
+        && str_contains($adminRecipeApi, "(int) \$master['shelf_life_days']"),
+    'new and updated recipes must keep their compatibility shelf-life copy aligned with the product master'
 );
 shelfLifeAssert(
     str_contains($migration, 'UPDATE base_products')

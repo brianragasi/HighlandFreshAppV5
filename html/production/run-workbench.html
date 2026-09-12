@@ -2418,6 +2418,23 @@
             const processLossMl = parseFloat(document.getElementById('pkgProcessLoss')?.value) || 0;
 
             const notes = document.getElementById('reconNotes').value.trim();
+            const initialVolumeMl = Number(wb?.run?.initial_volume_ml || 0);
+            const packagedVolumeMl = packagingItems.reduce(
+                (sum, item) => sum + Number(item.size_ml || 0) * Number(item.quantity || 0),
+                0
+            );
+            const accountedLossMl = Number(wb?.run?.total_loss_ml || 0) + processLossMl;
+            const byproductMl = Number(wb?.run?.total_byproduct_ml || 0);
+            const remainingMl = initialVolumeMl - packagedVolumeMl - accountedLossMl - byproductMl;
+            const toleranceMl = Math.max(50, initialVolumeMl * 0.01);
+            if (initialVolumeMl > 0 && Math.abs(remainingMl) > toleranceMl && !notes) {
+                showToast(
+                    `${(Math.abs(remainingMl) / 1000).toLocaleString(undefined, { maximumFractionDigits: 3 })} L is not explained. Record the real loss or add a short note before sending to QC.`,
+                    'error'
+                );
+                document.getElementById('reconNotes')?.focus();
+                return;
+            }
             const completeButton = document.getElementById('completeRunBtn');
             const originalCompleteHtml = completeButton?.innerHTML || '';
             completionSubmissionInFlight = true;
@@ -2426,10 +2443,6 @@
                 completeButton.innerHTML = '<span class="loading loading-spinner loading-sm"></span> Completing run…';
             }
             try {
-                try {
-                    await ProductionService.reconcileRun(selectedRunId, notes || 'Completed from workbench', !!notes);
-                } catch (e) { /* continue */ }
-
                 // Total pieces from packaging lines (authoritative)
                 const qty = packagingItems.reduce((s, i) => s + i.quantity, 0);
 

@@ -6,6 +6,7 @@ $root = dirname(__DIR__);
 $warehouseApi = file_get_contents($root . '/api/warehouse/raw/requisitions.php');
 $warehousePage = file_get_contents($root . '/html/warehouse/raw/requisitions.html');
 $productionApi = file_get_contents($root . '/api/production/runs.php');
+$productionWorkbench = file_get_contents($root . '/html/production/run-workbench.html');
 
 $checks = [
     'Packaging requests are server-enforced as all-or-nothing handovers' =>
@@ -33,6 +34,14 @@ $checks = [
     'Production completion still requires the packaging request to be fulfilled' =>
         str_contains($productionApi, "\$packReq['status'] !== 'fulfilled'")
         && str_contains($productionApi, 'Warehouse must issue every packaging material first.'),
+    'Production completion cannot silently accept unexplained milk volume' =>
+        str_contains($productionApi, '$unaccountedMl = $initialVolumeMl - ($totalPackagedVolumeMl + $updatedTotalLossMl + $totalByproductMl)')
+        && str_contains($productionApi, "'reconciliation_notes' => sprintf(")
+        && str_contains($productionApi, 'material_reconciled = 1'),
+    'Workbench explains an unbalanced run instead of inventing a note' =>
+        str_contains($productionWorkbench, 'const remainingMl = initialVolumeMl - packagedVolumeMl - accountedLossMl - byproductMl;')
+        && str_contains($productionWorkbench, 'Record the real loss or add a short note before sending to QC.')
+        && !str_contains($productionWorkbench, "notes || 'Completed from workbench'"),
 ];
 
 $failed = [];

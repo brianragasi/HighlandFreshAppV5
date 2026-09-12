@@ -1242,6 +1242,18 @@ function updateBaseProduct($conn, $id) {
         }
     }
 
+    // Recipe shelf life is inherited from the product master. Keep this
+    // compatibility copy aligned for older production screens and exports;
+    // already-manufactured batch expiry dates are not changed.
+    if ($shelf !== null && $shelf !== '') {
+        try {
+            $conn->prepare('UPDATE master_recipes SET shelf_life_days = ? WHERE base_product_id = ?')
+                ->execute([(int) $shelf, $id]);
+        } catch (Throwable $e) {
+            error_log('updateBaseProduct recipe shelf-life cascade: ' . $e->getMessage());
+        }
+    }
+
     sendSuccess(['message' => 'Base product updated successfully', 'base_product_id' => $id]);
 }
 
