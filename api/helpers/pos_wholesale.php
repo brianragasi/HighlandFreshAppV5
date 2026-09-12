@@ -80,6 +80,64 @@ function hfPosSaleMode($value): string
 }
 
 /**
+ * Explain and validate the price of one full wholesale pack.
+ *
+ * @return array{applicable:bool,valid:bool,retail_pack_value:float,savings:float,discount_percent:float,message:string}
+ */
+function hfWholesaleDiscountSummary($retailUnitPrice, $unitsPerPack, $wholesalePackPrice): array
+{
+    $retailPrice = round((float) $retailUnitPrice, 2);
+    $units = max(1, (int) $unitsPerPack);
+    $wholesalePrice = round((float) $wholesalePackPrice, 2);
+    $retailPackValue = round($retailPrice * $units, 2);
+    $applicable = $units > 1;
+
+    if (!$applicable) {
+        return [
+            'applicable' => false,
+            'valid' => true,
+            'retail_pack_value' => $retailPackValue,
+            'savings' => 0.0,
+            'discount_percent' => 0.0,
+            'message' => '',
+        ];
+    }
+
+    if ($retailPrice <= 0) {
+        $message = 'Enter the retail unit price before setting the wholesale price.';
+        $valid = false;
+    } elseif ($wholesalePrice <= 0) {
+        $message = 'Enter the approved wholesale price for one full pack.';
+        $valid = false;
+    } elseif ($wholesalePrice >= $retailPackValue) {
+        $message = sprintf(
+            'Wholesale price must be below ₱%s (%d units at ₱%s each) so the full pack has a discount.',
+            number_format($retailPackValue, 2),
+            $units,
+            number_format($retailPrice, 2)
+        );
+        $valid = false;
+    } else {
+        $message = '';
+        $valid = true;
+    }
+
+    $savings = $valid ? round($retailPackValue - $wholesalePrice, 2) : 0.0;
+    $discountPercent = $valid && $retailPackValue > 0
+        ? round(($savings / $retailPackValue) * 100, 2)
+        : 0.0;
+
+    return [
+        'applicable' => true,
+        'valid' => $valid,
+        'retail_pack_value' => $retailPackValue,
+        'savings' => $savings,
+        'discount_percent' => $discountPercent,
+        'message' => $message,
+    ];
+}
+
+/**
  * Convert the selected selling unit to the authoritative base-unit quantity.
  *
  * @return array{sale_mode:string,sale_unit:string,sale_quantity:int,base_quantity:int,pieces_per_box:int,unit_price:float,line_total:float}
@@ -99,6 +157,14 @@ function hfPosPriceLine(array $product, string $saleMode, int $saleQuantity): ar
         }
         if ($boxPrice <= 0) {
             throw new InvalidArgumentException('This product has no wholesale box price.');
+        }
+        $discount = hfWholesaleDiscountSummary(
+            $product['selling_price'] ?? $product['unit_price'] ?? 0,
+            $piecesPerBox,
+            $boxPrice
+        );
+        if (!$discount['valid']) {
+            throw new InvalidArgumentException($discount['message']);
         }
         $baseQuantity = $saleQuantity * $piecesPerBox;
         $unitPrice = round($boxPrice, 2);

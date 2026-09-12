@@ -29,9 +29,21 @@ wholesaleAssert($wholesale['base_quantity'] === 48, 'two boxes of 24 must deduct
 wholesaleAssert($wholesale['unit_price'] === 550.0, 'wholesale must use the saved box price');
 wholesaleAssert($wholesale['line_total'] === 1100.0, 'two boxes must total two times the box price');
 
+$discounted = hfWholesaleDiscountSummary(10, 10, 90);
+wholesaleAssert($discounted['valid'] === true, '₱90 must be accepted for ten ₱10 units');
+wholesaleAssert($discounted['retail_pack_value'] === 100.0, 'regular pack value must be ₱100');
+wholesaleAssert($discounted['savings'] === 10.0, 'the displayed savings must be ₱10');
+wholesaleAssert($discounted['discount_percent'] === 10.0, 'the displayed discount must be 10%');
+
+foreach ([100, 110] as $notDiscountedPrice) {
+    $notDiscounted = hfWholesaleDiscountSummary(10, 10, $notDiscountedPrice);
+    wholesaleAssert($notDiscounted['valid'] === false, "₱{$notDiscountedPrice} must be rejected because it is not below the ₱100 retail value");
+}
+
 foreach ([
     ['product' => array_merge($product, ['pieces_per_box' => 1]), 'message' => 'no box configuration'],
     ['product' => array_merge($product, ['wholesale_box_price' => null]), 'message' => 'no box price'],
+    ['product' => array_merge($product, ['wholesale_box_price' => 600]), 'message' => 'no wholesale discount'],
 ] as $invalid) {
     try {
         hfPosPriceLine($invalid['product'], 'wholesale', 1);
@@ -54,6 +66,8 @@ wholesaleAssert(str_contains($salePage, 'fullBoxesAvailable'), 'Wholesale UI mus
 wholesaleAssert(str_contains($transactionApi, 'hfPosPriceLine($product, $saleMode, $saleQuantity)'), 'server must price and convert each line from product master data');
 wholesaleAssert(str_contains($productApi, 'wholesale_box_price'), 'POS product response must expose the approved box price');
 wholesaleAssert(str_contains($adminPage, 'sku_edit_wholesale_box_price'), 'Admin must be able to set the wholesale box price');
+wholesaleAssert(str_contains($adminPage, 'Customer saves'), 'Admin must immediately explain the wholesale savings');
+wholesaleAssert(str_contains($adminPage, 'Must be below'), 'Admin must warn when the pack has no discount');
 wholesaleAssert(!str_contains($ordersPage, 'value="manual_walk_in"'), 'Sales must not offer immediate walk-in entry');
 
 echo "POS retail and wholesale flow tests passed.\n";

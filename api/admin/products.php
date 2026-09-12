@@ -851,6 +851,20 @@ function validateProductNumericPayload(array &$data): void {
     }
 }
 
+function validateWholesaleDiscount(array $data): void {
+    $retailPrice = $data['selling_price'] ?? $data['unit_price'] ?? 0;
+    $summary = hfWholesaleDiscountSummary(
+        $retailPrice,
+        $data['pieces_per_box'] ?? 1,
+        $data['wholesale_box_price'] ?? null
+    );
+    if (!$summary['valid']) {
+        sendValidationError([
+            'wholesale_box_price' => $summary['message']
+        ]);
+    }
+}
+
 function validateUnusualSkuCapacity(array $data): void {
     $isBottle = skuPackageStyleRequiresPrimaryMaterial($data['base_unit'] ?? '');
     $isLargeLiterValue = strtolower(trim((string) ($data['unit_measure'] ?? ''))) === 'l'
@@ -902,12 +916,7 @@ function createProduct($conn) {
     $primaryContainer = applyPrimaryContainerToSkuPayload($conn, $data);
     validateProductNumericPayload($data);
     validateUnusualSkuCapacity($data);
-    if ((int) ($data['pieces_per_box'] ?? 1) > 1
-        && (float) ($data['wholesale_box_price'] ?? 0) <= 0) {
-        sendValidationError([
-            'wholesale_box_price' => 'Enter the approved wholesale price for one full box.'
-        ]);
-    }
+    validateWholesaleDiscount($data);
     
     // Validate required fields
     $required = ['product_name', 'category'];
@@ -1262,17 +1271,7 @@ function updateProduct($conn, $id) {
     $primaryContainer = applyPrimaryContainerToSkuPayload($conn, $data, $existing);
     validateProductNumericPayload($data);
     validateUnusualSkuCapacity(array_merge($existing, $data));
-    $effectivePiecesPerBox = array_key_exists('pieces_per_box', $data)
-        ? (int) $data['pieces_per_box']
-        : (int) ($existing['pieces_per_box'] ?? 1);
-    $effectiveWholesalePrice = array_key_exists('wholesale_box_price', $data)
-        ? (float) ($data['wholesale_box_price'] ?? 0)
-        : (float) ($existing['wholesale_box_price'] ?? 0);
-    if ($effectivePiecesPerBox > 1 && $effectiveWholesalePrice <= 0) {
-        sendValidationError([
-            'wholesale_box_price' => 'Enter the approved wholesale price for one full box.'
-        ]);
-    }
+    validateWholesaleDiscount(array_merge($existing, $data));
 
     // Keep legacy variant text intact for audit/migration, but do not allow it
     // to be edited on a base-linked SKU. Flavor belongs to base_products.

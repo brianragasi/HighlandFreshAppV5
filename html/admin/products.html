@@ -924,12 +924,12 @@
                         <label class="label py-0"><span class="label-text-alt">Existing FG stock is safely re-split while preserving its total units.</span></label>
                     </div>
                     <div class="form-control sku-edit-pack-detail">
-                        <label class="label"><span class="label-text">Wholesale Full-Pack Price (₱)</span></label>
+                        <label class="label"><span class="label-text">Wholesale Full-Pack Price (₱) <span class="text-error">*</span></span></label>
                         <input type="number" id="sku_edit_wholesale_box_price" class="input input-bordered"
                             min="0.01" max="9999999999.99" step="0.01" placeholder="Price for one full pack"
                             inputmode="decimal" onkeydown="return blockNegativeNumberKey(event)"
                             oninput="updateSkuEditPackValue()" />
-                        <label class="label py-0"><span id="sku_edit_pack_value" class="label-text-alt">Price for the entire box, case, or crate.</span></label>
+                        <label class="label py-0"><span id="sku_edit_pack_value" class="label-text-alt">Must be lower than buying all units at retail price.</span></label>
                     </div>
                     <div class="form-control">
                         <label class="label"><span class="label-text">Retail Unit Price (₱) <span class="text-error">*</span></span></label>
@@ -2487,6 +2487,7 @@
             const MIN_PRICE = 0.01;
             let ok = true;
             let firstBad = null;
+            let wholesaleDiscountBad = false;
 
             document.querySelectorAll('#skuList .sku-row').forEach(row => {
                 if (row.dataset.softDeleted === '1') return;
@@ -2565,8 +2566,17 @@
                     priceInput.classList.remove('input-error');
                     if (priceErr) priceErr.classList.add('hidden');
                 }
-                if (packedForDispatch && (!Number.isFinite(wholesalePrice) || wholesalePrice <= 0)) {
+                const retailPackValue = Number.isFinite(price) && Number.isInteger(packSize)
+                    ? price * packSize
+                    : 0;
+                const invalidWholesaleDiscount = packedForDispatch
+                    && Number.isFinite(wholesalePrice)
+                    && wholesalePrice > 0
+                    && retailPackValue > 0
+                    && wholesalePrice >= retailPackValue;
+                if (packedForDispatch && (!Number.isFinite(wholesalePrice) || wholesalePrice <= 0 || invalidWholesaleDiscount)) {
                     ok = false;
+                    wholesaleDiscountBad = wholesaleDiscountBad || invalidWholesaleDiscount;
                     wholesalePriceInput?.classList.add('input-error');
                     if (!firstBad && wholesalePriceInput) firstBad = wholesalePriceInput;
                 } else {
@@ -2578,7 +2588,9 @@
                 const suspiciousSelected = document.querySelector('#skuList .sku-primary-container option:checked[data-suspicious-capacity="1"]');
                 const msg = suspiciousSelected
                     ? 'This container has an unusually large liter value. Review it in Packaging Materials before using it on a product.'
-                    : 'Complete the package style, dispatch packing, size, and price for every SKU.';
+                    : (wholesaleDiscountBad
+                        ? 'Wholesale price must be lower than buying all units at retail price.'
+                        : 'Complete the package style, dispatch packing, size, and price for every SKU.');
                 if (typeof showToast === 'function') showToast(msg, 'error');
                 if (firstBad) {
                     firstBad.focus();
@@ -2606,6 +2618,7 @@
             const packedForDispatch = dispatchPackMode?.value === 'packed';
             const packSize = parseInt(piecesPerBoxInput?.value, 10);
             const wholesalePrice = parseFloat(wholesalePriceInput?.value);
+            let wholesaleDiscountBad = false;
             if (!dispatchPackMode?.value) {
                 ok = false;
                 dispatchPackMode?.classList.add('select-error');
@@ -2618,7 +2631,15 @@
             } else {
                 piecesPerBoxInput?.classList.remove('input-error');
             }
-            if (packedForDispatch && (!Number.isFinite(wholesalePrice) || wholesalePrice <= 0)) {
+            const retailPackValue = Number.isFinite(price) && Number.isInteger(packSize)
+                ? price * packSize
+                : 0;
+            wholesaleDiscountBad = packedForDispatch
+                && Number.isFinite(wholesalePrice)
+                && wholesalePrice > 0
+                && retailPackValue > 0
+                && wholesalePrice >= retailPackValue;
+            if (packedForDispatch && (!Number.isFinite(wholesalePrice) || wholesalePrice <= 0 || wholesaleDiscountBad)) {
                 ok = false;
                 wholesalePriceInput?.classList.add('input-error');
             } else {
@@ -2663,7 +2684,9 @@
             if (!ok) {
                 const msg = containerSelect?.selectedOptions?.[0]?.dataset?.suspiciousCapacity === '1'
                     ? 'Review this unusually large liter value in Packaging Materials before using the container.'
-                    : 'Complete the package style, dispatch packing, size, and price.';
+                    : (wholesaleDiscountBad
+                        ? 'Wholesale price must be lower than buying all units at retail price.'
+                        : 'Complete the package style, dispatch packing, size, and price.');
                 if (typeof showToast === 'function') showToast(msg, 'error');
             }
             return ok;
@@ -2730,17 +2753,23 @@
             const wholesalePrice = parseFloat(document.getElementById('sku_edit_wholesale_box_price')?.value);
             const packUnit = document.getElementById('sku_edit_box_unit')?.value || 'pack';
 
-            guide.classList.remove('text-error', 'font-semibold');
+            guide.classList.remove('text-error', 'text-success', 'font-semibold');
             if (!packed || !Number.isInteger(units) || units < 2 || !(retailPrice > 0)) {
                 guide.textContent = 'Price for the entire box, case, or crate.';
                 return;
             }
 
             const retailValue = units * retailPrice;
-            guide.textContent = `${units} units × ₱${retailPrice.toFixed(2)} = ₱${retailValue.toFixed(2)} retail value per ${packUnit}.`;
-            if (wholesalePrice > 0 && wholesalePrice <= retailPrice) {
-                guide.textContent += ` Check the wholesale price—it covers the whole ${packUnit}.`;
+            if (!(wholesalePrice > 0)) {
+                guide.textContent = `Regular price is ₱${retailValue.toFixed(2)} per ${packUnit}. Enter a lower wholesale price.`;
+            } else if (wholesalePrice >= retailValue) {
+                guide.textContent = `Must be below ₱${retailValue.toFixed(2)} to give a wholesale discount.`;
                 guide.classList.add('text-error', 'font-semibold');
+            } else {
+                const savings = retailValue - wholesalePrice;
+                const percent = (savings / retailValue) * 100;
+                guide.textContent = `Customer saves ₱${savings.toFixed(2)} (${percent.toFixed(1)}%) per ${packUnit}.`;
+                guide.classList.add('text-success', 'font-semibold');
             }
         }
 
@@ -2877,7 +2906,7 @@
                                     oninput="updateSkuRowPackValue(this.closest('.sku-row'))" disabled />
                             </label>
                             <label class="form-control sku-dispatch-detail min-w-0">
-                                <span class="label-text sku-field-label mb-1">Wholesale Full-Pack Price (₱)</span>
+                                <span class="label-text sku-field-label mb-1">Wholesale Full-Pack Price (₱) <span class="text-error">*</span></span>
                                 <input type="number" name="sku_wholesale_box_price_${idx}"
                                     class="input input-sm input-bordered w-full sku-field sku-wholesale-box-price"
                                     placeholder="Price per full pack" min="0.01" max="9999999999.99" step="0.01"
@@ -3813,14 +3842,20 @@
             const packUnit = row.querySelector('.sku-box-unit')?.value || 'pack';
 
             guide.classList.toggle('hidden', !packed || !Number.isInteger(units) || units < 2 || !(retailPrice > 0));
-            guide.classList.remove('text-error', 'font-semibold');
+            guide.classList.remove('text-error', 'text-success', 'font-semibold');
             if (guide.classList.contains('hidden')) return;
 
             const retailValue = units * retailPrice;
-            guide.textContent = `${units} units × ₱${retailPrice.toFixed(2)} = ₱${retailValue.toFixed(2)} retail value per ${packUnit}.`;
-            if (wholesalePrice > 0 && wholesalePrice <= retailPrice) {
-                guide.textContent += ` Check the wholesale price—it covers the whole ${packUnit}.`;
+            if (!(wholesalePrice > 0)) {
+                guide.textContent = `Regular price is ₱${retailValue.toFixed(2)} per ${packUnit}. Enter a lower wholesale price.`;
+            } else if (wholesalePrice >= retailValue) {
+                guide.textContent = `Must be below ₱${retailValue.toFixed(2)} to give a wholesale discount.`;
                 guide.classList.add('text-error', 'font-semibold');
+            } else {
+                const savings = retailValue - wholesalePrice;
+                const percent = (savings / retailValue) * 100;
+                guide.textContent = `Customer saves ₱${savings.toFixed(2)} (${percent.toFixed(1)}%) per ${packUnit}.`;
+                guide.classList.add('text-success', 'font-semibold');
             }
         }
 
