@@ -458,7 +458,7 @@
                 <div class="modal-action">
                     <button type="button" class="btn btn-ghost"
                         onclick="document.getElementById('newDisposalModal').close()">Cancel</button>
-                    <button type="submit" class="btn btn-error"><i class="fas fa-paper-plane"></i> Submit
+                    <button type="submit" id="submitDisposalBtn" class="btn btn-error"><i class="fas fa-paper-plane"></i> Submit
                         Request</button>
                 </div>
             </form>
@@ -594,6 +594,7 @@
             rejected: '<span class="badge badge-error"><i class="fas fa-times mr-1"></i>Rejected</span>',
             cancelled: '<span class="badge badge-ghost">Cancelled</span>'
         };
+        let disposalSubmitInProgress = false;
 
         document.addEventListener('DOMContentLoaded', async () => {
             if (!AuthService.isAuthenticated()) { window.location.href = '../login.html'; return; }
@@ -627,6 +628,9 @@
                         // Only auto-fill if the item was found in the dropdown
                         if (sourceSelect.value === sourceId) {
                             onSourceItemSelected();
+                        } else {
+                            document.getElementById('sourceHint').innerHTML =
+                                '<span class="label-text-alt text-warning">This item already has an open request or is no longer available.</span>';
                         }
                     }
                 }
@@ -739,6 +743,13 @@
 
         async function submitDisposal(e) {
             e.preventDefault();
+            if (disposalSubmitInProgress) return;
+            const submitButton = document.getElementById('submitDisposalBtn');
+            disposalSubmitInProgress = true;
+            if (submitButton) {
+                submitButton.disabled = true;
+                submitButton.innerHTML = '<span class="loading loading-spinner loading-xs"></span> Sending...';
+            }
             try {
                 const data = {
                     source_type: document.getElementById('sourceType').value,
@@ -758,7 +769,15 @@
                     document.getElementById('newDisposalModal').close();
                     loadStats(); loadDisposals();
                 } else { showToast(res.message || 'Error', 'error'); }
-            } catch (e) { showToast(e.message || 'Error', 'error'); }
+            } catch (e) {
+                showToast(e.message || 'Error', 'error');
+            } finally {
+                disposalSubmitInProgress = false;
+                if (submitButton) {
+                    submitButton.disabled = false;
+                    submitButton.innerHTML = '<i class="fas fa-paper-plane"></i> Submit Request';
+                }
+            }
         }
 
         function openApprovalModal(id) {

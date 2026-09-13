@@ -680,6 +680,7 @@
     <script src="../../js/config/api.js"></script>
     <script src="../../js/config/auth.js?v=20260814-3"></script>
     <script src="../../js/security/role-guard.js" data-allowed-roles="qc_officer,general_manager"></script>
+    <script src="../../js/utils/product-display.js?v=20260912-1"></script>
     <script src="../../js/qc/dashboard.service.js"></script>
     <script src="../../js/qc/expiry.service.js"></script>
 
@@ -853,6 +854,12 @@
                         tbody.innerHTML = products.map(p => {
                             const daysLeft = getDaysUntilExpiry(p.expiry_date);
                             const urgency = getUrgencyClass(daysLeft);
+                            const packageSize = typeof ProductDisplay !== 'undefined'
+                                ? ProductDisplay.size({
+                                    unit_size: p.size_ml || p.unit_size,
+                                    unit_measure: p.unit_measure
+                                })
+                                : [p.size_ml || p.unit_size, p.unit_measure].filter(Boolean).join(' ');
                             const rowClass = daysLeft < 0 ? 'expiry-row-expired'
                                 : daysLeft <= 2 ? 'expiry-row-critical'
                                 : daysLeft <= 7 ? 'expiry-row-warning' : '';
@@ -868,13 +875,38 @@
                             const location = p.location || p.storage_location || 'Warehouse';
                             const productName = (p.product_name || '').toLowerCase();
                             const isFlavored = productName.includes('basta') || productName.includes('chocolate') || productName.includes('flavored') || productName.includes('flavoured');
-                            const canTransform = p.can_transform && !isFlavored;
+                            const hasOpenDisposal = Boolean(p.open_disposal_code);
+                            const canTransform = p.can_transform && !isFlavored && !hasOpenDisposal;
+                            let actionHtml = '';
+                            if (hasOpenDisposal) {
+                                const requestStatus = p.open_disposal_status === 'approved' ? 'Approved' : 'Pending';
+                                actionHtml = `
+                                    <span class="badge badge-warning badge-sm gap-1"
+                                        title="${escapeHtml(p.open_disposal_code)} is already ${requestStatus.toLowerCase()}">
+                                        <i class="fas fa-clock" aria-hidden="true"></i>${requestStatus}
+                                    </span>`;
+                            } else {
+                                actionHtml = `
+                                    ${canTransform ? `
+                                        <button class="btn btn-primary btn-xs" onclick="openTransformModal('${escapeHtml(p.type || 'finished_goods')}', ${p.id})" title="Transform to Yogurt">
+                                            <i class="fas fa-blender"></i>
+                                        </button>
+                                    ` : isFlavored ? `
+                                        <button class="btn btn-ghost btn-xs btn-disabled opacity-40" disabled title="Only plain or white milk can be transformed into yogurt.">
+                                            <i class="fas fa-blender"></i>
+                                        </button>
+                                    ` : ''}
+                                    <button class="btn ${daysLeft < 0 ? 'btn-error' : 'btn-outline btn-error'} btn-xs" onclick="openDisposeModal('${escapeHtml(p.type || 'finished_goods')}', ${p.id})" title="Create disposal request (requires GM approval)">
+                                        <i class="fas fa-trash"></i>
+                                    </button>`;
+                            }
 
                             return `
                                 <tr class="${rowClass} hover">
                                     <td><span class="badge ${urgency.badgeClass} badge-sm">${urgency.label}</span></td>
                                     <td>
                                         <div class="font-semibold text-sm">${escapeHtml(p.product_name || p.type || 'Unknown')}</div>
+                                        ${packageSize ? `<div class="text-xs text-base-content/65">${escapeHtml(packageSize)}</div>` : ''}
                                         <div class="text-xs text-base-content/50 font-mono">${escapeHtml(p.batch_number || '-')}</div>
                                     </td>
                                     <td class="text-right font-semibold">${qty.toLocaleString()} ${escapeHtml(unit)}</td>
@@ -883,18 +915,7 @@
                                     <td class="text-right font-bold ${urgency.textClass}">${daysLeft < 0 ? 'EXPIRED' : daysLeft + 'd'}</td>
                                     <td class="text-center">
                                         <div class="flex justify-center gap-1">
-                                            ${canTransform ? `
-                                                <button class="btn btn-primary btn-xs" onclick="openTransformModal('${escapeHtml(p.type || 'finished_goods')}', ${p.id})" title="Transform to Yogurt">
-                                                    <i class="fas fa-blender"></i>
-                                                </button>
-                                            ` : isFlavored ? `
-                                                <button class="btn btn-ghost btn-xs btn-disabled opacity-40" disabled title="Only plain or white milk can be transformed into yogurt.">
-                                                    <i class="fas fa-blender"></i>
-                                                </button>
-                                            ` : ''}
-                                            <button class="btn ${daysLeft < 0 ? 'btn-error' : 'btn-outline btn-error'} btn-xs" onclick="openDisposeModal('${escapeHtml(p.type || 'finished_goods')}', ${p.id})" title="Create disposal request (requires GM approval)">
-                                                <i class="fas fa-trash"></i>
-                                            </button>
+                                            ${actionHtml}
                                         </div>
                                     </td>
                                 </tr>

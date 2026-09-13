@@ -8,6 +8,7 @@
     <!-- Tailwind CSS + DaisyUI CDN -->
     <!-- Tailwind + DaisyUI (pre-built, no CDN runtime) -->
     <link rel="stylesheet" href="../../css/tailwind.css">
+    <link rel="stylesheet" href="../../css/searchable-product-picker.css?v=20260909-1">
     
     <!-- Inter Font -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -281,14 +282,19 @@
                             <div id="plannedProductionFields" class="sm:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 <div class="form-control sm:col-span-2">
                                     <label class="label py-1">
-                                        <span class="label-text text-sm">Base product / recipe <span class="text-error">*</span></span>
+                                        <span class="label-text text-sm">Search product or recipe <span class="text-error">*</span></span>
                                     </label>
-                                    <select id="plannedRecipeSelect" class="select select-bordered w-full" onchange="handlePlanSelectionChange('recipe')">
+                                    <select id="plannedRecipeSelect" class="select select-bordered w-full"
+                                        data-searchable-product
+                                        data-search-placeholder="Search product name or recipe code…"
+                                        data-search-max-results="20"
+                                        aria-label="Product or recipe"
+                                        onchange="handlePlanSelectionChange('recipe')">
                                         <option value="">Select bulk recipe (liquid)…</option>
                                     </select>
                                     <label class="label py-1">
                                         <span class="label-text-alt text-base-content/50">
-                                            Recipes make bulk liquid (e.g. Chocolate Milk). Bottle sizes (1L, 200ml) are chosen later at packaging.
+                                            Choose the product you plan to make. Bottle sizes are chosen later during packaging.
                                         </span>
                                     </label>
                                     <p id="recipeSkuHint" class="text-xs text-base-content/50 mt-1 hidden"></p>
@@ -489,6 +495,7 @@
     <script src="../../js/config/api.js"></script>
     <script src="../../js/config/auth.js?v=20260814-3"></script>
     <script src="../../js/ui/dialogs.js"></script>
+    <script src="../../js/ui/searchable-product-picker.js?v=20260909-1"></script>
     <script src="../../js/security/role-guard.js" data-allowed-roles="production_staff,general_manager"></script>
     <script>window.PRODUCTION_ACTIVE_PAGE = "requisitions";</script>
     <script src="../../js/production/sidebar.js"></script>
@@ -501,6 +508,7 @@
         let runAutoFillToken = 0;
         let planAutoFillToken = 0;
         let recipes = [];
+        let recipePicker = null;
         let requisitionSubmitInProgress = false;
         
         // Sidebar toggle
@@ -661,13 +669,9 @@
                     for (const [baseName, list] of byBase) {
                         html += `<optgroup label="${escapeHtml(baseName)}">`;
                         list.forEach(r => {
-                            const bulk = r.bulk_yield_liters
-                                ? ` · Standard yield: ${Number(r.bulk_yield_liters)} L`
-                                : '';
-                            const label = r.label
-                                || `${r.recipe_code} — ${r.base_product_name || r.product_name}${bulk}`;
+                            const productName = r.base_product_name || r.product_name || 'Unnamed product';
+                            const label = `${r.recipe_code || 'Recipe'} — ${productName}`;
                             const skuCount = Array.isArray(r.packaging_skus) ? r.packaging_skus.length : 0;
-                            const readiness = skuCount > 0 ? '' : ' · bulk-only';
                             const formulaBlocked = r.formula_ready === false;
                             html += `<option value="${r.id}" ${formulaBlocked ? 'disabled' : ''}
                                 data-bulk-yield="${escapeHtml(r.bulk_yield_liters || '')}"
@@ -675,12 +679,17 @@
                                 data-plan-unit="liters"
                                 data-base-name="${escapeHtml(r.base_product_name || r.product_name || '')}"
                                 data-sku-count="${skuCount}">
-                                ${escapeHtml(label + readiness)}
+                                ${escapeHtml(label + (formulaBlocked ? ' · Needs formula review' : ''))}
                             </option>`;
                         });
                         html += '</optgroup>';
                     }
                     select.innerHTML = html;
+                    recipePicker = SearchableProductPicker.enhance(select, {
+                        placeholder: 'Search product name or recipe code…',
+                        noResultsText: 'No matching product or recipe',
+                        maxResults: 20
+                    });
                 }
             } catch (error) {
                 console.error('Error loading recipes:', error);
@@ -1475,6 +1484,7 @@
                 if (plannedFields) plannedFields.classList.remove('hidden');
                 if (recipeSelect) recipeSelect.disabled = false;
                 if (quantityInput) quantityInput.disabled = false;
+                recipePicker?.refresh();
                 renderItemRows();
                 return;
             }
@@ -1484,6 +1494,7 @@
                 recipeSelect.value = '';
                 recipeSelect.disabled = true;
             }
+            recipePicker?.refresh();
             if (quantityInput) {
                 quantityInput.value = '';
                 quantityInput.disabled = true;
@@ -1531,6 +1542,7 @@
             const plannedQuantity = parseFloat(document.getElementById('plannedQuantity').value) || 0;
             const token = ++planAutoFillToken;
             const recipe = recipes.find(r => String(r.id) === String(recipeId));
+            recipePicker?.refresh();
 
             // Bulk-batch model: plan unit is always liters of liquid
             document.getElementById('plannedYieldUnit').textContent = 'liters';
@@ -1800,12 +1812,15 @@
             planAutoFillToken++;
             document.getElementById('plannedProductionFields').classList.remove('hidden');
             document.getElementById('plannedRecipeSelect').disabled = false;
+            recipePicker?.refresh();
+            recipePicker?.close();
             document.getElementById('plannedQuantity').disabled = false;
             document.getElementById('plannedYieldUnit').textContent = 'liters';
             const qtyHint = document.getElementById('plannedQuantityHint');
             if (qtyHint) qtyHint.textContent = 'Enter the liters the employee actually plans to cook; the recipe standard is reference only.';
             renderItemRows();
             document.getElementById('newRequisitionModal').showModal();
+            window.setTimeout(() => recipePicker?.input?.focus(), 0);
         }
 
         function applyRequisitionUrlDefaults(urlParams) {
@@ -1825,6 +1840,7 @@
                 if (recipe && recipeId && recipe.querySelector(`option[value="${CSS.escape(recipeId)}"]`)) {
                     recipe.value = recipeId;
                     updateRecipeSkuHint();
+                    recipePicker?.refresh();
                 }
                 if (priority) priority.value = 'high';
                 if (neededBy && urlParams.get('needed_by')) neededBy.value = `${urlParams.get('needed_by')}T17:00`;
@@ -2023,6 +2039,16 @@
         async function createRequisition(event) {
             event.preventDefault();
 
+            const recipeSelect = document.getElementById('plannedRecipeSelect');
+            const selectedRecipeOption = recipeSelect?.options[recipeSelect.selectedIndex];
+            const selectedRecipeLabel = String(selectedRecipeOption?.textContent || '').trim();
+            const visibleRecipeText = String(recipePicker?.input?.value || '').trim();
+            if (recipeSelect?.value && recipePicker && visibleRecipeText !== selectedRecipeLabel) {
+                showToast('Choose a product from the search results before continuing', 'error');
+                recipePicker.input.focus();
+                return;
+            }
+
             // Block submit if any unlocked recipe line has no override reason
             let missingOverride = false;
             document.querySelectorAll('#itemsContainer .item-row').forEach(row => {
@@ -2073,6 +2099,11 @@
 
             if (!data.production_run_id && (!data.planned_recipe_id || !data.planned_quantity || parseFloat(data.planned_quantity) <= 0)) {
                 showToast('Choose the recipe and enter the planned finished amount in liters', 'error');
+                if (!data.planned_recipe_id) {
+                    recipePicker?.input?.focus();
+                } else {
+                    document.getElementById('plannedQuantity')?.focus();
+                }
                 return;
             }
             if (!data.production_run_id && parseFloat(data.planned_quantity) > 1000000) {

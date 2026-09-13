@@ -1002,6 +1002,7 @@
     <script src="../../js/config/api.js"></script>
     <script src="../../js/config/auth.js?v=20260814-3"></script>
     <script src="../../js/security/role-guard.js" data-allowed-roles="cashier,general_manager"></script>
+    <script src="../../js/utils/product-display.js?v=20260912-1"></script>
     <script src="../../js/pos/pos.service.js?v=20260912-open-box1"></script>
     <script src="../../js/pos/receipt-printer.js?v=20260909-vat1"></script>
 
@@ -1199,12 +1200,16 @@
         }
 
         function mapApiProduct(p) {
-            const sizeLabel = [p.unit_size, p.unit_measure].filter(Boolean).join(' ').trim();
+            const sizeLabel = typeof ProductDisplay !== 'undefined'
+                ? ProductDisplay.size(p)
+                : [p.unit_size, p.unit_measure].filter(Boolean).join(' ').trim();
             return {
                 id: Number(p.id),
                 code: p.product_code || '',
                 name: p.product_name,
-                variant: p.variant || sizeLabel || '',
+                // The registered SKU size is the cashier-facing package label.
+                // Old free-text variants can be stale after a package-size edit.
+                variant: sizeLabel || p.variant || '',
                 retailPrice: parseFloat(p.selling_price) || parseFloat(p.unit_price) || 0,
                 wholesaleBoxPrice: parseFloat(p.wholesale_box_price) || 0,
                 totalPieces: Number.isFinite(Number(p.retail_available))
@@ -1584,7 +1589,7 @@
                         available
                     ))} available`;
                 const packDetail = saleMode === 'wholesale'
-                    ? `<span class="product-card__pack-detail">${product.piecesPerBox} ${escapeHtml(formatSaleUnit(product.baseUnit))} per ${escapeHtml(formatSaleUnit(product.boxUnit))} · scan outside label</span>`
+                    ? `<span class="product-card__pack-detail">${product.piecesPerBox} ${escapeHtml(pluralizeSaleUnit(product.baseUnit, product.piecesPerBox))} per ${escapeHtml(formatSaleUnit(product.boxUnit))} · scan outside label</span>`
                     : '';
                 const expiryWarning = product.expiring_soon ?
                     `<span class="badge badge-warning badge-xs">Exp: ${product.days_to_expiry}d</span>` : '';

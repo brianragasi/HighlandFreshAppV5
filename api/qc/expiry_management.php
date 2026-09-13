@@ -63,7 +63,7 @@ try {
 
                     $stmt = $db->prepare("
                         SELECT fgi.*,
-                               p.product_name, p.category, p.variant,
+                               p.product_code, p.product_name, p.category, p.variant,
                                p.unit_size, p.unit_measure,
                                COALESCE(p.base_unit, 'piece') as base_unit,
                                pb.batch_code,
@@ -73,14 +73,28 @@ try {
                                fgi.quantity_available as remaining_liters,
                                fgi.quantity_available,
                                COALESCE(fgi.chiller_location, 'FG Warehouse') as location,
+                               open_disposal.disposal_code as open_disposal_code,
+                               open_disposal.status as open_disposal_status,
                                CASE
                                    WHEN p.category IN ('milk', 'pasteurized_milk') THEN true
                                    ELSE false
                                END as can_transform
                         FROM finished_goods_inventory fgi
-                        LEFT JOIN products p ON fgi.product_id = p.id
-                        LEFT JOIN production_batches pb ON fgi.batch_id = pb.id
-                        WHERE fgi.status = 'available'
+                         LEFT JOIN products p ON fgi.product_id = p.id
+                         LEFT JOIN production_batches pb ON fgi.batch_id = pb.id
+                         LEFT JOIN (
+                             SELECT d.source_id, d.disposal_code, d.status
+                             FROM disposals d
+                             INNER JOIN (
+                                 SELECT source_id, MAX(id) AS latest_id
+                                 FROM disposals
+                                 WHERE source_type = 'finished_goods'
+                                   AND status IN ('pending', 'approved')
+                                   AND COALESCE(notes, '') NOT LIKE 'Auto-created from delivery return.%'
+                                 GROUP BY source_id
+                             ) latest_disposal ON latest_disposal.latest_id = d.id
+                         ) open_disposal ON open_disposal.source_id = fgi.id
+                         WHERE fgi.status = 'available'
                           AND fgi.quantity_available > 0
                           AND fgi.expiry_date <= DATE_ADD(CURDATE(), INTERVAL ? DAY)
                         ORDER BY fgi.expiry_date ASC

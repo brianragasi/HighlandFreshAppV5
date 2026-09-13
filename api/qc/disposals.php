@@ -362,6 +362,13 @@ function handleGetRequest($db, $currentUser) {
                 LEFT JOIN storage_tanks st ON rmi.tank_id = st.id
                 WHERE COALESCE(rmi.remaining_liters, rmi.volume_liters, 0) > 0 
                   AND (rmi.status IN ('stored', 'available', 'active', '') OR rmi.status IS NULL)
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM disposals existing_disposal
+                      WHERE existing_disposal.source_type = 'raw_milk'
+                        AND existing_disposal.source_id = rmi.id
+                        AND existing_disposal.status IN ('pending', 'approved')
+                  )
                 ORDER BY rmi.expiry_date ASC, rmi.created_at ASC
                 LIMIT 50
             ");
