@@ -11,6 +11,7 @@ $configSource = file_get_contents($root . '/api/config/config.php');
 $adminDashboard = file_get_contents($root . '/html/admin/dashboard.html');
 $liveMailSync = file_get_contents($root . '/.github/scripts/sync_live_mail_env.py');
 $deployWorkflow = file_get_contents($root . '/.github/workflows/deploy.yml');
+$forcedEmailDeploy = file_get_contents($root . '/.github/scripts/force_deploy_email_files.py');
 
 $checks = [
     'GM approval explains that email is attempted immediately' =>
@@ -84,6 +85,12 @@ $checks = [
         str_contains($deployWorkflow, 'BREVO_API_KEY: ${{ secrets.BREVO_API_KEY }}')
         && str_contains($liveMailSync, 'BREVO_API_KEY = os.environ.get("BREVO_API_KEY", "").strip()')
         && str_contains($liveMailSync, '"MAIL_TRANSPORT": "brevo_api" if BREVO_API_KEY else "smtp"'),
+    'Deployment forces related email files to update and verifies their contents' =>
+        str_contains($deployWorkflow, 'python .github/scripts/force_deploy_email_files.py')
+        && str_contains($forcedEmailDeploy, '"api/config/config.php"')
+        && str_contains($forcedEmailDeploy, '"api/config/mailer.php"')
+        && str_contains($forcedEmailDeploy, 'hashlib.sha256')
+        && str_contains($forcedEmailDeploy, 'client.retrbinary'),
     'Admin email test understands the active HTTPS provider' =>
         str_contains($smtpDiagnostics, "'provider' => 'Brevo HTTPS API'")
         && str_contains($smtpDiagnostics, 'Check the API key and verify the sender in Brevo.')

@@ -6,6 +6,16 @@
  * POST sends one test message to the signed-in GM/Admin's registered email.
  */
 
+// Shared hosts may keep an included configuration file in memory briefly after
+// an FTP deployment. Refresh the two email files before inspecting them so a
+// newly deployed diagnostics page never runs against an older configuration.
+if (function_exists('opcache_invalidate')) {
+    @opcache_invalidate(__DIR__ . '/../config/config.php', true);
+    @opcache_invalidate(__DIR__ . '/../config/mailer.php', true);
+}
+clearstatcache(true, __DIR__ . '/../config/config.php');
+clearstatcache(true, __DIR__ . '/../config/mailer.php');
+
 require_once __DIR__ . '/../bootstrap.php';
 
 $currentUser = Auth::requireRole(['general_manager', 'admin']);

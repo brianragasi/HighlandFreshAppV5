@@ -203,7 +203,18 @@ jobs:
           bye
           LFTP_COMMANDS
 
-      - name: Synchronize live SMTP and customer mailbox settings
+      - name: Force and verify coordinated email files
+        if: >-
+          steps.deploy_primary.outcome == 'success' ||
+          steps.deploy_retry.outcome == 'success' ||
+          steps.deploy_fallback.outcome == 'success'
+        env:
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+        run: python .github/scripts/force_deploy_email_files.py
+
+      - name: Synchronize live email and customer mailbox settings
         if: >-
           steps.deploy_primary.outcome == 'success' ||
           steps.deploy_retry.outcome == 'success' ||
