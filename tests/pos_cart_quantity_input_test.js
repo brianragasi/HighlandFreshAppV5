@@ -46,8 +46,10 @@ assert.match(page, /\.cart-item__name\s*\{[^}]*overflow-wrap:\s*anywhere;[^}]*wh
     'selected product names must wrap instead of being clipped with an ellipsis');
 assert.match(page, /\.pos-cart-footer\s*\{[^}]*max-height:\s*calc\(100% - 15rem\);[^}]*overflow-y:\s*auto;/s,
     'checkout must remain inside the viewport on short desktop screens');
-assert.match(page, /\.pos-cart-panel\s*\{[^}]*flex:\s*0 0 clamp\(26rem, 43%, 31rem\);[^}]*width:\s*clamp\(26rem, 43%, 31rem\);/s,
-    'desktop checkout must receive a practical share of laptop screen width');
+assert.match(page, /\.pos-cart-panel\s*\{[^}]*flex:\s*0 0 clamp\(23rem, 37%, 28rem\);[^}]*width:\s*clamp\(23rem, 37%, 28rem\);/s,
+    'desktop checkout must stay usable without swallowing the product catalog');
+assert.match(page, /@media \(min-width: 1024px\) and \(max-height: 900px\)/,
+    'common laptop heights must use compact checkout spacing');
 assert.match(page, /\.qty-stepper\s*\{[^}]*grid-template-columns:\s*3rem minmax\(4\.5rem, 1fr\) 3rem;[^}]*width:\s*min\(100%, 17rem\);/s,
     'quantity controls must form a large, forgiving control bar');
 assert.match(page, /\.qty-btn\s*\{[^}]*width:\s*3rem;[^}]*height:\s*3rem;/s,
