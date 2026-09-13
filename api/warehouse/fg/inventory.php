@@ -2242,6 +2242,11 @@ function handlePut($db, $action, $currentUser) {
                 && !array_key_exists('pieces', $data)) {
                 Response::error('Enter the physical count', 400);
             }
+            $hasPackCount = array_key_exists('boxes', $data) || array_key_exists('pieces', $data);
+            if ($hasPackCount
+                && (!array_key_exists('boxes', $data) || !array_key_exists('pieces', $data))) {
+                Response::error('Enter both the sealed-box count and the loose-item count', 400);
+            }
 
             $db->beginTransaction();
             try {
@@ -2282,9 +2287,7 @@ function handlePut($db, $action, $currentUser) {
                 }
 
                 $piecesPerBox = max(1, (int)($locked['pieces_per_box'] ?? 1));
-                if (array_key_exists('new_quantity', $data)
-                    && !array_key_exists('boxes', $data)
-                    && !array_key_exists('pieces', $data)) {
+                if (array_key_exists('new_quantity', $data) && !$hasPackCount) {
                     $newTotalPieces = hfParseBusinessInteger(
                         $data['new_quantity'],
                         'Physical count',
@@ -2306,11 +2309,14 @@ function handlePut($db, $action, $currentUser) {
 
                 $oldTotalPieces = fgInventoryEffectiveBaseUnits($locked, $piecesPerBox);
                 $difference = $newTotalPieces - $oldTotalPieces;
-                if ($difference === 0) {
+                $oldBoxes = max(0, (int)($locked['boxes_available'] ?? 0));
+                $oldPieces = max(0, (int)($locked['pieces_available'] ?? 0));
+                $packBalanceChanged = $newBoxes !== $oldBoxes || $newPieces !== $oldPieces;
+                if ($difference === 0 && !$packBalanceChanged) {
                     throw new RuntimeException('The physical count matches the recorded stock; no adjustment is needed');
                 }
 
-                if (!empty($locked['chiller_id'])) {
+                if (!empty($locked['chiller_id']) && $difference !== 0) {
                     $capacityStmt = $db->prepare("
                         SELECT capacity, current_count
                         FROM chiller_locations
@@ -2365,11 +2371,15 @@ function handlePut($db, $action, $currentUser) {
 
                 $differenceSplit = fgInventorySplitBaseToPacks(abs($difference), $piecesPerBox);
                 $auditReason = sprintf(
-                    '%s: %s. Recorded %d; physical count %d; variance %s%d.',
+                    '%s: %s. Recorded %d (%d boxes + %d loose); physical count %d (%d boxes + %d loose); variance %s%d.',
                     $reasonLabels[$reasonCode],
                     $reasonDetails,
                     $oldTotalPieces,
+                    $oldBoxes,
+                    $oldPieces,
                     $newTotalPieces,
+                    $newBoxes,
+                    $newPieces,
                     $difference > 0 ? '+' : '',
                     $difference
                 );
@@ -2409,6 +2419,11 @@ function handlePut($db, $action, $currentUser) {
                     ['quantity' => $oldTotalPieces],
                     [
                         'quantity' => $newTotalPieces,
+                        'boxes_before' => $oldBoxes,
+                        'pieces_before' => $oldPieces,
+                        'boxes_after' => $newBoxes,
+                        'pieces_after' => $newPieces,
+                        'pack_balance_changed' => $packBalanceChanged,
                         'variance' => $difference,
                         'reason_code' => $reasonCode,
                         'reason_details' => $reasonDetails,
@@ -2423,9 +2438,12 @@ function handlePut($db, $action, $currentUser) {
                     'total_quantity' => $newTotalPieces,
                     'display' => formatMultiUnitDisplay($newBoxes, $newPieces, $locked['box_unit'] ?? 'box', $locked['base_unit'] ?? 'piece'),
                     'adjustment' => $difference,
+                    'pack_balance_changed' => $packBalanceChanged,
                     'reason_code' => $reasonCode,
                     'chiller_occupancy' => $chillerOccupancy,
-                ], 'Physical count recorded and inventory balance adjusted');
+                ], $difference === 0
+                    ? 'Physical count recorded and sealed-box balance corrected'
+                    : 'Physical count recorded and inventory balance adjusted');
             } catch (Throwable $e) {
                 if ($db->inTransaction()) {
                     $db->rollBack();

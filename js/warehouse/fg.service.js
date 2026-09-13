@@ -355,15 +355,18 @@ const WarehouseFGService = {
     /**
      * Adjust inventory quantity (physical count discrepancy)
      * @param {number} inventoryId - Inventory item ID
-     * @param {number} physicalCount - Actual base-unit count found on the shelf
+     * @param {number|{boxes:number,pieces:number}} physicalCount - Actual individual total, or exact sealed-box and loose-item counts
      * @param {string} reasonCode - Controlled adjustment reason
      * @param {string} reasonDetails - Required audit explanation
      */
     async adjustInventory(inventoryId, physicalCount, reasonCode, reasonDetails) {
+        const countPayload = typeof physicalCount === 'object' && physicalCount !== null
+            ? { boxes: physicalCount.boxes, pieces: physicalCount.pieces }
+            : { new_quantity: physicalCount };
         return await api.put(`${this.baseUrl}/inventory.php`, {
             action: 'adjust',
             id: inventoryId,
-            new_quantity: physicalCount,
+            ...countPayload,
             reason_code: reasonCode,
             reason_details: reasonDetails
         });

@@ -710,7 +710,7 @@
 
     <!-- Physical count adjustment modal -->
     <dialog id="stockAdjustmentModal" class="modal">
-        <div class="modal-box max-w-lg rounded-xl overflow-hidden p-0">
+        <div class="modal-box max-w-xl max-h-[90vh] rounded-xl overflow-y-auto p-0">
             <div class="p-5 border-b border-[#eef2ef] flex items-start justify-between gap-4">
                 <div>
                     <p class="text-xs font-semibold uppercase tracking-wider text-[#1f7a4d]">Finished Goods count</p>
@@ -736,14 +736,14 @@
                 </div>
 
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <label class="form-control">
+                    <label id="adjustSystemCountControl" class="form-control">
                         <span class="label-text font-medium mb-1">System on hand</span>
-                        <div class="input input-bordered bg-base-200 flex items-center gap-2">
+                        <div class="min-h-12 rounded-lg border border-base-300 bg-base-200 px-4 py-2 flex flex-wrap items-center gap-x-2">
                             <strong id="adjustRecordedCount">0</strong>
                             <span id="adjustRecordedUnit" class="text-base-content/60">units</span>
                         </div>
                     </label>
-                    <label class="form-control">
+                    <label id="adjustIndividualCountFields" class="form-control">
                         <span class="label-text font-medium mb-1">Physical count <span class="text-error">*</span></span>
                         <div class="join w-full">
                             <input id="adjustPhysicalCount" type="number" min="0" max="100000000" step="1"
@@ -751,6 +751,37 @@
                             <span id="adjustPhysicalUnit" class="join-item px-3 border border-base-300 bg-base-200 flex items-center text-sm">units</span>
                         </div>
                     </label>
+                </div>
+
+                <div id="adjustPackedCountFields" class="hidden rounded-lg border border-[#dfe7e2] p-4">
+                    <div class="flex flex-wrap items-start justify-between gap-2 mb-3">
+                        <div>
+                            <p class="font-medium">What is physically on the shelf? <span class="text-error">*</span></p>
+                            <p class="text-xs text-base-content/60 mt-0.5">Count unopened boxes separately from loose items.</p>
+                        </div>
+                        <span id="adjustPackRule" class="badge badge-ghost">—</span>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <label class="form-control">
+                            <span class="label-text font-medium mb-1">Sealed boxes</span>
+                            <div class="join w-full">
+                                <input id="adjustPhysicalBoxes" type="number" min="0" max="100000000" step="1"
+                                    class="input input-bordered join-item w-full" placeholder="Count sealed boxes">
+                                <span id="adjustPhysicalBoxUnit" class="join-item px-3 border border-base-300 bg-base-200 flex items-center text-sm">boxes</span>
+                            </div>
+                        </label>
+                        <label class="form-control">
+                            <span id="adjustLooseCountLabel" class="label-text font-medium mb-1">Loose items</span>
+                            <div class="join w-full">
+                                <input id="adjustPhysicalPieces" type="number" min="0" step="1"
+                                    class="input input-bordered join-item w-full" placeholder="Count loose items">
+                                <span id="adjustPhysicalPieceUnit" class="join-item px-3 border border-base-300 bg-base-200 flex items-center text-sm">items</span>
+                            </div>
+                        </label>
+                    </div>
+                    <div id="adjustPhysicalTotal" class="mt-3 rounded-lg bg-base-200 px-3 py-2 text-sm text-base-content/60">
+                        Enter both counts to calculate the total.
+                    </div>
                 </div>
 
                 <div id="adjustVariance" class="rounded-lg border border-[#dfe7e2] px-3 py-2 text-sm text-base-content/60">
@@ -800,7 +831,7 @@
     <script src="../../../js/security/role-guard.js" data-allowed-roles="warehouse_fg,general_manager"></script>
     <script src="../../../js/utils/units.js?v=20260712"></script>
     <script src="../../../js/utils/product-display.js?v=20260909-sizefix1"></script>
-    <script src="../../../js/warehouse/fg.service.js"></script>
+    <script src="../../../js/warehouse/fg.service.js?v=20260914-packcount1"></script>
 
     <script>
         let inventory = [];
@@ -872,6 +903,47 @@
 
         function getTotalPieces(item) {
             return PackUnits.totalBase(item);
+        }
+
+        function getPiecesPerBox(item) {
+            return Math.max(1, Number.parseInt(item?.pieces_per_box, 10) || 1);
+        }
+
+        function getPackBalance(item) {
+            return {
+                boxes: Math.max(0, Number.parseInt(item?.boxes_available ?? item?.quantity_boxes, 10) || 0),
+                pieces: Math.max(0, Number.parseInt(item?.pieces_available ?? item?.quantity_pieces, 10) || 0)
+            };
+        }
+
+        function formatPackBalance(item, boxes, pieces) {
+            const boxUnit = String(item?.box_unit || 'box').replace(/_/g, ' ');
+            const baseUnit = String(PackUnits.baseUnit(item) || 'item').replace(/_/g, ' ');
+            return `${boxes.toLocaleString()} ${PackUnits.pluralize(boxUnit, boxes)} + ${pieces.toLocaleString()} loose ${PackUnits.pluralize(baseUnit, pieces)}`;
+        }
+
+        function readAdjustmentCount(item) {
+            const piecesPerBox = getPiecesPerBox(item);
+            if (piecesPerBox > 1) {
+                const rawBoxes = document.getElementById('adjustPhysicalBoxes').value.trim();
+                const rawPieces = document.getElementById('adjustPhysicalPieces').value.trim();
+                const boxes = Number(rawBoxes);
+                const pieces = Number(rawPieces);
+                const valid = rawBoxes !== '' && rawPieces !== ''
+                    && Number.isSafeInteger(boxes) && boxes >= 0
+                    && Number.isSafeInteger(pieces) && pieces >= 0 && pieces < piecesPerBox;
+                return { valid, packed: true, boxes, pieces, total: valid ? (boxes * piecesPerBox) + pieces : NaN };
+            }
+
+            const raw = document.getElementById('adjustPhysicalCount').value.trim();
+            const total = Number(raw);
+            return {
+                valid: raw !== '' && Number.isSafeInteger(total) && total >= 0,
+                packed: false,
+                boxes: 0,
+                pieces: total,
+                total
+            };
         }
 
         function getDaysUntilExpiry(item) {
@@ -1487,42 +1559,81 @@
 
             adjustmentItemId = Number(item.id);
             const recorded = getTotalPieces(item);
+            const piecesPerBox = getPiecesPerBox(item);
+            const balance = getPackBalance(item);
             const baseUnit = String(PackUnits.baseUnit(item) || 'unit').replace(/_/g, ' ');
             const unitLabel = PackUnits.pluralize(baseUnit, recorded === 1 ? 1 : 2);
+            const boxUnit = String(item.box_unit || 'box').replace(/_/g, ' ');
+            const packed = piecesPerBox > 1;
             document.getElementById('adjustProduct').textContent = ProductDisplay.name(item);
             document.getElementById('adjustBatch').textContent = item.batch_code || '—';
             document.getElementById('adjustLocation').textContent = item.chiller_name || 'Unassigned';
-            document.getElementById('adjustRecordedCount').textContent = recorded.toLocaleString();
-            document.getElementById('adjustRecordedUnit').textContent = unitLabel;
+            document.getElementById('adjustRecordedCount').textContent = packed
+                ? formatPackBalance(item, balance.boxes, balance.pieces)
+                : recorded.toLocaleString();
+            document.getElementById('adjustRecordedUnit').textContent = packed
+                ? `(${recorded.toLocaleString()} ${unitLabel} total)`
+                : unitLabel;
+            document.getElementById('adjustSystemCountControl').classList.toggle('sm:col-span-2', packed);
+            document.getElementById('adjustIndividualCountFields').classList.toggle('hidden', packed);
+            document.getElementById('adjustPackedCountFields').classList.toggle('hidden', !packed);
+            document.getElementById('adjustPhysicalCount').required = !packed;
+            document.getElementById('adjustPhysicalBoxes').required = packed;
+            document.getElementById('adjustPhysicalPieces').required = packed;
             document.getElementById('adjustPhysicalUnit').textContent = baseUnit;
             document.getElementById('adjustPhysicalCount').value = '';
             document.getElementById('adjustPhysicalCount').placeholder = `Currently ${recorded.toLocaleString()}`;
+            document.getElementById('adjustPhysicalBoxes').value = '';
+            document.getElementById('adjustPhysicalBoxes').placeholder = `Currently ${balance.boxes.toLocaleString()}`;
+            document.getElementById('adjustPhysicalPieces').value = '';
+            document.getElementById('adjustPhysicalPieces').max = String(piecesPerBox - 1);
+            document.getElementById('adjustPhysicalPieces').placeholder = `Currently ${balance.pieces.toLocaleString()}`;
+            document.getElementById('adjustPhysicalBoxUnit').textContent = PackUnits.pluralize(boxUnit, 2);
+            document.getElementById('adjustPhysicalPieceUnit').textContent = PackUnits.pluralize(baseUnit, 2);
+            document.getElementById('adjustLooseCountLabel').textContent = `Loose ${PackUnits.pluralize(baseUnit, 2)}`;
+            document.getElementById('adjustPackRule').textContent = `1 ${boxUnit} = ${piecesPerBox} ${PackUnits.pluralize(baseUnit, piecesPerBox)}`;
             document.getElementById('adjustReasonCode').value = '';
             document.getElementById('adjustReasonDetails').value = '';
             document.getElementById('adjustCountConfirmed').checked = false;
             document.getElementById('adjustmentError').classList.add('hidden');
             updateAdjustmentVariance();
             document.getElementById('stockAdjustmentModal').showModal();
-            setTimeout(() => document.getElementById('adjustPhysicalCount').focus(), 50);
+            setTimeout(() => document.getElementById(packed ? 'adjustPhysicalBoxes' : 'adjustPhysicalCount').focus(), 50);
         }
 
         function updateAdjustmentVariance() {
             const item = inventory.find(row => Number(row.id) === Number(adjustmentItemId));
             const panel = document.getElementById('adjustVariance');
             if (!item || !panel) return;
-            const raw = document.getElementById('adjustPhysicalCount').value.trim();
-            const counted = Number(raw);
+            const count = readAdjustmentCount(item);
+            const counted = count.total;
             const recorded = getTotalPieces(item);
+            const oldBalance = getPackBalance(item);
+            const packChanged = count.packed
+                && (count.boxes !== oldBalance.boxes || count.pieces !== oldBalance.pieces);
             panel.className = 'rounded-lg border px-3 py-2 text-sm';
-            if (raw === '' || !Number.isSafeInteger(counted) || counted < 0) {
+            if (!count.valid) {
                 panel.classList.add('border-[#dfe7e2]', 'text-base-content/60');
-                panel.textContent = 'Enter the physical count to calculate the variance.';
+                panel.textContent = count.packed
+                    ? `Enter whole numbers for both fields. Loose items must be less than ${getPiecesPerBox(item)}.`
+                    : 'Enter the physical count to calculate the variance.';
+                const totalPanel = document.getElementById('adjustPhysicalTotal');
+                totalPanel.textContent = 'Enter both counts to calculate the total.';
                 return;
             }
             const variance = counted - recorded;
-            if (variance === 0) {
+            if (count.packed) {
+                const baseUnit = String(PackUnits.baseUnit(item) || 'unit').replace(/_/g, ' ');
+                document.getElementById('adjustPhysicalTotal').innerHTML = `<strong>${counted.toLocaleString()} ${escapeHtml(PackUnits.pluralize(baseUnit, counted))} total</strong> from ${escapeHtml(formatPackBalance(item, count.boxes, count.pieces))}`;
+            }
+            if (variance === 0 && !packChanged) {
                 panel.classList.add('border-[#dfe7e2]', 'text-base-content/60');
                 panel.textContent = 'No difference — the physical count matches the system.';
+                return;
+            }
+            if (variance === 0 && packChanged) {
+                panel.classList.add('border-warning/50', 'bg-warning/10', 'text-base-content');
+                panel.innerHTML = `<strong>The total is unchanged, but the pack balance is different.</strong><span class="block text-xs mt-0.5 opacity-70">${escapeHtml(formatPackBalance(item, oldBalance.boxes, oldBalance.pieces))} → ${escapeHtml(formatPackBalance(item, count.boxes, count.pieces))}. This changes how many sealed boxes can be sold wholesale.</span>`;
                 return;
             }
             const unit = String(PackUnits.baseUnit(item) || 'unit').replace(/_/g, ' ');
@@ -1535,6 +1646,8 @@
         }
 
         document.getElementById('adjustPhysicalCount').addEventListener('input', updateAdjustmentVariance);
+        document.getElementById('adjustPhysicalBoxes').addEventListener('input', updateAdjustmentVariance);
+        document.getElementById('adjustPhysicalPieces').addEventListener('input', updateAdjustmentVariance);
 
         document.getElementById('stockAdjustmentForm').addEventListener('submit', async (event) => {
             event.preventDefault();
@@ -1542,22 +1655,27 @@
             if (!item) return;
 
             const errorPanel = document.getElementById('adjustmentError');
-            const rawCount = document.getElementById('adjustPhysicalCount').value.trim();
-            const physicalCount = Number(rawCount);
+            const count = readAdjustmentCount(item);
+            const physicalCount = count.total;
             const reasonCode = document.getElementById('adjustReasonCode').value;
             const reasonDetails = document.getElementById('adjustReasonDetails').value.trim();
             const recorded = getTotalPieces(item);
+            const oldBalance = getPackBalance(item);
+            const packChanged = count.packed
+                && (count.boxes !== oldBalance.boxes || count.pieces !== oldBalance.pieces);
             const showError = message => {
                 errorPanel.textContent = message;
                 errorPanel.classList.remove('hidden');
             };
             errorPanel.classList.add('hidden');
 
-            if (rawCount === '' || !Number.isSafeInteger(physicalCount) || physicalCount < 0) {
-                showError('Enter a valid whole-number physical count.');
+            if (!count.valid) {
+                showError(count.packed
+                    ? `Enter valid whole-number box and loose-item counts. Loose items must be from 0 to ${getPiecesPerBox(item) - 1}.`
+                    : 'Enter a valid whole-number physical count.');
                 return;
             }
-            if (physicalCount === recorded) {
+            if (physicalCount === recorded && !packChanged) {
                 showError('The count matches the system, so no adjustment is needed.');
                 return;
             }
@@ -1576,13 +1694,16 @@
             try {
                 const response = await WarehouseFGService.adjustInventory(
                     item.id,
-                    physicalCount,
+                    count.packed ? { boxes: count.boxes, pieces: count.pieces } : physicalCount,
                     reasonCode,
                     reasonDetails
                 );
                 const variance = Number(response.data?.adjustment ?? (physicalCount - recorded));
                 document.getElementById('stockAdjustmentModal').close();
-                showToast(`Stock corrected from ${recorded.toLocaleString()} to ${physicalCount.toLocaleString()} (${variance > 0 ? '+' : ''}${variance.toLocaleString()}).`, 'success');
+                const message = variance === 0 && packChanged
+                    ? `Pack balance corrected to ${formatPackBalance(item, count.boxes, count.pieces)}. Total stock is unchanged.`
+                    : `Stock corrected from ${recorded.toLocaleString()} to ${physicalCount.toLocaleString()} (${variance > 0 ? '+' : ''}${variance.toLocaleString()}).`;
+                showToast(message, 'success');
                 await loadInventory();
             } catch (error) {
                 showError(error.message || 'The stock adjustment could not be recorded.');
