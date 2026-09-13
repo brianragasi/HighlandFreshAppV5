@@ -280,7 +280,7 @@ class Mailer {
             return [
                 'code' => 'smtp_authentication_failed',
                 'summary' => 'The email service rejected the configured login.',
-                'message' => 'The PO is still Approved. The email login was rejected. Ask an administrator to verify the Gmail account and App Password, then retry.',
+                'message' => 'The PO is still Approved. The email login was rejected. Ask an administrator to verify the mailbox address and password, then retry.',
             ];
         }
 

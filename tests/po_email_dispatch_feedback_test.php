@@ -7,6 +7,7 @@ $poApi = file_get_contents($root . '/api/purchasing/purchase_orders.php');
 $poPage = file_get_contents($root . '/html/purchasing/purchase_orders.html');
 $smtpDiagnostics = file_get_contents($root . '/api/admin/smtp_diagnostics.php');
 $mailerSource = file_get_contents($root . '/api/config/mailer.php');
+$configSource = file_get_contents($root . '/api/config/config.php');
 $adminDashboard = file_get_contents($root . '/html/admin/dashboard.html');
 $liveMailSync = file_get_contents($root . '/.github/scripts/sync_live_mail_env.py');
 $deployWorkflow = file_get_contents($root . '/.github/workflows/deploy.yml');
@@ -60,9 +61,11 @@ $checks = [
         && str_contains($mailerSource, "'address' => '127.0.0.1'")
         && str_contains($mailerSource, 'str_ends_with(strtolower((string) $host), \'.googiehost.com\')'),
     'GoogieHost outbound mail uses the provider-assigned authenticated relay' =>
-        str_contains($liveMailSync, '"SMTP_HOST": "cloud3.googiehost.com"')
-        && str_contains($liveMailSync, '"SMTP_PORT": "587"')
-        && str_contains($liveMailSync, '"SMTP_ENCRYPTION": "tls"')
+        str_contains($configSource, "\$defaultSmtpPort = \$isGoogieHost ? 465 : 587;")
+        && str_contains($configSource, "\$defaultSmtpEncryption = \$isGoogieHost ? 'ssl' : 'tls';")
+        && str_contains($liveMailSync, '"SMTP_HOST": "cloud3.googiehost.com"')
+        && str_contains($liveMailSync, '"SMTP_PORT": "465"')
+        && str_contains($liveMailSync, '"SMTP_ENCRYPTION": "ssl"')
         && str_contains($liveMailSync, '"SMTP_USERNAME": "notifications@highlandfresh.whf.bz"')
         && str_contains($liveMailSync, '"SMTP_PASSWORD": GOOGIEHOST_SMTP_PASSWORD'),
     'Customer-order POP3 remains separate from outbound GoogieHost SMTP' =>

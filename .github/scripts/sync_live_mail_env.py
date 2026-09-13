@@ -26,8 +26,8 @@ MAIL_SETTINGS = {
     # GoogieHost support. The Gmail account below remains the separate,
     # read-only POP3 inbox used to import customer purchase orders.
     "SMTP_HOST": "cloud3.googiehost.com",
-    "SMTP_PORT": "587",
-    "SMTP_ENCRYPTION": "tls",
+    "SMTP_PORT": "465",
+    "SMTP_ENCRYPTION": "ssl",
     "SMTP_VERIFY_PEER": "true",
     "SMTP_USERNAME": "notifications@highlandfresh.whf.bz",
     "SMTP_FROM_EMAIL": "notifications@highlandfresh.whf.bz",

@@ -197,8 +197,8 @@ define('RATE_LIMIT_SET_PASSWORD_WINDOW', 900); // 15 minutes in seconds
 // Outbound email / SMTP. GoogieHost requires its account-local authenticated
 // relay; other deployments retain Gmail-compatible defaults.
 $defaultSmtpHost = $isGoogieHost ? 'cloud3.googiehost.com' : 'smtp.gmail.com';
-$defaultSmtpPort = 587;
-$defaultSmtpEncryption = 'tls';
+$defaultSmtpPort = $isGoogieHost ? 465 : 587;
+$defaultSmtpEncryption = $isGoogieHost ? 'ssl' : 'tls';
 $defaultSmtpUsername = $isGoogieHost
     ? 'notifications@highlandfresh.whf.bz'
     : ($isInfinityFree ? 'ragasibrian2@gmail.com' : 'highlandfreshdairy@gmail.com');
