@@ -25,6 +25,31 @@
         .scrollbar-thin::-webkit-scrollbar-thumb { background: oklch(var(--bc) / 0.2); border-radius: 3px; }
         .sidebar-transition { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
 
+        /* Cart scrolling is a frequent POS action, so give it a larger and
+           more visible target than the compact navigation scrollbars. */
+        #cartItems {
+            padding-right: 1rem;
+            scrollbar-color: oklch(var(--bc) / 0.45) oklch(var(--bc) / 0.08);
+            scrollbar-gutter: stable;
+            scrollbar-width: auto;
+        }
+        #cartItems::-webkit-scrollbar { width: 12px; }
+        #cartItems::-webkit-scrollbar-track {
+            background: oklch(var(--bc) / 0.08);
+            border-radius: 999px;
+        }
+        #cartItems::-webkit-scrollbar-thumb {
+            background: oklch(var(--bc) / 0.42);
+            border: 2px solid transparent;
+            border-radius: 999px;
+            background-clip: padding-box;
+        }
+        #cartItems::-webkit-scrollbar-thumb:hover {
+            background: oklch(var(--bc) / 0.62);
+            border: 2px solid transparent;
+            background-clip: padding-box;
+        }
+
         .product-card {
             transition: all 0.2s ease-out;
             cursor: pointer;
@@ -189,6 +214,13 @@
         }
         .cart-item:hover {
             background: oklch(var(--b2) / 0.7);
+        }
+        @keyframes cart-item-confirm {
+            0%, 100% { background: transparent; box-shadow: none; }
+            35% { background: oklch(var(--su) / 0.18); box-shadow: inset 3px 0 0 oklch(var(--su)); }
+        }
+        .cart-item.is-just-updated {
+            animation: cart-item-confirm 500ms ease-out;
         }
         .cart-item__identity {
             grid-area: identity;
@@ -542,6 +574,24 @@
             }
         }
 
+        @media (prefers-reduced-motion: reduce) {
+            .cart-item.is-just-updated {
+                animation: none;
+                background: oklch(var(--su) / 0.18);
+                box-shadow: inset 3px 0 0 oklch(var(--su));
+            }
+        }
+
+        /* Shared notifications default to the top-right. POS exceptions use
+           one top-center alert so the checkout column is never covered. */
+        html body #toastContainer {
+            top: 0.75rem !important;
+            right: auto !important;
+            left: 50% !important;
+            width: min(32rem, calc(100vw - 2rem));
+            transform: translateX(-50%);
+        }
+
         /* Keep a useful amount of the cart visible on common 768px laptops. */
         @media (min-width: 1024px) and (max-height: 820px) {
             .checkout-totals {
@@ -829,10 +879,14 @@
                 <!-- Cart Header -->
                 <div class="p-4 border-b border-base-300 shrink-0">
                     <div class="flex items-center justify-between">
-                        <h2 class="font-bold text-lg flex items-center gap-2">
-                            <i class="fas fa-cart-shopping text-primary"></i>
-                            Current Sale
-                        </h2>
+                        <div class="min-w-0">
+                            <h2 class="font-bold text-lg flex items-center gap-2">
+                                <i class="fas fa-cart-shopping text-primary"></i>
+                                Current Sale
+                            </h2>
+                            <p id="cartActivityStatus" class="text-xs text-base-content/55 mt-0.5 min-h-[1rem] truncate"
+                                role="status" aria-live="polite" aria-atomic="true"></p>
+                        </div>
                         <button class="btn btn-ghost btn-sm text-error" onclick="clearCart()" id="btnClearCart" disabled>
                             <i class="fas fa-trash"></i> Clear
                         </button>
@@ -1109,6 +1163,7 @@
         let cart = [];
         let currentPaymentMethod = 'cash';
         let lastSaleData = null;
+        let cartActivityTimer = null;
         const saleMode = new URLSearchParams(window.location.search).get('mode') === 'wholesale'
             ? 'wholesale'
             : 'retail';
@@ -1206,11 +1261,53 @@
 
         // Toast notification
         function showToast(message, type = 'info') {
+            if (type === 'success' || type === 'info') {
+                showCartActivity(message, type);
+                return;
+            }
+            const container = document.getElementById('toastContainer');
+            // An exception replaces the previous one instead of forming a stack.
+            container.replaceChildren();
             const toast = document.createElement('div');
             toast.className = `alert alert-${type} shadow-lg`;
+            toast.setAttribute('role', 'alert');
             HighlandSecurity.renderToastContent(toast, message);
-            document.getElementById('toastContainer').appendChild(toast);
+            container.appendChild(toast);
             setTimeout(() => toast.remove(), 3000);
+        }
+
+        function showCartActivity(message, type = 'success') {
+            const status = document.getElementById('cartActivityStatus');
+            if (!status) return;
+            clearTimeout(cartActivityTimer);
+            status.textContent = String(message || '');
+            status.className = `text-xs mt-0.5 min-h-[1rem] truncate ${type === 'success' ? 'text-success' : 'text-base-content/60'}`;
+            cartActivityTimer = setTimeout(() => {
+                status.textContent = '';
+                status.className = 'text-xs text-base-content/55 mt-0.5 min-h-[1rem] truncate';
+            }, 1600);
+        }
+
+        function acknowledgeCartChange(productId, message) {
+            const container = document.getElementById('cartItems');
+            const row = [...container.querySelectorAll('.cart-item')]
+                .find(item => Number(item.dataset.productId) === Number(productId));
+            showCartActivity(message, 'success');
+            if (!row) return;
+
+            // Reveal only within the cart scroller; never move the whole page.
+            const rowTop = row.offsetTop;
+            const rowBottom = rowTop + row.offsetHeight;
+            if (rowTop < container.scrollTop) {
+                container.scrollTop = rowTop;
+            } else if (rowBottom > container.scrollTop + container.clientHeight) {
+                container.scrollTop = Math.max(0, rowBottom - container.clientHeight);
+            }
+
+            row.classList.remove('is-just-updated');
+            void row.offsetWidth;
+            row.classList.add('is-just-updated');
+            setTimeout(() => row.isConnected && row.classList.remove('is-just-updated'), 550);
         }
 
         // Initialize
@@ -1386,7 +1483,7 @@
                 input.value = '';
                 renderCart();
                 filterProducts();
-                showToast(`${product.name}: ${label.batchCode} added`, 'success');
+                acknowledgeCartChange(product.id, `${product.name}: ${label.batchCode} added`);
             } catch (error) {
                 const message = error?.response?.data?.message || error?.message || 'Box label could not be read.';
                 showToast(message, 'error');
@@ -1774,7 +1871,8 @@
             }
 
             renderCart();
-            showToast(`Added ${product.name}`, 'success');
+            const updatedItem = cart.find(item => item.id === productId);
+            acknowledgeCartChange(product.id, `${product.name} · quantity ${updatedItem?.quantity || 1}`);
         }
 
         // Render cart
@@ -1836,7 +1934,7 @@
                             </button>
                         </div>`;
                 return `
-                <div class="cart-item">
+                <div class="cart-item" data-product-id="${item.id}">
                     <div class="cart-item__identity">
                         <div class="cart-item__name" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</div>
                         <div class="cart-item__meta">${escapeHtml(variant)} · ${unitMeta}</div>

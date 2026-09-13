@@ -46,6 +46,20 @@ assert.match(page, /\.cart-item__name\s*\{[^}]*overflow-wrap:\s*anywhere;[^}]*wh
     'selected product names must wrap instead of being clipped with an ellipsis');
 assert.match(page, /\.pos-cart-footer\s*\{[^}]*max-height:\s*calc\(100% - 12rem\);[^}]*overflow-y:\s*auto;/s,
     'checkout must remain inside the viewport on short desktop screens');
+assert.match(page, /#cartItems::\-webkit-scrollbar\s*\{\s*width:\s*12px;/,
+    'the cart scrollbar must provide a practical pointer target');
+assert.match(page, /scrollbar-gutter:\s*stable/,
+    'cart content must keep a safety gap beside its scrollbar');
+assert.match(page, /function acknowledgeCartChange\(productId, message\)/,
+    'routine cart changes must use an inline row acknowledgement');
+assert.match(page, /container\.replaceChildren\(\)/,
+    'a new POS exception must replace an existing floating alert instead of stacking');
+assert.match(page, /data-product-id="\$\{item\.id\}"/,
+    'rendered cart rows must expose their product id for targeted feedback');
+assert.doesNotMatch(page, /showToast\(`Added \$\{product\.name\}`/,
+    'ordinary Retail additions must not create floating success notifications');
+assert.match(page, /container\.scrollTop = Math\.max\(0, rowBottom - container\.clientHeight\)/,
+    'the affected cart row must be revealed without scrolling the page');
 
 const scripts = [...page.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)]
     .map(match => match[1])
