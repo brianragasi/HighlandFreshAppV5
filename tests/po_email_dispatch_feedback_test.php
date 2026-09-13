@@ -43,6 +43,10 @@ $checks = [
         !str_contains($gmPage, 'Purchasing can now send it to the supplier.'),
     'SMTP diagnostics require GM/Admin authentication' =>
         str_contains($smtpDiagnostics, "Auth::requireRole(['general_manager', 'admin'])"),
+    'Email readiness check guards against a mixed deployment' =>
+        str_contains($smtpDiagnostics, 'function emailServiceReadiness(): array')
+        && str_contains($smtpDiagnostics, "defined('MAIL_TRANSPORT')")
+        && str_contains($smtpDiagnostics, 'The deployed email transport setting is missing.'),
     'SMTP diagnostics are rate limited and avoid exposing credentials' =>
         str_contains($smtpDiagnostics, 'RateLimiter::check($rateLimitKey, 5, 600)')
         && str_contains($smtpDiagnostics, "'smtp_test:v2:user:'")

@@ -11,17 +11,31 @@ require_once __DIR__ . '/../bootstrap.php';
 $currentUser = Auth::requireRole(['general_manager', 'admin']);
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
-function smtpReadiness(): array
+function emailServiceReadiness(): array
 {
     $issues = [];
-    if (MAIL_TRANSPORT === 'brevo_api') {
+    $transport = defined('MAIL_TRANSPORT') ? strtolower((string) constant('MAIL_TRANSPORT')) : '';
+    $senderEmail = defined('SMTP_FROM_EMAIL') ? trim((string) constant('SMTP_FROM_EMAIL')) : '';
+
+    if ($transport === '') {
+        $issues[] = 'The deployed email transport setting is missing. Redeploy the latest version.';
+        return [
+            'configured' => false,
+            'transport' => 'unknown',
+            'provider' => 'Not configured',
+            'sender_domain' => '',
+            'issues' => $issues,
+        ];
+    }
+
+    if ($transport === 'brevo_api') {
         if (!function_exists('curl_init')) {
             $issues[] = 'PHP cURL is unavailable on this host.';
         }
-        if (BREVO_API_KEY === '') {
+        if (!defined('BREVO_API_KEY') || trim((string) constant('BREVO_API_KEY')) === '') {
             $issues[] = 'BREVO_API_KEY is not configured.';
         }
-        if (!filter_var(SMTP_FROM_EMAIL, FILTER_VALIDATE_EMAIL)) {
+        if (!filter_var($senderEmail, FILTER_VALIDATE_EMAIL)) {
             $issues[] = 'The sender email address is missing or invalid.';
         }
 
@@ -29,11 +43,11 @@ function smtpReadiness(): array
             'configured' => $issues === [],
             'transport' => 'brevo_api',
             'provider' => 'Brevo HTTPS API',
-            'sender_domain' => substr(strrchr(SMTP_FROM_EMAIL, '@') ?: '', 1),
+            'sender_domain' => substr(strrchr($senderEmail, '@') ?: '', 1),
             'issues' => $issues,
         ];
     }
-    if (MAIL_TRANSPORT !== 'smtp') {
+    if ($transport !== 'smtp') {
         $issues[] = 'MAIL_TRANSPORT must be brevo_api or smtp.';
     }
     if (!function_exists('stream_socket_client')) {
@@ -42,22 +56,24 @@ function smtpReadiness(): array
     if (!function_exists('stream_socket_enable_crypto')) {
         $issues[] = 'PHP TLS support is unavailable on this host.';
     }
-    if (!filter_var(SMTP_USERNAME, FILTER_VALIDATE_EMAIL)) {
+    if (!defined('SMTP_USERNAME') || !filter_var(constant('SMTP_USERNAME'), FILTER_VALIDATE_EMAIL)) {
         $issues[] = 'SMTP_USERNAME is missing or invalid.';
     }
-    if (!filter_var(SMTP_FROM_EMAIL, FILTER_VALIDATE_EMAIL)) {
+    if (!filter_var($senderEmail, FILTER_VALIDATE_EMAIL)) {
         $issues[] = 'SMTP_FROM_EMAIL is missing or invalid.';
     }
-    if (SMTP_PASSWORD === '') {
+    if (!defined('SMTP_PASSWORD') || constant('SMTP_PASSWORD') === '') {
         $issues[] = 'SMTP_PASSWORD is not configured.';
     }
-    if (!in_array(SMTP_ENCRYPTION, ['tls', 'ssl'], true)) {
+    $smtpEncryption = defined('SMTP_ENCRYPTION') ? strtolower((string) constant('SMTP_ENCRYPTION')) : '';
+    $smtpPort = defined('SMTP_PORT') ? (int) constant('SMTP_PORT') : 0;
+    if (!in_array($smtpEncryption, ['tls', 'ssl'], true)) {
         $issues[] = 'Production SMTP should use STARTTLS (587) or implicit SSL (465).';
     }
-    if (SMTP_ENCRYPTION === 'tls' && SMTP_PORT !== 587) {
+    if ($smtpEncryption === 'tls' && $smtpPort !== 587) {
         $issues[] = 'STARTTLS should normally use port 587.';
     }
-    if (SMTP_ENCRYPTION === 'ssl' && SMTP_PORT !== 465) {
+    if ($smtpEncryption === 'ssl' && $smtpPort !== 465) {
         $issues[] = 'Implicit SSL should normally use port 465.';
     }
 
@@ -65,11 +81,11 @@ function smtpReadiness(): array
         'configured' => $issues === [],
         'transport' => 'smtp',
         'provider' => 'Authenticated SMTP',
-        'host' => SMTP_HOST,
-        'port' => SMTP_PORT,
-        'encryption' => SMTP_ENCRYPTION,
-        'tls_certificate_verification' => SMTP_VERIFY_PEER,
-        'sender_domain' => substr(strrchr(SMTP_FROM_EMAIL, '@') ?: '', 1),
+        'host' => defined('SMTP_HOST') ? constant('SMTP_HOST') : '',
+        'port' => $smtpPort,
+        'encryption' => $smtpEncryption,
+        'tls_certificate_verification' => defined('SMTP_VERIFY_PEER') && (bool) constant('SMTP_VERIFY_PEER'),
+        'sender_domain' => substr(strrchr($senderEmail, '@') ?: '', 1),
         'issues' => $issues,
     ];
 }
@@ -88,14 +104,19 @@ function safeSmtpTransportDetail(Throwable $error): string
 }
 
 if ($method === 'GET') {
-    Response::success(smtpReadiness(), 'Email configuration inspected. No email was sent.');
+    try {
+        Response::success(emailServiceReadiness(), 'Email configuration inspected. No email was sent.');
+    } catch (Throwable $error) {
+        error_log('Email readiness check failed: ' . $error->getMessage());
+        Response::error('The email readiness check could not finish. Redeploy the latest version and try again.', 424);
+    }
 }
 
 if ($method !== 'POST') {
     Response::error('Method not allowed', 405);
 }
 
-$readiness = smtpReadiness();
+$readiness = emailServiceReadiness();
 if (!$readiness['configured']) {
     Response::error('Email service is not fully configured. Review the reported configuration issues.', 424, $readiness['issues']);
 }
