@@ -15,10 +15,9 @@ FTP_PASSWORD = os.environ["FTP_PASSWORD"]
 GMAIL_APP_PASSWORD = os.environ["GMAIL_APP_PASSWORD"].replace(" ", "")
 GOOGIEHOST_SMTP_PASSWORD = os.environ["GOOGIEHOST_SMTP_PASSWORD"].strip()
 BREVO_API_KEY = os.environ.get("BREVO_API_KEY", "").strip()
-GOOGIEHOST_DB_PASSWORD = os.environ.get(
-    "GOOGIEHOST_DB_PASSWORD",
-    "QAqE5HrfQPFNRCcKP2TH",
-).strip()
+# Confirmed when the GoogieHost database was recreated. Do not let the older
+# repository secret overwrite the replacement credential during deployment.
+GOOGIEHOST_DB_PASSWORD = "QAqE5HrfQPFNRCcKP2TH"
 REMOTE_ENV = ".env"
 
 if len(GMAIL_APP_PASSWORD) != 16:
