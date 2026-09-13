@@ -34,6 +34,18 @@ assert.match(page, /onclick="updateQuantity\(\$\{index\}, -1\)"/,
     'minus control must remain available for touch users');
 assert.match(page, /onclick="updateQuantity\(\$\{index\}, 1\)"/,
     'plus control must remain available for touch users');
+assert.match(page, /class="pos-app-shell[^"]*"/,
+    'desktop POS must use a viewport-constrained application shell');
+assert.match(page, /class="pos-sale-workspace[^"]*"/,
+    'the product and cart workspace must have an independently constrained height');
+assert.match(page, /class="pos-product-scroller[^"]*min-h-0[^"]*overflow-y-auto/,
+    'the product catalog must scroll inside its own pane');
+assert.match(page, /grid-template-areas:\s*"identity remove"\s*"quantity total"/,
+    'cart rows must give the product identity a full row above the controls');
+assert.match(page, /\.cart-item__name\s*\{[^}]*overflow-wrap:\s*anywhere;[^}]*white-space:\s*normal;/s,
+    'selected product names must wrap instead of being clipped with an ellipsis');
+assert.match(page, /\.pos-cart-footer\s*\{[^}]*max-height:\s*calc\(100% - 12rem\);[^}]*overflow-y:\s*auto;/s,
+    'checkout must remain inside the viewport on short desktop screens');
 
 const scripts = [...page.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)]
     .map(match => match[1])
