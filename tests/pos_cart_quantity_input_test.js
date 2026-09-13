@@ -44,8 +44,14 @@ assert.match(page, /grid-template-areas:\s*"identity remove"\s*"quantity total"/
     'cart rows must give the product identity a full row above the controls');
 assert.match(page, /\.cart-item__name\s*\{[^}]*overflow-wrap:\s*anywhere;[^}]*white-space:\s*normal;/s,
     'selected product names must wrap instead of being clipped with an ellipsis');
-assert.match(page, /\.pos-cart-footer\s*\{[^}]*max-height:\s*calc\(100% - 12rem\);[^}]*overflow-y:\s*auto;/s,
+assert.match(page, /\.pos-cart-footer\s*\{[^}]*max-height:\s*calc\(100% - 15rem\);[^}]*overflow-y:\s*auto;/s,
     'checkout must remain inside the viewport on short desktop screens');
+assert.match(page, /\.pos-cart-panel\s*\{[^}]*flex:\s*0 0 clamp\(26rem, 43%, 31rem\);[^}]*width:\s*clamp\(26rem, 43%, 31rem\);/s,
+    'desktop checkout must receive a practical share of laptop screen width');
+assert.match(page, /\.qty-stepper\s*\{[^}]*grid-template-columns:\s*3rem minmax\(4\.5rem, 1fr\) 3rem;[^}]*width:\s*min\(100%, 17rem\);/s,
+    'quantity controls must form a large, forgiving control bar');
+assert.match(page, /\.qty-btn\s*\{[^}]*width:\s*3rem;[^}]*height:\s*3rem;/s,
+    'quantity buttons must provide 48px pointer targets');
 assert.match(page, /#cartItems::\-webkit-scrollbar\s*\{\s*width:\s*12px;/,
     'the cart scrollbar must provide a practical pointer target');
 assert.match(page, /scrollbar-gutter:\s*stable/,
