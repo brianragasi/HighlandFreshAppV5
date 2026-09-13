@@ -45,5 +45,12 @@ try {
         'success' => false,
         'category' => $category,
         'driver_code' => $driverCode,
+        'loaded_host' => defined('DB_HOST') ? DB_HOST : null,
+        'loaded_database' => defined('DB_NAME') ? DB_NAME : null,
+        'loaded_user' => defined('DB_USER') ? DB_USER : null,
+        'password_length' => defined('DB_PASS') ? strlen(DB_PASS) : null,
+        'confirmed_password_loaded' => defined('DB_PASS')
+            ? hash_equals(hash('sha256', 'QAqE5HrfQPFNRCcKP2TH'), hash('sha256', DB_PASS))
+            : false,
     ]);
 }
