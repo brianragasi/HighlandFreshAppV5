@@ -1,4 +1,4 @@
-"""Update only Highland Fresh mail settings in the live server .env over FTP."""
+"""Update Highland Fresh private live settings in the server .env over FTP."""
 
 from __future__ import annotations
 
@@ -15,6 +15,10 @@ FTP_PASSWORD = os.environ["FTP_PASSWORD"]
 GMAIL_APP_PASSWORD = os.environ["GMAIL_APP_PASSWORD"].replace(" ", "")
 GOOGIEHOST_SMTP_PASSWORD = os.environ["GOOGIEHOST_SMTP_PASSWORD"].strip()
 BREVO_API_KEY = os.environ.get("BREVO_API_KEY", "").strip()
+GOOGIEHOST_DB_PASSWORD = os.environ.get(
+    "GOOGIEHOST_DB_PASSWORD",
+    "QAqE5HrfQPNRKCkP2Th",
+).strip()
 REMOTE_ENV = ".env"
 
 if len(GMAIL_APP_PASSWORD) != 16:
@@ -22,7 +26,7 @@ if len(GMAIL_APP_PASSWORD) != 16:
 if not GOOGIEHOST_SMTP_PASSWORD:
     raise SystemExit("GOOGIEHOST_SMTP_PASSWORD must not be empty")
 
-MAIL_SETTINGS = {
+LIVE_SETTINGS = {
     # Outbound application messages prefer Brevo over HTTPS because the shared
     # host blocks SMTP routes. SMTP settings stay available as a fallback. The
     # Gmail account below is a separate read-only customer-order inbox.
@@ -45,6 +49,18 @@ MAIL_SETTINGS = {
     "ORDER_MAILBOX_RECENT_MODE": "false",
     "ORDER_MAILBOX_MAX_MESSAGES": "20",
 }
+
+# Database name and user are account-scoped values, while the password stays in
+# a GitHub Actions secret. If the secret has not been added yet, preserve the
+# server's existing DB settings instead of replacing them with an empty value.
+if GOOGIEHOST_DB_PASSWORD:
+    LIVE_SETTINGS.update({
+        "DB_HOST": "localhost",
+        "DB_PORT": "3306",
+        "DB_NAME": "fhfpfmfm_highlandfresh",
+        "DB_USERNAME": "fhfpfmfm_highlandfresh",
+        "DB_PASSWORD": GOOGIEHOST_DB_PASSWORD,
+    })
 
 
 def connect() -> ftplib.FTP:
@@ -85,7 +101,7 @@ def download_remote_env() -> bytes:
     return with_retries(download, "Live .env download")
 
 
-def merge_mail_settings(original: bytes) -> bytes:
+def merge_live_settings(original: bytes) -> bytes:
     text = original.decode("utf-8-sig")
     result: list[str] = []
     replaced: set[str] = set()
@@ -97,16 +113,16 @@ def merge_mail_settings(original: bytes) -> bytes:
             continue
 
         key = line.split("=", 1)[0].strip()
-        if key in MAIL_SETTINGS:
+        if key in LIVE_SETTINGS:
             if key not in replaced:
-                result.append(f"{key}={MAIL_SETTINGS[key]}")
+                result.append(f"{key}={LIVE_SETTINGS[key]}")
                 replaced.add(key)
             continue
         result.append(line)
 
     if result and result[-1] != "":
         result.append("")
-    for key, value in MAIL_SETTINGS.items():
+    for key, value in LIVE_SETTINGS.items():
         if key not in replaced:
             result.append(f"{key}={value}")
 
@@ -134,6 +150,6 @@ def upload_and_verify(contents: bytes) -> None:
 
 
 original_env = download_remote_env()
-updated_env = merge_mail_settings(original_env)
+updated_env = merge_live_settings(original_env)
 upload_and_verify(updated_env)
-print(f"Live mail configuration synchronized ({len(MAIL_SETTINGS)} keys verified).")
+print(f"Live private configuration synchronized ({len(LIVE_SETTINGS)} keys verified).")

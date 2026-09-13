@@ -45,12 +45,8 @@
         {
             title: 'Production Flow',
             items: [
-                { id: 'requisitions', label: '1 Request Materials', icon: 'fa-clipboard-list', href: 'requisitions.html', badgeId: 'pendingReqsBadge', badgeClass: 'badge-warning' },
-                { id: 'workbench', label: '2 Active Runs', icon: 'fa-screwdriver-wrench', href: 'run-workbench.html', badgeId: 'activeRunsBadge', badgeClass: 'badge-warning' },
-                { id: 'ccp', label: '3 CCP Logs', icon: 'fa-thermometer-half', href: 'run-workbench.html?panel=ccp', badgeId: 'ccpAlertsBadge', badgeClass: 'badge-error' },
-                { id: 'processing', label: '4 Product Processing', icon: 'fa-stream', href: 'run-workbench.html?panel=stages' },
-                { id: 'byproducts', label: '5 Waste & Byproducts', icon: 'fa-recycle', href: 'byproducts.html' },
-                { id: 'qc_handoff', label: '6 Finish & Send to QC', icon: 'fa-clipboard-check', href: 'run-workbench.html?panel=reconcile' },
+                { id: 'requisitions', label: 'Request Materials', icon: 'fa-clipboard-list', href: 'requisitions.html', badgeId: 'pendingReqsBadge', badgeClass: 'badge-warning' },
+                { id: 'workbench', label: 'Active Production', icon: 'fa-screwdriver-wrench', href: 'run-workbench.html', badgeId: 'activeRunsBadge', badgeClass: 'badge-warning' },
             ],
         },
         {
@@ -58,6 +54,7 @@
             items: [
                 { id: 'batches', label: 'All Batches', icon: 'fa-box', href: 'batches.html' },
                 { id: 'pasteurization', label: 'Pasteurization History', icon: 'fa-fire-alt', href: 'pasteurization.html', badgeId: 'pasteurizationBadge', badgeClass: 'badge-info' },
+                { id: 'byproducts', label: 'Waste & Byproducts', icon: 'fa-recycle', href: 'byproducts.html' },
                 { id: 'yield_tracking', label: 'Yield Tracking', icon: 'fa-chart-line', href: 'yield-tracking.html' },
                 { id: 'reconciliation', label: 'Reconciliation', icon: 'fa-balance-scale', href: 'reconciliation.html' },
                 { id: 'recipes', label: 'Recipes', icon: 'fa-book', href: 'recipes.html' },

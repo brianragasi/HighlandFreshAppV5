@@ -137,15 +137,9 @@
                             <i class="fas fa-clipboard-list"></i> Request Materials
                         </a>
                     </div>
-                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                        <p class="text-xs text-base-content/50">
-                            Guided wizard keeps steps in order. Unlock Free mode only if you need to jump around.
-                        </p>
-                        <label class="label cursor-pointer gap-2 justify-start py-0">
-                            <span class="label-text text-sm font-medium">Wizard mode</span>
-                            <input type="checkbox" id="wizardModeToggle" class="toggle toggle-primary" checked>
-                        </label>
-                    </div>
+                    <p class="text-xs text-base-content/50">
+                        The correct step opens automatically. Record only what physically happened.
+                    </p>
                 </div>
             </div>
 
@@ -190,7 +184,7 @@
                         </div>
 
                         <!-- Production stage strip -->
-                        <ul class="steps steps-horizontal w-full text-xs mt-4" id="wbStages">
+                        <ul class="steps steps-horizontal w-full text-xs mt-4 hidden" id="wbStages">
                             <li class="step" data-stage="in_progress">Start</li>
                             <li class="step" data-stage="pasteurization">Past.</li>
                             <li class="step" data-stage="processing">Process</li>
@@ -222,7 +216,7 @@
                         <p class="font-semibold truncate leading-tight" id="nextStepTitle">—</p>
                         <p class="text-xs text-base-content/60 truncate leading-tight" id="nextStepDetail">—</p>
                     </div>
-                    <button type="button" class="btn btn-sm btn-primary shrink-0" id="nextStepBtn" onclick="doPrimaryAction()">Continue</button>
+                    <button type="button" class="btn btn-sm btn-primary shrink-0 hidden" id="nextStepBtn" onclick="doPrimaryAction()">Continue</button>
                 </div>
 
                 <!-- Lock notice -->
@@ -233,12 +227,12 @@
                 </div>
 
                 <!-- Panel nav (mobile horizontal scroll) -->
-                <div class="flex gap-2 overflow-x-auto pb-1" id="panelNav">
+                <div class="hidden" id="panelNav">
                     <button type="button" class="btn btn-sm panel-btn active" data-panel="overview" onclick="showPanel('overview')">1 · Volume</button>
-                    <button type="button" class="btn btn-sm panel-btn" data-panel="ccp" onclick="showPanel('ccp')">2 · CCP</button>
-                    <button type="button" class="btn btn-sm panel-btn" data-panel="stages" onclick="showPanel('stages')">3 · Process &amp; losses</button>
-                    <button type="button" class="btn btn-sm panel-btn" data-panel="yield" onclick="showPanel('yield')">4 · Yield</button>
-                    <button type="button" class="btn btn-sm panel-btn" data-panel="reconcile" onclick="showPanel('reconcile')">5 · Finish</button>
+                    <button type="button" class="btn btn-sm panel-btn" data-panel="ccp" onclick="showPanel('ccp')">Temperature</button>
+                    <button type="button" class="btn btn-sm panel-btn" data-panel="stages" onclick="showPanel('stages')">2 · Make product</button>
+                    <button type="button" class="btn btn-sm panel-btn" data-panel="yield" onclick="showPanel('yield')">3 · Count output</button>
+                    <button type="button" class="btn btn-sm panel-btn" data-panel="reconcile" onclick="showPanel('reconcile')">4 · Finish</button>
                 </div>
 
                 <!-- Panels -->
@@ -250,9 +244,7 @@
                                     <i class="fas fa-tint text-info"></i> Starting milk volume
                                 </h3>
                                 <p class="text-sm text-base-content/60 max-w-xl">
-                                    <strong>Initial volume</strong> is how much milk this run starts with.
-                                    The system uses it to track losses, net yield, and packaging estimates.
-                                    It should match the milk already planned / issued for this run — not a second guess.
+                                    This is the milk Warehouse already issued. Change it only if the actual amount in front of you is different.
                                 </p>
                             </div>
                             <div class="badge badge-info badge-outline badge-lg gap-1 shrink-0" id="volumeSourceBadge">—</div>
@@ -266,7 +258,7 @@
                                     <p class="text-2xl font-bold" id="suggestedVolumeDisplay">—</p>
                                     <p class="text-sm text-base-content/60" id="suggestedVolumeExplain">—</p>
                                 </div>
-                                <button type="button" class="btn btn-info touch-btn gap-2" id="useSuggestedBtn" onclick="useSuggestedVolume()">
+                                <button type="button" class="btn btn-info touch-btn gap-2 hidden" id="useSuggestedBtn" onclick="useSuggestedVolume()">
                                     <i class="fas fa-magic"></i> Use this volume
                                 </button>
                             </div>
@@ -290,7 +282,7 @@
                                 </label>
                             </div>
                             <div class="flex flex-col sm:flex-row gap-2 lg:col-span-2">
-                                <button class="btn btn-outline touch-btn gap-2 flex-1" onclick="saveVolume()">
+                                <button class="btn btn-outline touch-btn gap-2 flex-1 hidden" onclick="saveVolume()">
                                     <i class="fas fa-save"></i> Save volume only
                                 </button>
                                 <button class="btn btn-success touch-btn gap-2 flex-1" id="startRunBtn" onclick="startRun()">
@@ -328,9 +320,10 @@
                                 </select>
                             </div>
                             <div class="form-control" id="ccpTempGroup">
-                                <label class="label py-1"><span class="label-text">Temperature (°C)</span></label>
+                                <label class="label py-1"><span class="label-text" id="ccpTempLabel">Temperature (°C)</span></label>
                                 <input type="number" id="ccpTemp" class="input input-bordered input-lg font-bold"
                                     step="0.1" min="-20" max="150" data-allow-negative placeholder="75">
+                                <label class="label py-1"><span class="label-text-alt text-base-content/60" id="ccpTempHelp">Enter the temperature you measured now.</span></label>
                             </div>
                             <div class="form-control hidden" id="ccpPsiGroup"></div>
                             <div class="form-control" id="ccpHoldGroup">
@@ -340,7 +333,7 @@
                             </div>
                         </div>
                         <button id="recordCcpBtn" class="btn btn-error touch-btn gap-2" onclick="submitCcp()"><i class="fas fa-plus"></i> Record temperature</button>
-                        <a href="#" id="ccpFullLink" class="link link-primary text-sm">Open optional detailed checks →</a>
+                        <a href="#" id="ccpFullLink" class="link link-primary text-sm hidden">Open optional detailed checks →</a>
                     </div>
                 </div>
 
@@ -360,12 +353,10 @@
                     <div class="card-body p-5 space-y-5">
                         <div>
                             <h3 class="card-title text-base mb-1">
-                                <i class="fas fa-stream text-info"></i> Process &amp; losses
+                                <i class="fas fa-stream text-info"></i> Make the product
                             </h3>
                             <p class="text-sm text-base-content/60 max-w-2xl">
-                                This is <strong>not</strong> random buttons. You mark where the batch is on the floor
-                                (one step forward at a time). <strong>Losses are not auto-calculated</strong> —
-                                if milk was lost (evaporation, spillage, sampling), record it below so yield stays honest.
+                                Finish the step shown below, then move forward. If milk was actually lost, record it under the optional loss section.
                             </p>
                         </div>
 
@@ -421,7 +412,9 @@
                         </div>
 
                         <!-- Record loss HERE (this is the calculation input) -->
-                        <div class="rounded-2xl border border-warning/40 bg-warning/5 p-4 space-y-3">
+                        <details class="rounded-2xl border border-warning/40 bg-warning/5 p-4">
+                            <summary class="font-semibold cursor-pointer select-none">Was any milk lost? Record it here</summary>
+                            <div class="space-y-3 mt-3">
                             <div class="flex items-start gap-2">
                                 <i class="fas fa-exclamation-triangle text-warning mt-1"></i>
                                 <div>
@@ -467,7 +460,8 @@
                                 <i class="fas fa-plus"></i> Add loss &amp; recalculate yield
                             </button>
                             <div id="lossList" class="text-sm space-y-1 pt-1"></div>
-                        </div>
+                            </div>
+                        </details>
                     </div>
                 </div>
 
@@ -611,7 +605,8 @@
         let lossSubmissionInFlight = false;
         let completionSubmissionInFlight = false;
         let wizardState = null;
-        let wizardMode = localStorage.getItem('hf_wizard_mode') !== '0'; // default ON
+        // Production staff always follow the safe guided path. There is no second mode to choose.
+        let wizardMode = true;
         let currentPanel = 'overview';
 
         /** Keep main content clear of the fixed sticky footer */
@@ -665,35 +660,17 @@
 
             document.getElementById('ccpType').addEventListener('change', onCcpTypeChange);
 
-            const wizToggle = document.getElementById('wizardModeToggle');
-            if (wizToggle) {
-                wizToggle.checked = wizardMode;
-                wizToggle.addEventListener('change', (e) => {
-                    wizardMode = !!e.target.checked;
-                    localStorage.setItem('hf_wizard_mode', wizardMode ? '1' : '0');
-                    if (wb) {
-                        renderWizard();
-                        applyPanelLocks();
-                        updateStageGates();
-                        if (wizardMode) goToCurrentWizardStep();
-                        showToast(wizardMode ? 'Wizard mode ON — steps locked in order' : 'Free mode — all panels open', 'info');
-                    }
-                });
-            }
-
-            await loadRunList();
+            const runLists = await loadRunList();
             const params = new URLSearchParams(window.location.search);
             const pre = params.get('run_id');
             const panel = params.get('panel');
-            const forceFree = params.get('free') === '1';
             const validPanels = ['overview', 'ccp', 'stages', 'yield', 'reconcile'];
-            if (forceFree) {
-                wizardMode = false;
-                localStorage.setItem('hf_wizard_mode', '0');
-                if (wizToggle) wizToggle.checked = false;
-            }
             if (pre) {
                 document.getElementById('runSelector').value = pre;
+                await onRunPicked();
+                if (validPanels.includes(panel)) showPanel(panel);
+            } else if (runLists.active.length === 1) {
+                document.getElementById('runSelector').value = String(runLists.active[0].id);
                 await onRunPicked();
                 if (validPanels.includes(panel)) showPanel(panel);
             } else if (validPanels.includes(panel)) {
@@ -757,9 +734,11 @@
                         ProductionSidebar.showBadge('conversionsBadge', convRes.data.data.pending || 0);
                     }
                 } catch (e) { /* optional */ }
+                return { active, list };
             } catch (e) {
                 sel.innerHTML = '<option value="">Failed to load runs</option>';
                 showToast(e.message || 'Failed to load runs', 'error');
+                return { active: [], list: [] };
             }
         }
 
@@ -1072,18 +1051,9 @@
                 }`;
             }
 
-            // Prefer wizard current step messaging when in wizard mode
             let title = step.title;
             let detail = step.detail;
             let cta = step.cta;
-            if (wizardMode && wizardState && !wizardState.allDone) {
-                const ws = wizardState.steps[wizardState.currentIndex];
-                if (ws) {
-                    title = `Step ${ws.number}: ${ws.title}`;
-                    detail = ws.description;
-                    cta = ws.done ? 'Continue' : (ws.id === 'complete' ? 'Complete run' : 'Do this step');
-                }
-            }
             if (wizardState?.allDone || wb.run.status === 'completed') {
                 title = 'Run complete';
                 detail = 'This run is finished. QC can verify it and release it to Finished Goods.';
@@ -1111,7 +1081,7 @@
                     document.getElementById('completeRunBtn')?.focus();
                 };
             } else {
-                document.getElementById('stickyLabel').textContent = wizardMode ? 'Wizard · next action' : 'Next step';
+                document.getElementById('stickyLabel').textContent = 'Do this next';
                 document.getElementById('stickyTitle').textContent = title;
                 sbtn.className = `btn btn-md min-h-11 gap-2 shrink-0 ${tones.btn}`;
                 sbtn.innerHTML = `${cta} <i class="fas fa-arrow-right"></i>`;
@@ -1311,6 +1281,18 @@
             document.getElementById('ccpPsiGroup').classList.toggle('hidden', t !== 'homogenization');
             document.getElementById('ccpTempGroup').classList.toggle('hidden', t === 'homogenization');
             document.getElementById('ccpHoldGroup').classList.toggle('hidden', t !== 'pasteurization');
+            const label = document.getElementById('ccpTempLabel');
+            const help = document.getElementById('ccpTempHelp');
+            const input = document.getElementById('ccpTemp');
+            if (t === 'cooling') {
+                if (label) label.textContent = 'Cooling temperature — must be 4°C or lower';
+                if (help) help.textContent = 'Enter the temperature measured after cooling. Do not copy the earlier heating temperature.';
+                if (input) input.placeholder = 'e.g. 4';
+            } else {
+                if (label) label.textContent = 'Heating temperature (°C)';
+                if (help) help.textContent = 'Enter the temperature measured after heating.';
+                if (input) input.placeholder = 'e.g. 75';
+            }
         }
 
         async function submitCcp() {
@@ -1326,13 +1308,33 @@
                 payload.pressure_psi = Number(document.getElementById('ccpPsi').value);
                 if (!payload.pressure_psi) { showToast('Enter pressure', 'warning'); return; }
             } else {
-                payload.temperature = Number(document.getElementById('ccpTemp').value);
+                const tempInput = document.getElementById('ccpTemp');
+                const enteredTemperature = String(tempInput?.value || '').trim();
+                if (!enteredTemperature) {
+                    showToast('Enter the temperature you measured', 'warning');
+                    tempInput?.focus();
+                    return;
+                }
+                payload.temperature = Number(enteredTemperature);
                 if (Number.isNaN(payload.temperature)) { showToast('Enter temperature', 'warning'); return; }
+                const priorPasteurization = ProductionRunFlow.latestCcpByType(wb?.run?.ccp_logs || []).pasteurization;
+                const sourceHeatValue = wb?.run?.source_pasteurization_temp ?? priorPasteurization?.temperature;
+                const sourceHeat = sourceHeatValue === null || sourceHeatValue === undefined || sourceHeatValue === ''
+                    ? NaN
+                    : Number(sourceHeatValue);
+                if (checkType === 'cooling' && Number.isFinite(sourceHeat) && Math.abs(payload.temperature - sourceHeat) < 0.01) {
+                    showToast(`${payload.temperature}°C is the earlier heating temperature. Enter the actual cooled temperature (4°C or lower).`, 'warning');
+                    tempInput?.focus();
+                    tempInput?.select();
+                    return;
+                }
             }
             try {
                 const r = await ProductionService.recordCCPCheck(payload);
                 if (r.success === false) throw new Error(r.message || 'CCP failed');
                 showToast(r.message || 'CCP recorded', r.data?.status === 'fail' ? 'error' : 'success');
+                const tempInput = document.getElementById('ccpTemp');
+                if (tempInput) tempInput.value = '';
                 await refreshAll(); // auto-advances wizard to next unlocked step
             } catch (e) {
                 showToast(e.message || 'Failed to log CCP', 'error');

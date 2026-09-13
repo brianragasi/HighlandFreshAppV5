@@ -134,11 +134,11 @@ if ($isAzure) {
     define('DB_PORT', (int) envOrDefault('DB_PORT', 3306));
     define('DB_SSL_CERT', null);
 } elseif ($isGoogieHost) {
-    // GoogieHost serves PHP and MySQL from the same hosting account. Keep the
-    // account-specific database name, user, and password in public_html/.env.
+    // GoogieHost serves PHP and MySQL from the same hosting account. The
+    // database password remains in public_html/.env / the deployment secret.
     define('DB_HOST', envOrDefault('DB_HOST', 'localhost'));
-    define('DB_NAME', envOrDefault('DB_NAME', ''));
-    define('DB_USER', envOrDefault('DB_USERNAME', ''));
+    define('DB_NAME', envOrDefault('DB_NAME', 'fhfpfmfm_highlandfresh'));
+    define('DB_USER', envOrDefault('DB_USERNAME', 'fhfpfmfm_highlandfresh'));
     define('DB_PASS', envOrDefault('DB_PASSWORD', ''));
     define('DB_PORT', (int) envOrDefault('DB_PORT', 3306));
     define('DB_SSL_CERT', null);
