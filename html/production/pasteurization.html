@@ -64,7 +64,7 @@
                 </div>
             </div>
             <div class="flex-none flex items-center gap-2">
-                <button class="btn btn-primary btn-sm" onclick="document.getElementById('newPastModal').showModal()">
+                <button id="newPasteurizationBtn" class="btn btn-primary btn-sm" onclick="document.getElementById('newPastModal').showModal()">
                     <i class="fas fa-plus"></i>
                     <span class="hidden sm:inline">New Pasteurization</span>
                 </button>
@@ -82,7 +82,7 @@
         <main class="flex-1 p-4 lg:p-6">
 
             <!-- Info Banner -->
-            <div class="alert alert-info mb-6">
+            <div id="processInfoBanner" class="alert alert-info mb-6">
                 <i class="fas fa-info-circle text-lg"></i>
                 <div>
                     <h3 class="font-bold">Pasteurization Process</h3>
@@ -92,7 +92,7 @@
             </div>
 
             <!-- Stats Cards -->
-            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <div id="pasteurizationStats" class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                 <!-- Available Raw Milk -->
                 <div class="card bg-base-100 border border-base-300">
                     <div class="card-body p-4">
@@ -155,7 +155,7 @@
             </div>
 
             <!-- Pasteurization Runs Table -->
-            <div class="card bg-base-100 border border-base-300">
+            <div id="pasteurizationHistory" class="card bg-base-100 border border-base-300">
                 <div class="card-body">
                     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
                         <h3 class="card-title text-base">
@@ -502,59 +502,45 @@
             }
         }
 
-        // V4.0 — when arrived from a fulfilled yogurt requisition via the
-        // next-step banner, show a small context strip AND a clear
-        // "click to start" card. The card shows the pre-filled value
-        // so the user can verify it before clicking. The auto-open
-        // approach was failing silently in some browser conditions
-        // (the modal element wasn't ready in time, or the auth check
-        // redirected before the IIFE completed), so we use an explicit
-        // user-driven click instead. The user still gets one click
-        // total: requisition → "Go to Pasteurization" → "Start".
+        // A requisition handoff is a guided task, not a dashboard. Show one
+        // decision: pasteurize its remaining raw milk, or continue when that
+        // exact requisition has already been pasteurized.
         let fromReqContext = null;
         const fromReqId = new URLSearchParams(window.location.search).get('from_requisition');
+
+        function productionStartUrl(requisition) {
+            const url = new URL('batches.html', window.location.href);
+            url.searchParams.set('action', 'new');
+            url.searchParams.set('req_id', requisition.id);
+            if (requisition.planned_recipe_id) url.searchParams.set('recipe_id', requisition.planned_recipe_id);
+            if (requisition.planned_quantity) url.searchParams.set('planned_quantity', requisition.planned_quantity);
+            if (requisition.requisition_code) url.searchParams.set('req_code', requisition.requisition_code);
+            return url.pathname + url.search;
+        }
+
+        function useGuidedLayout() {
+            ['processInfoBanner', 'pasteurizationStats', 'pasteurizationHistory'].forEach(id => {
+                document.getElementById(id)?.classList.add('hidden');
+            });
+            document.getElementById('newPasteurizationBtn')?.classList.add('hidden');
+        }
+
         (async () => {
             if (!fromReqId) return;
+            useGuidedLayout();
             try {
-                const res = await api.get('production/requisitions.php', { params: { id: fromReqId } });
+                const [res, rawResponse] = await Promise.all([
+                    api.get('production/requisitions.php', { params: { id: fromReqId } }),
+                    api.get(PAST_API, { params: { action: 'available_raw_milk', req_id: fromReqId } })
+                ]);
                 if (res.success && res.data) {
                     const r = res.data;
                     fromReqContext = r;
                     activePasteurizationReqId = r.id;
-
-                    // Context strip — what requisition this is from.
-                    const banner = document.createElement('div');
-                    banner.className = 'alert alert-info mb-4';
-                    banner.innerHTML = `
-                        <i class="fas fa-info-circle text-lg"></i>
-                        <div class="flex-1">
-                            <div class="font-semibold">From requisition ${escapeHtml(r.requisition_code || '')}</div>
-                            <div class="text-sm">Plan: ${escapeHtml(r.planned_product_name || 'Unknown')} (${escapeHtml(String(r.planned_quantity || '?'))} ${escapeHtml(r.planned_yield_unit || 'units')}). Pasteurize the raw milk from this requisition, then return to start the production run.</div>
-                        </div>
-                        <a href="requisitions.html" class="btn btn-ghost btn-sm">
-                            <i class="fas fa-arrow-left"></i> Back
-                        </a>
-                    `;
-                    const main = document.querySelector('main');
-                    main.insertBefore(banner, main.firstChild);
-
-                    // Compute the prefill value. For yogurt recipes,
-                    // planned_quantity is the YIELD in cups, not the
-                    // raw milk INPUT in liters. The actual raw milk to
-                    // pasteurize lives in requisition_items. Using
-                    // planned_quantity directly would put "1" in the
-                    // field for a 1-cup yogurt run, but production
-                    // actually has 5.556 L issued.
-                    let prefilledInput = null;
-                    const rawMilkItem = (r.items || []).find(it => it.item_type === 'raw_milk');
-                    if (rawMilkItem) {
-                        const issued = parseFloat(rawMilkItem.issued_quantity ?? rawMilkItem.quantity_issued ?? 0);
-                        const requested = parseFloat(rawMilkItem.requested_quantity ?? rawMilkItem.quantity ?? 0);
-                        prefilledInput = issued > 0 ? issued : requested;
-                    }
-                    if (!prefilledInput && r.planned_quantity && r.planned_yield_unit === 'L') {
-                        prefilledInput = parseFloat(r.planned_quantity);
-                    }
+                    const rawData = rawResponse?.success ? rawResponse.data : {};
+                    const remainingRaw = Number(rawData?.available_liters || 0);
+                    const issuedRaw = Number(rawData?.issued_liters || 0);
+                    const linked = rawData?.linked_pasteurization || null;
 
                     // Fetch recipe to get pasteurization parameters
                     let recipeParams = null;
@@ -570,104 +556,113 @@
                         }
                     }
 
-                    // V4.0 — visible "Start pasteurization" card. The
-                    // user sees the pre-filled value, then clicks one
-                    // button to open the modal with that value. No
-                    // auto-open, no race conditions with loadStats().
-                    // The whole flow is now visible-and-explicit instead
-                    // of invisible-and-magical.
                     const card = document.createElement('div');
-                    card.id = 'quickPasteurizeCard';
-                    card.className = 'card bg-primary text-primary-content shadow-md mb-4';
-                    const prefillDisplay = prefilledInput
-                        ? `${parseFloat(prefilledInput).toFixed(2)} L`
-                        : '? L';
-                    const recipeParamText = recipeParams
-                        ? `${recipeParams.pasteurization_temp || 75}°C for ${recipeParams.pasteurization_time_mins || 15} min`
-                        : 'default settings';
-                    card.innerHTML = `
-                        <div class="card-body p-4 flex-row items-center gap-4">
-                            <div class="w-12 h-12 rounded-xl bg-primary-content/20 flex items-center justify-center">
-                                <i class="fas fa-fire-alt text-2xl"></i>
-                            </div>
-                            <div class="flex-1">
-                                <div class="font-semibold text-lg">Start pasteurization from ${escapeHtml(r.requisition_code || 'this requisition')}</div>
-                                <div class="text-sm opacity-90">
-                                    ${prefillDisplay} raw milk issued. Recipe target: ${recipeParamText}.
-                                    Click below to open the run form pre-filled.
-                                </div>
-                            </div>
-                            <button id="quickStartBtn" class="btn btn-accent btn-lg">
-                                <i class="fas fa-play"></i> Start Pasteurization
-                            </button>
-                        </div>
-                    `;
-                    main.insertBefore(card, main.children[1] || null);
+                    card.id = 'requisitionPasteurizationCard';
+                    card.className = 'card bg-base-100 border border-base-300 shadow-sm max-w-3xl mx-auto';
 
-                    // Wire the button: pre-fill + open the modal. Both
-                    // happen in one click. We bind on the inline button
-                    // (not the global "New Pasteurization" button) so
-                    // the user always sees the pre-fill card first.
+                    const isCompleted = linked?.status === 'completed';
+                    const isInProgress = linked?.status === 'in_progress';
+                    const targetTemp = Number(recipeParams?.pasteurization_temp || 75);
+                    const targetTime = Number(recipeParams?.pasteurization_time_mins || 15);
+                    const plannedLabel = `${r.planned_quantity || '?'} ${r.planned_yield_unit || 'units'}`;
+                    const readyLiters = Number(linked?.batch_remaining_liters ?? linked?.output_milk_liters ?? 0);
+
+                    if (isCompleted) {
+                        card.innerHTML = `
+                            <div class="card-body gap-5 p-6 sm:p-8">
+                                <div class="flex items-start gap-4">
+                                    <div class="w-12 h-12 rounded-full bg-success/15 text-success flex items-center justify-center shrink-0">
+                                        <i class="fas fa-check text-xl"></i>
+                                    </div>
+                                    <div>
+                                        <div class="text-xs font-semibold uppercase tracking-wide text-base-content/55">${escapeHtml(r.requisition_code || '')}</div>
+                                        <h2 class="text-xl font-bold">Pasteurization is already finished</h2>
+                                        <p class="text-sm text-base-content/65 mt-1">${escapeHtml(r.planned_product_name || 'This product')} can continue to product processing. Do not pasteurize this milk again.</p>
+                                    </div>
+                                </div>
+                                <div class="rounded-xl bg-base-200 p-4 grid sm:grid-cols-3 gap-3 text-sm">
+                                    <div><div class="text-base-content/55">Pasteurization run</div><div class="font-mono font-semibold">${escapeHtml(linked.run_code || '')}</div></div>
+                                    <div><div class="text-base-content/55">Ready batch</div><div class="font-mono font-semibold">${escapeHtml(linked.batch_code || 'Recorded')}</div></div>
+                                    <div><div class="text-base-content/55">Milk ready</div><div class="font-semibold">${readyLiters.toFixed(2)} L</div></div>
+                                </div>
+                                <div class="card-actions justify-between items-center gap-3">
+                                    <a href="requisitions.html" class="btn btn-ghost"><i class="fas fa-arrow-left"></i> Back</a>
+                                    <a href="${productionStartUrl(r)}" class="btn btn-primary"><i class="fas fa-arrow-right"></i> Continue to Product Processing</a>
+                                </div>
+                            </div>`;
+                    } else if (isInProgress) {
+                        document.getElementById('pasteurizationHistory')?.classList.remove('hidden');
+                        card.innerHTML = `
+                            <div class="card-body p-6 sm:p-8">
+                                <div class="flex items-start gap-4">
+                                    <span class="loading loading-spinner loading-md text-warning"></span>
+                                    <div>
+                                        <div class="text-xs font-semibold uppercase tracking-wide text-base-content/55">${escapeHtml(r.requisition_code || '')}</div>
+                                        <h2 class="text-xl font-bold">Pasteurization is already in progress</h2>
+                                        <p class="text-sm text-base-content/65 mt-1">Finish ${escapeHtml(linked.run_code || 'the current run')} in the list below. Do not start another one.</p>
+                                    </div>
+                                </div>
+                            </div>`;
+                    } else {
+                        card.innerHTML = `
+                            <div class="card-body gap-5 p-6 sm:p-8">
+                                <div>
+                                    <div class="text-xs font-semibold uppercase tracking-wide text-base-content/55">${escapeHtml(r.requisition_code || '')}</div>
+                                    <h2 class="text-xl font-bold">Pasteurize the issued raw milk</h2>
+                                    <p class="text-sm text-base-content/65 mt-1">This prepares the milk for ${escapeHtml(r.planned_product_name || 'the planned product')}.</p>
+                                </div>
+                                <div class="rounded-xl bg-base-200 p-4 grid sm:grid-cols-4 gap-3 text-sm">
+                                    <div><div class="text-base-content/55">Product plan</div><div class="font-semibold">${escapeHtml(plannedLabel)}</div></div>
+                                    <div><div class="text-base-content/55">Raw milk issued</div><div class="font-semibold">${issuedRaw.toFixed(2)} L</div></div>
+                                    <div><div class="text-base-content/55">Heat to</div><div class="font-semibold">${targetTemp}°C</div></div>
+                                    <div><div class="text-base-content/55">Hold for</div><div class="font-semibold">${targetTime} min</div></div>
+                                </div>
+                                <div class="card-actions justify-between items-center gap-3">
+                                    <a href="requisitions.html" class="btn btn-ghost"><i class="fas fa-arrow-left"></i> Back</a>
+                                    <button id="quickStartBtn" class="btn btn-primary" ${remainingRaw <= 0 ? 'disabled' : ''}>
+                                        <i class="fas fa-fire-alt"></i> Pasteurize ${remainingRaw.toFixed(2)} L
+                                    </button>
+                                </div>
+                            </div>`;
+                    }
+
+                    document.querySelector('main')?.prepend(card);
+
                     const quickBtn = document.getElementById('quickStartBtn');
-                    const applyPrefill = () => {
-                        const input = document.getElementById('inputLiters');
-                        if (input && prefilledInput) {
-                            input.value = parseFloat(prefilledInput);
-                        }
-                        // Auto-fill recipe parameters (temperature, duration, unit)
-                        if (recipeParams) {
-                            const tempEl = document.getElementById('temperature');
-                            const durEl = document.getElementById('durationMins');
-                            const unitEl = document.getElementById('durationUnit');
-                            if (tempEl && recipeParams.pasteurization_temp) {
-                                tempEl.value = parseFloat(recipeParams.pasteurization_temp);
-                            }
-                            if (durEl && recipeParams.pasteurization_time_mins) {
-                                durEl.value = parseInt(recipeParams.pasteurization_time_mins);
-                            }
-                            // Determine unit: yogurt uses 85°C/30min (minutes),
-                            // milk uses 72-75°C/15sec (seconds for HTST).
-                            // heuristic: if temp >= 80 and duration >= 20 → minutes (batch)
-                            //            else → default to minutes (user can change)
-                            if (unitEl) {
-                                const t = parseFloat(recipeParams.pasteurization_temp || 75);
-                                const d = parseInt(recipeParams.pasteurization_time_mins || 15);
-                                // Yogurt: 85°C / 30min → clearly minutes
-                                // Fresh milk: 75°C / 15 → ambiguous, keep minutes (HTST label clarifies)
-                                if (t >= 80 && d >= 20) {
-                                    unitEl.value = 'minutes';
-                                }
-                                // The hint text already explains HTST vs Batch
-                            }
-                        }
-                        const hint = document.getElementById('fromReqHint');
-                        if (hint) {
-                            hint.innerHTML = `Pre-filled from <span class="font-mono font-semibold">${escapeHtml(r.requisition_code || '')}</span>. Adjust if you only want to pasteurize a portion.`;
-                            hint.classList.remove('hidden');
-                        }
-                    };
                     if (quickBtn) {
-                        quickBtn.addEventListener('click', () => {
-                            applyPrefill();
-                            const modal = document.getElementById('newPastModal');
-                            if (modal && typeof modal.showModal === 'function') {
-                                modal.showModal();
+                        quickBtn.addEventListener('click', async () => {
+                            quickBtn.disabled = true;
+                            quickBtn.innerHTML = '<span class="loading loading-spinner loading-sm"></span> Starting...';
+                            try {
+                                const response = await api.post(PAST_API, {
+                                    input_liters: remainingRaw,
+                                    temperature: targetTemp,
+                                    duration_mins: targetTime,
+                                    duration_unit: 'minutes',
+                                    requisition_id: r.id,
+                                    notes: `Prepared for ${r.requisition_code || 'linked requisition'}`
+                                });
+                                if (!response.success) throw new Error(response.message || 'Could not start pasteurization');
+                                showToast('Pasteurization started', 'success');
+                                window.location.reload();
+                            } catch (error) {
+                                const fieldErrors = error.errors || error.response?.data?.errors;
+                                const message = fieldErrors && typeof fieldErrors === 'object'
+                                    ? Object.values(fieldErrors).join(', ')
+                                    : (error.message || 'Could not start pasteurization');
+                                showToast(message, 'error');
+                                quickBtn.disabled = false;
+                                quickBtn.innerHTML = `<i class="fas fa-fire-alt"></i> Pasteurize ${remainingRaw.toFixed(2)} L`;
                             }
                         });
                     }
-                    // Also pre-apply on the global "New Pasteurization"
-                    // button so if the user clicks that instead, the
-                    // value is also pre-filled.
-                    const newBtn = document.querySelector('button[onclick*="newPastModal"]');
-                    if (newBtn) {
-                        newBtn.addEventListener('click', applyPrefill);
-                    }
                 }
             } catch (e) {
-                // Non-fatal: log so the user can see it in DevTools
-                // if they're debugging. The page still works — they
-                // just lose the pre-fill convenience.
                 console.error('Pre-fill from requisition failed:', e);
+                const fallback = document.createElement('div');
+                fallback.className = 'alert alert-error max-w-3xl mx-auto';
+                fallback.innerHTML = '<i class="fas fa-exclamation-circle"></i><span>Could not load this requisition. Go back and try again.</span><a href="requisitions.html" class="btn btn-sm">Back</a>';
+                document.querySelector('main')?.prepend(fallback);
             }
         })();
 
@@ -763,7 +758,7 @@
                 // instead of the general tank balance.
                 let availableRaw = 0;
                 const urlParams = new URLSearchParams(window.location.search);
-                const reqIdForQuery = urlParams.get('req_id') || activePasteurizationReqId;
+                const reqIdForQuery = urlParams.get('req_id') || urlParams.get('from_requisition') || activePasteurizationReqId;
                 const rawParams = { action: 'available_raw_milk' };
                 if (reqIdForQuery) rawParams.req_id = reqIdForQuery;
 
@@ -883,7 +878,7 @@
                     // just said "no raw milk" and left them stuck.
                     const existingHint = document.getElementById('havePasteurizedHint');
                     if (existingHint) existingHint.remove();
-                    if (pasteurizedLiters > 0 && availableRaw < 0.5) {
+                    if (!fromReqId && pasteurizedLiters > 0 && availableRaw < 0.5) {
                         const hint = document.createElement('div');
                         hint.id = 'havePasteurizedHint';
                         hint.className = 'alert alert-success mb-4';

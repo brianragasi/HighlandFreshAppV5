@@ -130,6 +130,17 @@ function ensureMilkBarProductCategorySupport(PDO $db): void {
     $done = true;
 }
 
+function supportedProductCategories(): array {
+    return ['pasteurized_milk', 'flavored_milk', 'yogurt', 'cheese', 'butter', 'cream', 'milk_bar'];
+}
+
+function recipeTypeForProductCategory(string $category): string {
+    if (!in_array($category, supportedProductCategories(), true)) {
+        throw new InvalidArgumentException('Choose a valid product category');
+    }
+    return $category;
+}
+
 /**
  * List base liquid products with nested packaging SKUs.
  * GET /api/admin/products.php?action=base_products
@@ -928,7 +939,7 @@ function createProduct($conn) {
     }
     
     // Validate category
-    $validCategories = ['pasteurized_milk', 'flavored_milk', 'yogurt', 'cheese', 'butter', 'cream', 'milk_bar'];
+    $validCategories = supportedProductCategories();
     if (!in_array($data['category'], $validCategories)) {
         sendError('Invalid category', 400);
         return;
@@ -1162,6 +1173,11 @@ function updateBaseProduct($conn, $id) {
         return;
     }
 
+    if (array_key_exists('category', $data)
+        && !in_array((string) $data['category'], supportedProductCategories(), true)) {
+        sendValidationError(['category' => 'Choose a product category']);
+    }
+
     $updates = [];
     $params = [];
     $map = [
@@ -1190,10 +1206,17 @@ function updateBaseProduct($conn, $id) {
         return;
     }
 
-    $params[] = $id;
-    $sql = 'UPDATE base_products SET ' . implode(', ', $updates) . ' WHERE id = ?';
-    $stmt = $conn->prepare($sql);
-    $stmt->execute($params);
+    $startedTransaction = false;
+    try {
+        if (!$conn->inTransaction()) {
+            $conn->beginTransaction();
+            $startedTransaction = true;
+        }
+
+        $params[] = $id;
+        $sql = 'UPDATE base_products SET ' . implode(', ', $updates) . ' WHERE id = ?';
+        $stmt = $conn->prepare($sql);
+        $stmt->execute($params);
 
     // Keep child SKU shared fields in sync with base name/category when provided
     $skuUpdates = [];
@@ -1237,8 +1260,8 @@ function updateBaseProduct($conn, $id) {
         try {
             $conn->prepare($skuSql)->execute($skuParams);
         } catch (Throwable $e) {
-            // Non-fatal: individual SKU updates from the modal still apply
             error_log('updateBaseProduct SKU cascade: ' . $e->getMessage());
+            throw $e;
         }
     }
 
@@ -1251,7 +1274,31 @@ function updateBaseProduct($conn, $id) {
                 ->execute([(int) $shelf, $id]);
         } catch (Throwable $e) {
             error_log('updateBaseProduct recipe shelf-life cascade: ' . $e->getMessage());
+            throw $e;
         }
+    }
+
+
+    // The product category is the current source of truth. Keep only active
+    // recipes aligned; completed production batches remain unchanged history.
+    if (!empty($data['category'])) {
+        try {
+            $conn->prepare('UPDATE master_recipes SET product_type = ? WHERE base_product_id = ? AND is_active = 1')
+                ->execute([recipeTypeForProductCategory((string) $data['category']), $id]);
+        } catch (Throwable $e) {
+            error_log('updateBaseProduct recipe category cascade: ' . $e->getMessage());
+            throw $e;
+        }
+    }
+
+        if ($startedTransaction) {
+            $conn->commit();
+        }
+    } catch (Throwable $e) {
+        if ($startedTransaction && $conn->inTransaction()) {
+            $conn->rollBack();
+        }
+        throw $e;
     }
 
     sendSuccess(['message' => 'Base product updated successfully', 'base_product_id' => $id]);

@@ -543,6 +543,20 @@
                 window.location.href = '../login.html';
                 return;
             }
+
+            // This page is kept only so old bookmarks remain safe. CCP checks
+            // now belong to the guided workbench, which knows the run's current
+            // physical stage and only enables the correct reading.
+            const legacyParams = new URLSearchParams(window.location.search);
+            const workbenchUrl = new URL('run-workbench.html', window.location.href);
+            const legacyRunId = legacyParams.get('run_id');
+            if (legacyRunId) {
+                workbenchUrl.searchParams.set('run_id', legacyRunId);
+            } else {
+                workbenchUrl.searchParams.set('panel', 'ccp');
+            }
+            window.location.replace(workbenchUrl.pathname + workbenchUrl.search);
+            return;
             
             const user = AuthService.getCurrentUser();
             if (user) {

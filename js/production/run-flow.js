@@ -33,18 +33,33 @@
         return map;
     }
 
+    function needsPasteurization(run) {
+        return String(run?.milk_source_type || 'raw').toLowerCase() !== 'pasteurized';
+    }
+
+    function stageOrderFor(run) {
+        return needsPasteurization(run)
+            ? STAGE_ORDER
+            : ['planned', 'in_progress', 'processing', 'cooling', 'packaging', 'completed'];
+    }
+
     function ccpStatus(run) {
         const byType = latestCcpByType(run.ccp_logs);
         const past = byType.pasteurization;
         const cool = byType.cooling;
+        const needsPast = needsPasteurization(run);
         const hasPast = !!past;
         const hasCool = !!cool;
         const pastFail = past && past.status === 'fail';
         const coolFail = cool && cool.status === 'fail';
-        const pastOk = hasPast && !pastFail;
+        const sourceHasProof = !needsPast && (
+            hasPast || (run.source_pasteurization_temp !== null && run.source_pasteurization_temp !== undefined)
+        );
+        const pastOk = needsPast ? (hasPast && !pastFail) : (sourceHasProof && !pastFail);
         const coolOk = hasCool && !coolFail;
         return {
             byType,
+            needsPasteurization: needsPast,
             hasPast,
             hasCool,
             pastFail,
@@ -52,15 +67,15 @@
             pastOk,
             coolOk,
             requiredMet: pastOk && coolOk,
-            message: !hasPast
-                ? 'Pasteurization CCP not logged'
+            message: !pastOk
+                ? (needsPast ? 'Record the pasteurization temperature' : 'The source pasteurization record needs attention')
                 : pastFail
-                    ? 'Pasteurization CCP failed — re-log'
+                    ? 'Pasteurization check failed — record a correct reading'
                     : !hasCool
-                        ? 'Cooling CCP not logged'
+                        ? (needsPast ? 'Record the cooling temperature' : 'Milk was already pasteurized; record the cooling temperature')
                         : coolFail
-                            ? 'Cooling CCP failed — re-log'
-                            : 'Required CCP checks OK',
+                            ? 'Cooling check failed — record a correct reading'
+                            : (needsPast ? 'Required temperature checks are complete' : 'Source pasteurization and cooling checks are complete'),
         };
     }
 
@@ -168,27 +183,41 @@
             };
         }
 
-        if (!ccp.requiredMet) {
+        // Stage advancement suggestions
+        if (status === 'in_progress') {
             return {
-                key: 'ccp',
-                title: ccp.pastFail || ccp.coolFail ? 'Fix failed CCP' : 'Log required CCPs',
-                detail: ccp.message + ' (pasteurization 75°C / cooling ≤4°C).',
-                href: workbench + '&panel=ccp',
-                cta: 'Log CCP',
-                tone: 'error',
-                icon: 'fa-thermometer-half',
+                key: 'advance_process',
+                title: ccp.needsPasteurization ? 'Begin pasteurization' : 'Begin recipe processing',
+                detail: ccp.needsPasteurization
+                    ? 'The milk arrived raw. Move to pasteurization first.'
+                    : 'The milk arrived already pasteurized. Continue with the recipe; do not pasteurize it again.',
+                href: workbench + '&panel=stages',
+                cta: ccp.needsPasteurization ? 'Go to Pasteurization' : 'Go to Processing',
+                tone: 'primary',
+                icon: 'fa-forward',
                 ccp,
             };
         }
 
-        // Stage advancement suggestions
-        if (status === 'in_progress' || status === 'pasteurization') {
+        if (status === 'pasteurization') {
+            if (!ccp.pastOk) {
+                return {
+                    key: 'ccp',
+                    title: ccp.pastFail ? 'Correct the pasteurization check' : 'Record pasteurization temperature',
+                    detail: 'After heating the milk, record 75°C for at least 15 seconds before processing.',
+                    href: workbench + '&panel=ccp',
+                    cta: 'Record temperature',
+                    tone: 'error',
+                    icon: 'fa-thermometer-half',
+                    ccp,
+                };
+            }
             return {
                 key: 'advance_process',
-                title: 'Continue processing',
-                detail: 'CCPs look good. Move the run forward or record any losses.',
+                title: 'Continue with the recipe',
+                detail: 'Pasteurization is recorded. Move to recipe processing.',
                 href: workbench + '&panel=stages',
-                cta: 'Update Stage',
+                cta: 'Go to Processing',
                 tone: 'primary',
                 icon: 'fa-forward',
                 ccp,
@@ -209,10 +238,22 @@
         }
 
         if (status === 'cooling') {
+            if (!ccp.coolOk) {
+                return {
+                    key: 'ccp',
+                    title: ccp.coolFail ? 'Correct the cooling check' : 'Record cooling temperature',
+                    detail: 'After cooling the product, record 4°C or lower before packing.',
+                    href: workbench + '&panel=ccp',
+                    cta: 'Record temperature',
+                    tone: 'error',
+                    icon: 'fa-snowflake',
+                    ccp,
+                };
+            }
             return {
                 key: 'advance_pack',
                 title: 'Ready for packaging stage',
-                detail: 'Advance to packaging, then complete & reconcile the run.',
+                detail: 'Cooling is recorded. Advance to packaging, then finish the run.',
                 href: workbench + '&panel=stages',
                 cta: 'Go to Packaging Stage',
                 tone: 'info',
@@ -222,6 +263,18 @@
         }
 
         if (status === 'packaging') {
+            if (!ccp.requiredMet) {
+                return {
+                    key: 'ccp',
+                    title: 'Temperature record needs attention',
+                    detail: ccp.message,
+                    href: workbench + '&panel=ccp',
+                    cta: 'Review temperature',
+                    tone: 'error',
+                    icon: 'fa-thermometer-half',
+                    ccp,
+                };
+            }
             const reconciled = run.material_reconciled == 1 || run.material_reconciled === true;
             if (!reconciled) {
                 return {
@@ -260,8 +313,8 @@
         };
     }
 
-    function stageIndex(status) {
-        const i = STAGE_ORDER.indexOf(status);
+    function stageIndex(status, run = null) {
+        const i = stageOrderFor(run).indexOf(status);
         return i < 0 ? 0 : i;
     }
 
@@ -292,27 +345,18 @@
             description: 'Confirm starting milk (usually pre-filled from requisition/recipe) and start the run.',
         },
         {
-            id: 'ccp',
-            panel: 'ccp',
-            number: 2,
-            title: 'CCP checks',
-            short: 'CCP',
-            icon: 'fa-thermometer-half',
-            description: 'Log pasteurization (75°C/15s) and cooling (≤4°C). Both must pass.',
-        },
-        {
             id: 'process',
             panel: 'stages',
-            number: 3,
-            title: 'Process stages',
+            number: 2,
+            title: 'Make the product',
             short: 'Process',
             icon: 'fa-stream',
-            description: 'Advance one floor stage at a time. Record any milk losses here so yield recalculates.',
+            description: 'Follow one step at a time. Record the hot and cold temperatures only when you reach those steps.',
         },
         {
             id: 'yield',
             panel: 'yield',
-            number: 4,
+            number: 3,
             title: 'Review yield',
             short: 'Yield',
             icon: 'fa-chart-line',
@@ -321,7 +365,7 @@
         {
             id: 'complete',
             panel: 'reconcile',
-            number: 5,
+            number: 4,
             title: 'Complete run',
             short: 'Finish',
             icon: 'fa-check-double',
@@ -393,7 +437,6 @@
         const ccp = ccpStatus(run);
         const flags = {
             volume: volumeDone(run),
-            ccp: ccp.requiredMet,
             process: processDone(run),
             yield: yieldDone(run, extras),
             complete: completeDone(run),
@@ -474,12 +517,13 @@
 
     /**
      * Strict floor path: only one legal "next" stage (no random jumping).
-     * planned/in_progress → pasteurization → processing → cooling → packaging
+     * Raw milk: pasteurization → processing → cooling → packaging.
+     * Pasteurized milk: processing → cooling → packaging.
      */
-    function getNextStage(status) {
+    function getNextStage(status, run = null) {
         const map = {
-            planned: 'pasteurization',
-            in_progress: 'pasteurization',
+            planned: needsPasteurization(run) ? 'pasteurization' : 'processing',
+            in_progress: needsPasteurization(run) ? 'pasteurization' : 'processing',
             pasteurization: 'processing',
             processing: 'cooling',
             cooling: 'packaging',
@@ -495,7 +539,6 @@
      * Wizard mode: only the next forward stage (and packaging needs CCP).
      */
     function allowedStageTransitions(run, wizardMode) {
-        const all = ['pasteurization', 'processing', 'cooling', 'packaging'];
         if (!run) {
             return { allowed: [], next: null, reason: 'No run selected.' };
         }
@@ -504,20 +547,7 @@
         }
 
         const ccp = ccpStatus(run);
-        const next = getNextStage(run.status);
-
-        if (!wizardMode) {
-            // Free mode: still require CCP before packaging
-            if (!ccp.requiredMet) {
-                return {
-                    allowed: all.filter((s) => s !== 'packaging'),
-                    next,
-                    reason: 'Complete required CCP checks before floor packaging stage.',
-                    blockPackaging: true,
-                };
-            }
-            return { allowed: all, next, reason: null };
-        }
+        const next = getNextStage(run.status, run);
 
         // Wizard: only one step forward
         if (!next) {
@@ -529,12 +559,24 @@
                     : 'No further stage to advance.',
             };
         }
-        if (next === 'packaging' && !ccp.requiredMet) {
+        if (run.status === 'pasteurization' && !ccp.pastOk) {
             return {
                 allowed: [],
                 next,
-                reason: 'Complete pasteurization + cooling CCP checks before moving to floor packaging stage.',
-                blockPackaging: true,
+                reason: ccp.pastFail
+                    ? 'The pasteurization reading failed. Record a correct reading before processing.'
+                    : 'Record the pasteurization temperature before processing.',
+                blockForCcp: true,
+            };
+        }
+        if (run.status === 'cooling' && !ccp.coolOk) {
+            return {
+                allowed: [],
+                next,
+                reason: ccp.coolFail
+                    ? 'The cooling reading failed. Record a correct reading before packaging.'
+                    : 'Record the cooling temperature before packaging.',
+                blockForCcp: true,
             };
         }
         return {
@@ -548,6 +590,8 @@
         STAGE_ORDER,
         STAGE_LABELS,
         WIZARD_STEPS,
+        needsPasteurization,
+        stageOrderFor,
         latestCcpByType,
         ccpStatus,
         getNextStep,

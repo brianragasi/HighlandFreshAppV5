@@ -208,7 +208,7 @@
                                 <i class="fas fa-shoe-prints text-primary"></i>
                                 Guided production steps
                             </h3>
-                            <span class="badge badge-outline badge-sm" id="wizardProgressBadge">Step 1 of 5</span>
+                            <span class="badge badge-outline badge-sm" id="wizardProgressBadge">Step 1 of 4</span>
                         </div>
                         <div class="flex gap-1 md:gap-2" id="wizardSteps"></div>
                         <p class="text-xs text-base-content/50 mt-3" id="wizardHint">Complete steps in order. Locked steps unlock automatically.</p>
@@ -315,19 +315,16 @@
 
                 <div id="panel-ccp" class="panel-section card bg-base-100 border border-base-300 hidden">
                     <div class="card-body p-5 space-y-4">
-                        <h3 class="card-title text-base"><i class="fas fa-thermometer-half text-error"></i> Critical Control Points</h3>
+                        <h3 class="card-title text-base"><i class="fas fa-thermometer-half text-error"></i> Temperature check</h3>
                         <div id="ccpSummary" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div>
-                        <div class="divider text-sm">Quick log</div>
+                        <div class="divider text-sm">Record the current step</div>
+                        <p id="ccpQuickHint" class="text-sm text-base-content/60">Open this when the flow asks for a temperature.</p>
                         <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
                             <div class="form-control">
                                 <label class="label py-1"><span class="label-text">Check type</span></label>
                                 <select id="ccpType" class="select select-bordered">
                                     <option value="pasteurization">Pasteurization (75°C / 15s)</option>
                                     <option value="cooling">Cooling (≤4°C)</option>
-                                    <option value="preheating">Pre-heating (65°C)</option>
-                                    <option value="chilling">Chilling (≤4°C)</option>
-                                    <option value="storage">Storage (≤4°C)</option>
-                                    <option value="homogenization">Homogenization (psi)</option>
                                 </select>
                             </div>
                             <div class="form-control" id="ccpTempGroup">
@@ -335,19 +332,15 @@
                                 <input type="number" id="ccpTemp" class="input input-bordered input-lg font-bold"
                                     step="0.1" min="-20" max="150" data-allow-negative placeholder="75">
                             </div>
-                            <div class="form-control hidden" id="ccpPsiGroup">
-                                <label class="label py-1"><span class="label-text">Pressure (psi)</span></label>
-                                <input type="number" id="ccpPsi" class="input input-bordered input-lg font-bold"
-                                    step="1" min="0" max="5000" placeholder="1200">
-                            </div>
+                            <div class="form-control hidden" id="ccpPsiGroup"></div>
                             <div class="form-control" id="ccpHoldGroup">
                                 <label class="label py-1"><span class="label-text">Hold time (sec)</span></label>
                                 <input type="number" id="ccpHold" class="input input-bordered" value="15"
                                     min="0" max="86400" step="1">
                             </div>
                         </div>
-                        <button class="btn btn-error touch-btn gap-2" onclick="submitCcp()"><i class="fas fa-plus"></i> Record CCP</button>
-                        <a href="#" id="ccpFullLink" class="link link-primary text-sm">Open full CCP logging page →</a>
+                        <button id="recordCcpBtn" class="btn btn-error touch-btn gap-2" onclick="submitCcp()"><i class="fas fa-plus"></i> Record temperature</button>
+                        <a href="#" id="ccpFullLink" class="link link-primary text-sm">Open optional detailed checks →</a>
                     </div>
                 </div>
 
@@ -417,9 +410,7 @@
                                 <i class="fas fa-forward"></i>
                                 <span id="advanceStageLabel">Advance to next stage</span>
                             </button>
-                            <p class="text-xs text-base-content/50" id="stagePathHint">
-                                Path: Start → Pasteurize → Process → Cool → Floor pack stage → Complete (then QC)
-                            </p>
+                            <p class="text-xs text-base-content/50" id="stagePathHint">Path: —</p>
                             <!-- Hidden free-mode stage buttons (only if free mode) -->
                             <div class="grid grid-cols-2 md:grid-cols-4 gap-2 hidden" id="stageButtons">
                                 <button class="btn btn-outline btn-sm" data-stage-btn="pasteurization" onclick="setStage('pasteurization')">Pasteurization</button>
@@ -841,13 +832,30 @@
             setVolumeFields(fillMl);
             renderVolumeSuggestion(run, initial);
 
-            const order = ['in_progress', 'pasteurization', 'processing', 'cooling', 'packaging'];
-            document.querySelectorAll('#wbStages .step').forEach((el, i) => {
-                const stage = order[i];
-                const si = ProductionRunFlow.stageIndex(stage);
-                const cur = ProductionRunFlow.stageIndex(st === 'planned' ? 'planned' : st);
+            const needsPasteurization = ProductionRunFlow.needsPasteurization(run);
+            document.querySelectorAll('#wbStages .step').forEach((el) => {
+                const stage = el.dataset.stage;
+                el.classList.toggle('hidden', stage === 'pasteurization' && !needsPasteurization);
+                const si = ProductionRunFlow.stageIndex(stage, run);
+                const cur = ProductionRunFlow.stageIndex(st === 'planned' ? 'planned' : st, run);
                 el.classList.toggle('step-primary', cur >= si && st !== 'planned');
             });
+
+            const pathHint = document.getElementById('stagePathHint');
+            if (pathHint) {
+                pathHint.textContent = needsPasteurization
+                    ? 'Path: Start → Pasteurize → Process recipe → Cool → Pack → QC'
+                    : 'Path: Start → Process recipe → Cool → Pack → QC (milk was already pasteurized)';
+            }
+            document.querySelectorAll('[data-stage-btn="pasteurization"]').forEach((btn) => {
+                btn.classList.toggle('hidden', !needsPasteurization);
+            });
+
+            const pasteurizationLossOption = document.querySelector('#lossStage option[value="pasteurization"]');
+            if (pasteurizationLossOption) {
+                pasteurizationLossOption.disabled = !needsPasteurization;
+                pasteurizationLossOption.hidden = !needsPasteurization;
+            }
 
             document.getElementById('startRunBtn').classList.toggle('hidden', st !== 'planned');
             document.getElementById('stageCurrent').textContent = ProductionRunFlow.STAGE_LABELS[st] || st;
@@ -987,7 +995,7 @@
                 btn.classList.toggle('btn-disabled', !allowed);
             });
 
-            const next = gate.next || ProductionRunFlow.getNextStage(wb?.run?.status);
+            const next = gate.next || ProductionRunFlow.getNextStage(wb?.run?.status, wb?.run);
             const nextBadge = document.getElementById('stageNextBadge');
             const advanceBtn = document.getElementById('advanceStageBtn');
             const advanceLabel = document.getElementById('advanceStageLabel');
@@ -1020,14 +1028,14 @@
             if (gate.reason && !(next && gate.allowed.includes(next))) {
                 alert.className = 'alert alert-warning text-sm py-2';
                 text.textContent = gate.reason;
-            } else if (gate.blockPackaging) {
+            } else if (gate.blockForCcp) {
                 alert.className = 'alert alert-warning text-sm py-2';
                 text.textContent = gate.reason;
             } else {
                 alert.className = 'alert alert-info text-sm py-2';
                 text.textContent = wizardMode
                     ? 'One step forward only. Record losses below if milk was lost during this stage, then advance.'
-                    : 'Free mode: you can jump stages (packaging still needs CCP). Prefer wizard on the floor.';
+                    : 'Use the next enabled step. Temperature checks appear where they are needed.';
             }
         }
 
@@ -1038,14 +1046,14 @@
                 return;
             }
             const gate = ProductionRunFlow.allowedStageTransitions(wb.run, wizardMode);
-            const next = gate.next || ProductionRunFlow.getNextStage(wb.run.status);
+            const next = gate.next || ProductionRunFlow.getNextStage(wb.run.status, wb.run);
             if (!next) {
                 showToast(gate.reason || 'No next stage', 'info');
                 return;
             }
             if (!gate.allowed.includes(next)) {
                 showToast(gate.reason || 'Cannot advance yet', 'warning');
-                if (gate.blockPackaging) showPanel('ccp', { force: true });
+                if (gate.blockForCcp) showPanel('ccp', { force: true });
                 return;
             }
             setStage(next);
@@ -1078,7 +1086,7 @@
             }
             if (wizardState?.allDone || wb.run.status === 'completed') {
                 title = 'Run complete';
-                detail = 'This run is finished. QC can release for packaging.';
+                detail = 'This run is finished. QC can verify it and release it to Finished Goods.';
                 cta = 'Done';
             }
 
@@ -1237,15 +1245,25 @@
             const ccp = ProductionRunFlow.ccpStatus(wb.run);
             const box = document.getElementById('ccpSummary');
             const rows = [
-                { key: 'pasteurization', label: 'Pasteurization', ok: ccp.pastOk, fail: ccp.pastFail, log: ccp.byType.pasteurization },
+                {
+                    key: 'pasteurization',
+                    label: ccp.needsPasteurization ? 'Pasteurization' : 'Source pasteurization',
+                    ok: ccp.pastOk,
+                    fail: ccp.pastFail,
+                    log: ccp.byType.pasteurization,
+                    source: !ccp.needsPasteurization,
+                },
                 { key: 'cooling', label: 'Cooling', ok: ccp.coolOk, fail: ccp.coolFail, log: ccp.byType.cooling },
             ];
             box.innerHTML = rows.map(r => {
-                const status = !r.log ? 'No data' : r.fail ? 'Fail' : r.log.status === 'warning' ? 'Warning' : 'Pass';
-                const cls = !r.log ? 'badge-ghost' : r.fail ? 'badge-error' : r.log.status === 'warning' ? 'badge-warning' : 'badge-success';
+                const status = !r.log ? (r.source && r.ok ? 'Verified' : 'No data') : r.fail ? 'Fail' : r.log.status === 'warning' ? 'Warning' : 'Pass';
+                const cls = !r.log && !(r.source && r.ok) ? 'badge-ghost' : r.fail ? 'badge-error' : r.log?.status === 'warning' ? 'badge-warning' : 'badge-success';
                 const val = r.log
                     ? (r.log.temperature != null ? `${r.log.temperature}°C` : (r.log.pressure_psi != null ? `${r.log.pressure_psi} psi` : '—'))
-                    : '—';
+                    : (r.source && wb.run.source_pasteurization_temp != null ? `${wb.run.source_pasteurization_temp}°C` : '—');
+                const sourceText = r.source
+                    ? `From ${wb.run.pasteurized_source_batch_code || 'the pasteurized milk batch'} — do not heat it again`
+                    : (r.log?.check_datetime ? new Date(r.log.check_datetime).toLocaleString() : 'Not recorded yet');
                 return `
                     <div class="bg-base-200 rounded-xl p-4">
                         <div class="flex justify-between items-center mb-1">
@@ -1253,9 +1271,39 @@
                             <span class="badge ${cls}">${status}</span>
                         </div>
                         <p class="text-2xl font-bold">${val}</p>
-                        <p class="text-xs text-base-content/50">${r.log?.check_datetime ? new Date(r.log.check_datetime).toLocaleString() : 'Not logged yet'}</p>
+                        <p class="text-xs text-base-content/50">${escapeHtml(sourceText)}</p>
                     </div>`;
             }).join('');
+
+            const pasteOption = document.querySelector('#ccpType option[value="pasteurization"]');
+            const ccpType = document.getElementById('ccpType');
+            const coolingOption = document.querySelector('#ccpType option[value="cooling"]');
+            const canLogPasteurization = ccp.needsPasteurization && wb.run.status === 'pasteurization';
+            const canLogCooling = wb.run.status === 'cooling';
+            if (pasteOption) {
+                pasteOption.disabled = !canLogPasteurization;
+                pasteOption.hidden = !ccp.needsPasteurization;
+            }
+            if (coolingOption) coolingOption.disabled = !canLogCooling;
+
+            const activeType = canLogPasteurization ? 'pasteurization' : canLogCooling ? 'cooling' : null;
+            if (activeType && ccpType) {
+                ccpType.value = activeType;
+            } else if (ccpType) {
+                ccpType.value = ccp.needsPasteurization ? 'pasteurization' : 'cooling';
+            }
+            if (ccpType) ccpType.disabled = !activeType;
+            const recordBtn = document.getElementById('recordCcpBtn');
+            if (recordBtn) recordBtn.disabled = !activeType;
+            const hint = document.getElementById('ccpQuickHint');
+            if (hint) {
+                hint.textContent = activeType === 'pasteurization'
+                    ? 'Heating is complete. Record the temperature and time now.'
+                    : activeType === 'cooling'
+                        ? 'Cooling is complete. Record the temperature now.'
+                        : 'Continue the production steps. This will unlock when a temperature is needed.';
+            }
+            onCcpTypeChange();
         }
 
         function onCcpTypeChange() {
@@ -1650,6 +1698,11 @@
                     notes.innerHTML = `<div class="alert alert-warning text-sm"><i class="fas fa-exclamation-triangle"></i>
                         No planned/issued milk found for this run. Enter the real liters on the floor, or link a fulfilled requisition.</div>`;
                 }
+                if (!ProductionRunFlow.needsPasteurization(run)) {
+                    const sourceBatch = escapeHtml(run.pasteurized_source_batch_code || 'the selected pasteurized milk batch');
+                    notes.innerHTML += `<div class="alert alert-info text-sm mt-2"><i class="fas fa-check-circle"></i>
+                        Milk came from <strong>${sourceBatch}</strong>. Its heat record is already attached, so do not pasteurize it again.</div>`;
+                }
             }
         }
 
@@ -1679,7 +1732,7 @@
                 showToast('Volume saved — packaging estimate generated', 'success');
                 await refreshAll({ stayOnPanel: true });
                 if (wb.run.status === 'planned') {
-                    showToast('Now press Start run to unlock CCP logging', 'info');
+                    showToast('Now press Start run to begin the production steps', 'info');
                 } else if (wizardMode) {
                     goToCurrentWizardStep();
                 }
@@ -1707,10 +1760,13 @@
                 }
                 if (!r.success) throw new Error(r.message || 'Failed to start');
                 const used = r.data?.initial_volume_ml;
+                const firstStep = ProductionRunFlow.needsPasteurization(wb?.run)
+                    ? 'pasteurization'
+                    : 'recipe processing (milk is already pasteurized)';
                 showToast(
                     used
-                        ? `Run started with ${(Number(used)/1000).toLocaleString(undefined,{maximumFractionDigits:3})} L — next: log CCPs`
-                        : 'Run started — next: log required CCPs',
+                        ? `Run started with ${(Number(used)/1000).toLocaleString(undefined,{maximumFractionDigits:3})} L — next: ${firstStep}`
+                        : `Run started — next: ${firstStep}`,
                     'success'
                 );
                 await refreshAll();
@@ -1724,7 +1780,7 @@
             const gate = ProductionRunFlow.allowedStageTransitions(wb?.run, wizardMode);
             if (!gate.allowed.includes(status)) {
                 showToast(gate.reason || 'Stage not allowed yet', 'warning');
-                if (gate.blockPackaging && status === 'packaging') {
+                if (gate.blockForCcp) {
                     showPanel('ccp', { force: true });
                 }
                 return;

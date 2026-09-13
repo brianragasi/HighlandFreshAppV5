@@ -66,6 +66,30 @@ try {
                     $issued = (float) ($riRow['issued_quantity'] ?? 0);
                     $requested = (float) ($riRow['requested_quantity'] ?? 0);
                     $remaining = max(0, (float) ($riRow['remaining_liters'] ?? $issued));
+                    // Requisition quantities use three decimals while pasteurization
+                    // runs use two. Treat sub-10 mL differences as rounding, not as
+                    // usable milk (for example 52.632 L issued vs 52.63 L used).
+                    if ($remaining < 0.01) {
+                        $remaining = 0.0;
+                    }
+
+                    $pastStmt = $db->prepare("
+                        SELECT pr.id, pr.run_code, pr.status,
+                               pr.input_milk_liters, pr.output_milk_liters,
+                               pr.temperature, pr.duration_mins, pr.duration_unit,
+                               pmi.id AS batch_id, pmi.batch_code,
+                               pmi.remaining_liters AS batch_remaining_liters,
+                               pmi.expiry_date
+                        FROM pasteurization_runs pr
+                        LEFT JOIN pasteurized_milk_inventory pmi
+                          ON pmi.pasteurization_run_id = pr.id
+                        WHERE pr.requisition_id = ?
+                          AND pr.status IN ('in_progress', 'completed')
+                        ORDER BY pr.id DESC
+                        LIMIT 1
+                    ");
+                    $pastStmt->execute([$reqId]);
+                    $linkedPasteurization = $pastStmt->fetch() ?: null;
 
                     Response::success([
                         'available_liters' => $remaining,
@@ -75,6 +99,7 @@ try {
                         'issued_liters' => $issued,
                         'requested_liters' => $requested,
                         'consumed_liters' => $issued - $remaining,
+                        'linked_pasteurization' => $linkedPasteurization,
                         'source' => 'requisition'
                     ], 'Raw milk issued for this requisition retrieved');
                     return;
@@ -344,6 +369,9 @@ try {
                 $riStmt->execute([$requisitionId, $requisitionId]);
                 $riRow = $riStmt->fetch();
                 $availableLiters = max(0, (float) ($riRow['remaining_liters'] ?? 0));
+                if ($availableLiters < 0.01) {
+                    $availableLiters = 0.0;
+                }
             } else {
                 // Fallback: general available raw milk (no specific requisition)
                 $issuedMilkStmt = $db->prepare("
@@ -393,8 +421,22 @@ try {
                 $availableLiters = max(0, ($issuedStats['total_issued'] ?? 0) - ($usedStats['total_used'] ?? 0) - ($pastStats['pasteurization_used'] ?? 0));
             }
 
-            if ($inputLiters > $availableLiters) {
-                $errors['input_liters'] = "Not enough raw milk available. Required: {$inputLiters}L, Available: {$availableLiters}L";
+            if ($inputLiters > $availableLiters + 0.005) {
+                $alreadyDone = null;
+                if ($requisitionId) {
+                    $doneStmt = $db->prepare("
+                        SELECT run_code
+                        FROM pasteurization_runs
+                        WHERE requisition_id = ? AND status = 'completed'
+                        ORDER BY id DESC
+                        LIMIT 1
+                    ");
+                    $doneStmt->execute([$requisitionId]);
+                    $alreadyDone = $doneStmt->fetchColumn();
+                }
+                $errors['input_liters'] = $alreadyDone
+                    ? "This requisition's milk was already pasteurized in {$alreadyDone}. Continue to Product Processing."
+                    : "Not enough raw milk available. Required: {$inputLiters}L, Available: {$availableLiters}L";
             }
 
             if (!empty($errors)) {

@@ -727,7 +727,7 @@
                         <input type="text" id="base_product_name" class="input input-bordered" required
                             placeholder="e.g., Milkbar-UBE" />
                         <label class="label pb-0">
-                            <span class="label-text-alt text-base-content/60">Include the flavor when it changes the recipe. Create Milkbar-UBE and Milkbar-Chocolate as separate base products.</span>
+                            <span class="label-text-alt text-base-content/60">Include the flavor when it changes the recipe. A different flavor must be a new base product with its own recipe.</span>
                         </label>
                     </div>
 
@@ -736,6 +736,7 @@
                         <label class="label"><span class="label-text font-medium">Category <span
                                     class="text-error">*</span></span></label>
                         <select id="base_category" class="select select-bordered" required>
+                            <option value="" disabled selected>Choose category</option>
                             <option value="pasteurized_milk">Pasteurized Milk</option>
                             <option value="flavored_milk">Flavored Milk</option>
                             <option value="yogurt">Yogurt</option>
@@ -3223,26 +3224,28 @@
 
                     // Sync base_products master row when present
                     if (baseProductId) {
-                        try {
-                            await fetch(`${ApiConfig.baseUrl}/admin/products.php?action=update_base&id=${baseProductId}`, {
-                                method: 'PUT',
-                                headers: {
-                                    ...ApiConfig.getHeaders(),
-                                    'Content-Type': 'application/json'
-                                },
-                                body: JSON.stringify({
-                                    name: baseName,
-                                    category,
-                                    milk_type_id: milkTypeId,
-                                    default_shelf_life_days: shelfLife,
-                                    storage_temp_min: tempMin,
-                                    storage_temp_max: tempMax,
-                                    description,
-                                    is_active: isActive
-                                })
-                            }).then(r => r.json());
-                        } catch (e) {
-                            console.warn('Base product master update skipped', e);
+                        const baseUpdate = await fetch(`${ApiConfig.baseUrl}/admin/products.php?action=update_base&id=${baseProductId}`, {
+                            method: 'PUT',
+                            headers: {
+                                ...ApiConfig.getHeaders(),
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                name: baseName,
+                                category,
+                                milk_type_id: milkTypeId,
+                                default_shelf_life_days: shelfLife,
+                                storage_temp_min: tempMin,
+                                storage_temp_max: tempMax,
+                                description,
+                                is_active: isActive
+                            })
+                        }).then(r => r.json());
+                        if (!baseUpdate.success) {
+                            const detail = baseUpdate.errors && typeof baseUpdate.errors === 'object'
+                                ? Object.values(baseUpdate.errors).filter(Boolean).join(' ')
+                                : '';
+                            throw new Error(detail || baseUpdate.message || 'Could not update the product details');
                         }
                     }
 

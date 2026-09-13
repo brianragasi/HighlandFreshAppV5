@@ -194,6 +194,24 @@ try {
             if (!$run) {
                 Response::notFound('Production run not found');
             }
+
+            if ($checkType === 'pasteurization') {
+                if (($run['milk_source_type'] ?? 'raw') === 'pasteurized') {
+                    Response::validationError([
+                        'check_type' => 'This milk was already pasteurized before this run. Use its attached source record instead of heating it again.'
+                    ]);
+                }
+                if (($run['status'] ?? '') !== 'pasteurization') {
+                    Response::validationError([
+                        'check_type' => 'Move the run to Pasteurization before recording this temperature.'
+                    ]);
+                }
+            }
+            if ($checkType === 'cooling' && ($run['status'] ?? '') !== 'cooling') {
+                Response::validationError([
+                    'check_type' => 'Move the run to Cooling before recording this temperature.'
+                ]);
+            }
             
             // Get CCP configuration for this check type
             $config = CCP_CONFIGS[$checkType];

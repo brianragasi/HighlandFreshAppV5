@@ -66,6 +66,15 @@ $checks = [
         && str_contains($pasteurizationApi, "'process_shortfall_exception'")
         && str_contains($pasteurizationPage, 'Sent for GM exception review.')
         && str_contains($gmPage, 'Material Reviews'),
+    'requisition pasteurization is one guided decision and cannot be repeated' =>
+        str_contains($pasteurizationApi, "'linked_pasteurization' => \$linkedPasteurization")
+        && str_contains($pasteurizationApi, 'Continue to Product Processing.')
+        && str_contains($pasteurizationApi, 'if ($remaining < 0.01)')
+        && str_contains($pasteurizationPage, 'Pasteurization is already finished')
+        && str_contains($pasteurizationPage, 'Do not pasteurize this milk again.')
+        && str_contains($pasteurizationPage, 'Continue to Product Processing')
+        && str_contains($pasteurizationPage, "urlParams.get('from_requisition')")
+        && str_contains($pasteurizationPage, 'useGuidedLayout()'),
 ];
 
 $failed = [];

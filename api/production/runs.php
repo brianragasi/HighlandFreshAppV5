@@ -29,6 +29,39 @@ function productionRunMaterialStatusesSql() {
     return "'planned', 'in_progress', 'pasteurization', 'processing', 'cooling', 'packaging', 'completed'";
 }
 
+/** A run only needs floor pasteurization when its milk arrived raw. */
+function productionRunNeedsPasteurization(array $run): bool {
+    return strtolower((string) ($run['milk_source_type'] ?? 'raw')) !== 'pasteurized';
+}
+
+/** Keep the server and workbench on the same short, physical floor path. */
+function productionRunNextStage(array $run): ?string {
+    $status = (string) ($run['status'] ?? 'planned');
+    if ($status === 'planned' || $status === 'in_progress') {
+        return productionRunNeedsPasteurization($run) ? 'pasteurization' : 'processing';
+    }
+    $next = [
+        'pasteurization' => 'processing',
+        'processing' => 'cooling',
+        'cooling' => 'packaging',
+    ];
+    return $next[$status] ?? null;
+}
+
+/** Use the current product master category for new work, not a stale recipe copy. */
+function productionEffectiveRecipeType(PDO $db, int $recipeId): string {
+    $stmt = $db->prepare("
+        SELECT COALESCE(NULLIF(bp.category, ''), NULLIF(mr.product_type, ''), 'pasteurized_milk')
+        FROM master_recipes mr
+        LEFT JOIN base_products bp ON bp.id = mr.base_product_id
+        WHERE mr.id = ?
+        LIMIT 1
+    ");
+    $stmt->execute([$recipeId]);
+    $type = strtolower(trim((string) $stmt->fetchColumn()));
+    return $type === 'bottled_milk' ? 'pasteurized_milk' : $type;
+}
+
 /**
  * Packaging is issued through the normal Warehouse requisition queue, but it
  * is a separate request from the ingredients used to cook the bulk liquid.
@@ -572,7 +605,9 @@ try {
                 // a pre-run requisition.
                 $stmt = $db->prepare("
                     SELECT pr.*,
-                           mr.recipe_code, mr.product_name, mr.product_type, mr.variant,
+                           mr.recipe_code, mr.product_name,
+                           COALESCE(NULLIF(bp.category, ''), mr.product_type) AS product_type,
+                           mr.variant,
                            mr.base_milk_liters, mr.expected_yield, mr.yield_unit,
                            mr.bulk_yield_liters,
                            mr.pasteurization_temp, mr.pasteurization_time_mins, mr.cooling_temp,
@@ -583,6 +618,8 @@ try {
                            mrq.status as linked_requisition_status,
                            mrq.planned_quantity as linked_requisition_planned_quantity,
                            mrq.planned_yield_unit as linked_requisition_yield_unit,
+                           pmi.batch_code AS pasteurized_source_batch_code,
+                           pmi.pasteurization_temp AS source_pasteurization_temp,
                            (SELECT pb.qc_status FROM production_batches pb WHERE pb.run_id = pr.id ORDER BY pb.id DESC LIMIT 1) AS qc_batch_status,
                            (SELECT d.variance
                               FROM qc_batch_count_discrepancies d
@@ -596,6 +633,8 @@ try {
                              ORDER BY d.id DESC LIMIT 1) AS qc_count_hold_reason
                     FROM production_runs pr
                     JOIN master_recipes mr ON pr.recipe_id = mr.id
+                    LEFT JOIN base_products bp ON bp.id = mr.base_product_id
+                    LEFT JOIN pasteurized_milk_inventory pmi ON pmi.id = pr.pasteurized_milk_batch_id
                     LEFT JOIN users u1 ON pr.started_by = u1.id
                     LEFT JOIN users u2 ON pr.completed_by = u2.id
                     LEFT JOIN material_requisitions mrq
@@ -788,7 +827,7 @@ try {
             }
             
             if ($productType) {
-                $where .= " AND mr.product_type = ?";
+                $where .= " AND COALESCE(NULLIF(bp.category, ''), mr.product_type) = ?";
                 $params[] = $productType;
             }
             
@@ -807,6 +846,7 @@ try {
                 SELECT COUNT(*) as total 
                 FROM production_runs pr 
                 JOIN master_recipes mr ON pr.recipe_id = mr.id
+                LEFT JOIN base_products bp ON bp.id = mr.base_product_id
                 {$where}
             ");
             $countStmt->execute($params);
@@ -819,7 +859,9 @@ try {
                        pr.yield_variance, pr.created_at,
                        pr.initial_volume_ml, pr.total_loss_ml, pr.total_byproduct_ml, pr.net_yield_ml,
                        pr.material_reconciled, pr.reconciliation_notes,
-                       mr.recipe_code, mr.product_name, mr.product_type, mr.variant, mr.yield_unit,
+                       mr.recipe_code, mr.product_name,
+                       COALESCE(NULLIF(bp.category, ''), mr.product_type) AS product_type,
+                       mr.variant, mr.yield_unit,
                        (SELECT pb.qc_status FROM production_batches pb WHERE pb.run_id = pr.id ORDER BY pb.id DESC LIMIT 1) AS qc_batch_status,
                        (SELECT d.variance
                           FROM qc_batch_count_discrepancies d
@@ -828,6 +870,7 @@ try {
                          ORDER BY d.id DESC LIMIT 1) AS qc_count_hold_variance
                 FROM production_runs pr
                 JOIN master_recipes mr ON pr.recipe_id = mr.id
+                LEFT JOIN base_products bp ON bp.id = mr.base_product_id
                 {$where}
                 ORDER BY pr.created_at DESC
                 LIMIT ? OFFSET ?
@@ -958,9 +1001,22 @@ try {
                 && empty($sourceRequisition['production_run_id'])
                 && (int) ($sourceRequisition['planned_recipe_id'] ?? 0) === (int) $recipeId;
 
-            $recipeStmt = $db->prepare("SELECT * FROM master_recipes WHERE id = ?");
+            $recipeStmt = $db->prepare("
+                SELECT mr.*,
+                       COALESCE(NULLIF(bp.category, ''), mr.product_type) AS effective_product_type
+                FROM master_recipes mr
+                LEFT JOIN base_products bp ON bp.id = mr.base_product_id
+                WHERE mr.id = ?
+            ");
             $recipeStmt->execute([$recipeId]);
             $recipe = $recipeStmt->fetch();
+
+            if ($recipe) {
+                $recipe['product_type'] = $recipe['effective_product_type'] ?: $recipe['product_type'];
+                if ($recipe['product_type'] === 'bottled_milk') {
+                    $recipe['product_type'] = 'pasteurized_milk';
+                }
+            }
 
             if (!$recipe) {
                 $errors['recipe_id'] = 'Recipe not found';
@@ -1018,31 +1074,76 @@ try {
             $totalAvailableLiters = 0;
             
             if ($recipe && $recipe['product_type'] === 'yogurt') {
-                // YOGURT: Check pasteurized milk inventory (FIFO)
+                // YOGURT: use the pasteurized output created from this exact
+                // fulfilled requisition. The requisition quantity is raw milk;
+                // normal pasteurization loss means the ready amount is slightly
+                // lower. Product processing must consume that actual output,
+                // not demand the pre-pasteurization quantity a second time.
                 $milkSourceType = 'pasteurized';
-                
-                $pasteurizedStmt = $db->prepare("
-                    SELECT id, batch_code, remaining_liters, expiry_date
-                    FROM pasteurized_milk_inventory
-                    WHERE status = 'available' 
-                      AND remaining_liters > 0
-                      AND expiry_date >= CURDATE()
-                    ORDER BY pasteurized_at ASC
-                    LIMIT 10
-                ");
-                $pasteurizedStmt->execute();
+
+                $pasteurizedSql = "
+                    SELECT pmi.id, pmi.batch_code, pmi.remaining_liters, pmi.expiry_date,
+                           pmi.pasteurization_temp,
+                           pr.output_milk_liters,
+                           COALESCE(pr.duration_mins, pmi.pasteurization_duration_mins, 0) AS source_duration,
+                           COALESCE(pr.duration_unit, 'minutes') AS source_duration_unit,
+                           COALESCE(pr.performed_by, pmi.pasteurized_by) AS source_verified_by
+                    FROM pasteurized_milk_inventory pmi
+                    LEFT JOIN pasteurization_runs pr ON pr.id = pmi.pasteurization_run_id
+                    WHERE pmi.status = 'available'
+                      AND pmi.remaining_liters > 0
+                      AND pmi.expiry_date >= CURDATE()
+                ";
+                $pasteurizedParams = [];
+                if ($materialRequisitionId) {
+                    $pasteurizedSql .= " AND pr.requisition_id = ? AND pr.status = 'completed'";
+                    $pasteurizedParams[] = (int) $materialRequisitionId;
+                }
+                $pasteurizedSql .= " ORDER BY pmi.pasteurized_at ASC LIMIT 100";
+                $pasteurizedStmt = $db->prepare($pasteurizedSql);
+                $pasteurizedStmt->execute($pasteurizedParams);
                 $pasteurizedBatches = $pasteurizedStmt->fetchAll();
+
+                if ($materialRequisitionId && count($pasteurizedBatches) === 1) {
+                    $actualPasteurizedOutput = (float) ($pasteurizedBatches[0]['output_milk_liters'] ?? 0);
+                    if ($actualPasteurizedOutput > 0) {
+                        $requiredMilkLiters = $actualPasteurizedOutput;
+                    }
+                }
                 
                 $totalAvailableLiters = array_sum(array_column($pasteurizedBatches, 'remaining_liters'));
-                
-                $shrinkageTolerance = 0.95;
+                $verifiedAvailableLiters = 0.0;
+                $selectedPasteurizedBatch = null;
+                $pasteurizationConfig = ccp_get_configs()['pasteurization'];
+                foreach ($pasteurizedBatches as $candidate) {
+                    $duration = max(0, (int) ($candidate['source_duration'] ?? 0));
+                    $durationSeconds = ($candidate['source_duration_unit'] ?? 'minutes') === 'seconds'
+                        ? $duration
+                        : $duration * 60;
+                    $hasSourceProof = $candidate['pasteurization_temp'] !== null
+                        && (float) $candidate['pasteurization_temp'] >= ($pasteurizationConfig['target'] - $pasteurizationConfig['tolerance'])
+                        && $durationSeconds >= $pasteurizationConfig['hold_time'];
+                    if (!$hasSourceProof) {
+                        continue;
+                    }
+                    $verifiedAvailableLiters += (float) $candidate['remaining_liters'];
+                    if (!$selectedPasteurizedBatch
+                        && (float) $candidate['remaining_liters'] + 0.0005 >= $requiredMilkLiters) {
+                        $selectedPasteurizedBatch = $candidate;
+                    }
+                }
+
                 if (empty($pasteurizedBatches)) {
-                    $errors['milk_source'] = '⚠️ YOGURT requires PASTEURIZED MILK. No pasteurized milk available. Please run pasteurization first.';
-                } else if ($totalAvailableLiters < $requiredMilkLiters * $shrinkageTolerance) {
-                    $errors['milk_source'] = "⚠️ Not enough PASTEURIZED milk. Required: {$requiredMilkLiters}L (5% shrinkage allowed), Available: {$totalAvailableLiters}L. Please pasteurize more milk.";
+                    $errors['milk_source'] = $materialRequisitionId
+                        ? 'Pasteurize the raw milk issued for this requisition before starting product processing.'
+                        : 'Yogurt requires pasteurized milk. No ready pasteurized batch is available.';
+                } else if ($verifiedAvailableLiters + 0.0005 < $requiredMilkLiters) {
+                    $errors['milk_source'] = "Not enough pasteurized milk with a complete heat record. Required: {$requiredMilkLiters}L, Ready: {$verifiedAvailableLiters}L.";
+                } else if (!$selectedPasteurizedBatch) {
+                    $errors['milk_source'] = "Pasteurized milk is split across smaller batches. Make this production run smaller so it uses one traceable milk batch.";
                 } else {
-                    // Auto-select batch (FIFO - oldest first)
-                    $pasteurizedBatchId = $pasteurizedBatches[0]['id'];
+                    // Use the oldest single batch that can supply the whole run.
+                    $pasteurizedBatchId = $selectedPasteurizedBatch['id'];
                 }
             } else {
                 // OTHER PRODUCTS (bottled_milk, cheese, butter, milk_bar): Use raw milk via requisitions
@@ -1121,12 +1222,58 @@ try {
                 ]);
                 
                 $runId = $db->lastInsertId();
+
+                // Already-pasteurized milk keeps its original heat record. Copy
+                // that proof onto this run so staff and QC do not ask for the
+                // same physical pasteurization a second time.
+                if ($milkSourceType === 'pasteurized' && $pasteurizedBatchId) {
+                    $sourceBatch = null;
+                    foreach ($pasteurizedBatches as $candidate) {
+                        if ((int) $candidate['id'] === (int) $pasteurizedBatchId) {
+                            $sourceBatch = $candidate;
+                            break;
+                        }
+                    }
+                    if ($sourceBatch && $sourceBatch['pasteurization_temp'] !== null) {
+                        $sourceDuration = max(0, (int) ($sourceBatch['source_duration'] ?? 0));
+                        $holdSeconds = ($sourceBatch['source_duration_unit'] ?? 'minutes') === 'seconds'
+                            ? $sourceDuration
+                            : $sourceDuration * 60;
+                        $config = ccp_get_configs()['pasteurization'];
+                        $sourceTemp = (float) $sourceBatch['pasteurization_temp'];
+                        $sourceStatus = 'pass';
+                        if ($sourceTemp < ($config['target'] - $config['tolerance'])) {
+                            $sourceStatus = 'fail';
+                        } elseif ($sourceTemp < $config['target'] || $holdSeconds < $config['hold_time']) {
+                            $sourceStatus = 'warning';
+                        }
+                        $verifiedBy = (int) ($sourceBatch['source_verified_by'] ?? 0);
+                        if ($verifiedBy <= 0) {
+                            $verifiedBy = (int) $currentUser['user_id'];
+                        }
+                        $sourceLogStmt = $db->prepare("
+                            INSERT INTO production_ccp_logs (
+                                run_id, check_type, temperature, hold_time_secs,
+                                target_temp, temp_tolerance, status, verified_by, notes
+                            ) VALUES (?, 'pasteurization', ?, ?, ?, ?, ?, ?, ?)
+                        ");
+                        $sourceLogStmt->execute([
+                            $runId,
+                            $sourceTemp,
+                            $holdSeconds,
+                            $config['target'],
+                            $config['tolerance'],
+                            $sourceStatus,
+                            $verifiedBy,
+                            'Carried from pasteurized milk batch ' . $sourceBatch['batch_code'] . '; no second pasteurization required.',
+                        ]);
+                    }
+                }
                 
                 // YOGURT: Deduct from pasteurized milk inventory (FIFO)
                 if ($milkSourceType === 'pasteurized' && $pasteurizedBatchId) {
-                    $remainingToDeduct = $requiredMilkLiters;
-
-                    // Deduct from batches in FIFO order
+                    // Deduct from the one selected source batch. Keeping one milk
+                    // batch per run makes the source easy to follow in QC.
                     // V4.0 — fixed two bugs in this query:
                     //   1. The original `status = CASE WHEN remaining_liters - ? <= 0
                     //      THEN 'exhausted' ELSE status END` re-subtracted the
@@ -1152,15 +1299,7 @@ try {
                         WHERE id = ?
                     ");
 
-                    foreach ($pasteurizedBatches as $batch) {
-                        if ($remainingToDeduct <= 0) break;
-
-                        $deductQty = min((float) $batch['remaining_liters'], $remainingToDeduct);
-                        // V4.0 — only 2 params now (qty, id) since the
-                        // status CASE no longer needs the qty twice.
-                        $deductStmt->execute([$deductQty, $batch['id']]);
-                        $remainingToDeduct -= $deductQty;
-                    }
+                    $deductStmt->execute([$requiredMilkLiters, $pasteurizedBatchId]);
                     
                     // Log the usage
                     error_log("Yogurt production {$runCode}: Deducted {$requiredMilkLiters}L from pasteurized milk inventory");
@@ -1399,6 +1538,37 @@ try {
                         Response::error('Invalid status', 400);
                     }
 
+                    $expectedStatus = productionRunNextStage($run);
+                    if ($newStatus !== $expectedStatus) {
+                        Response::validationError([
+                            'status' => $expectedStatus
+                                ? 'Finish the current step first. The next step is ' . ucfirst($expectedStatus) . '.'
+                                : 'This run has no further floor stage to open.',
+                        ], 'Follow the production steps in order');
+                    }
+
+                    // Temperature checks happen where they physically belong:
+                    // after pasteurizing, and after cooling.
+                    $gateType = $run['status'] === 'pasteurization'
+                        ? 'pasteurization'
+                        : ($run['status'] === 'cooling' ? 'cooling' : null);
+                    if ($gateType) {
+                        $gateStmt = $db->prepare("
+                            SELECT status FROM production_ccp_logs
+                            WHERE run_id = ? AND check_type = ?
+                            ORDER BY check_datetime DESC, id DESC LIMIT 1
+                        ");
+                        $gateStmt->execute([$runId, $gateType]);
+                        $gateStatus = $gateStmt->fetchColumn();
+                        if ($gateStatus === false || $gateStatus === 'fail') {
+                            Response::validationError([
+                                'ccp_logs' => $gateStatus === 'fail'
+                                    ? ucfirst($gateType) . ' check failed. Record a correct reading before continuing.'
+                                    : 'Record the ' . $gateType . ' temperature before continuing.',
+                            ]);
+                        }
+                    }
+
                     $stmt = $db->prepare("UPDATE production_runs SET status = ? WHERE id = ?");
                     $stmt->execute([$newStatus, $runId]);
 
@@ -1633,31 +1803,26 @@ try {
                     $ccpCheckStmt->execute([$runId]);
                     $ccpLogs = $ccpCheckStmt->fetchAll();
                     
-                    $hasPasteurization = false;
-                    $hasCooling = false;
+                    $requiredCCPs = productionRunNeedsPasteurization($run)
+                        ? ['pasteurization', 'cooling']
+                        : ['cooling'];
+                    $loggedByType = [];
                     $failedCCPs = [];
                     
                     foreach ($ccpLogs as $log) {
-                        if ($log['check_type'] === 'pasteurization') {
-                            $hasPasteurization = true;
-                            if ($log['status'] === 'fail') {
-                                $failedCCPs[] = 'pasteurization';
-                            }
-                        }
-                        if ($log['check_type'] === 'cooling') {
-                            $hasCooling = true;
-                            if ($log['status'] === 'fail') {
-                                $failedCCPs[] = 'cooling';
-                            }
+                        $loggedByType[$log['check_type']] = $log;
+                        if (in_array($log['check_type'], $requiredCCPs, true) && $log['status'] === 'fail') {
+                            $failedCCPs[] = $log['check_type'];
                         }
                     }
                     
                     $ccpErrors = [];
-                    if (!$hasPasteurization) {
-                        $ccpErrors[] = 'Pasteurization CCP log is required (75°C for 15 seconds)';
-                    }
-                    if (!$hasCooling) {
-                        $ccpErrors[] = 'Cooling verification CCP log is required (4°C)';
+                    foreach ($requiredCCPs as $requiredType) {
+                        if (!isset($loggedByType[$requiredType])) {
+                            $ccpErrors[] = $requiredType === 'pasteurization'
+                                ? 'Pasteurization temperature is required (75°C for 15 seconds)'
+                                : 'Cooling temperature is required (4°C)';
+                        }
                     }
                     if (!empty($failedCCPs)) {
                         $ccpErrors[] = 'The most recent ' . implode(' and ', $failedCCPs) . ' CCP check(s) failed. Please log a correct reading.';
@@ -1666,7 +1831,7 @@ try {
                     if (!empty($ccpErrors)) {
                         Response::validationError([
                             'ccp_logs' => implode('; ', $ccpErrors),
-                            'required_ccps' => ['pasteurization', 'cooling'],
+                            'required_ccps' => $requiredCCPs,
                             'logged_ccps' => array_column($ccpLogs, 'check_type')
                         ], 'CCP validation failed - Food safety requirements not met');
                     }
@@ -1852,10 +2017,7 @@ try {
                     }
                     
                     // Recipe product type (byproduct rules only — NOT pack conversion)
-                    $recipeStmt = $db->prepare("SELECT product_type FROM master_recipes WHERE id = ?");
-                    $recipeStmt->execute([$run['recipe_id']]);
-                    $recipeInfo = $recipeStmt->fetch();
-                    $productType = $recipeInfo['product_type'] ?? 'bottled_milk';
+                    $productType = productionEffectiveRecipeType($db, (int) $run['recipe_id']);
 
                     // =====================================================
                     // MULTI-UNIT OUTPUT — ALWAYS from product master UOM
@@ -2033,9 +2195,17 @@ try {
                         
                         // Pull verified CCP temperatures from production logs so QC
                         // sees actual production inputs without re-entry.
-                        $ccpTemps = ccp_extract_temps_from_logs($ccpLogs);
-                        $pasteurizationTemp = $ccpTemps['pasteurization_temp'];
-                        $coolingTemp = $ccpTemps['cooling_temp'];
+                    $ccpTemps = ccp_extract_temps_from_logs($ccpLogs);
+                    $pasteurizationTemp = $ccpTemps['pasteurization_temp'];
+                    $coolingTemp = $ccpTemps['cooling_temp'];
+                    if ($pasteurizationTemp === null && !empty($run['pasteurized_milk_batch_id'])) {
+                        $sourceTempStmt = $db->prepare("
+                            SELECT pasteurization_temp FROM pasteurized_milk_inventory WHERE id = ? LIMIT 1
+                        ");
+                        $sourceTempStmt->execute([(int) $run['pasteurized_milk_batch_id']]);
+                        $sourceTemp = $sourceTempStmt->fetchColumn();
+                        $pasteurizationTemp = $sourceTemp !== false ? (float) $sourceTemp : null;
+                    }
 
                         // Create batch record for QC verification (includes denormalized CCP temps)
                         $batchStmt = $db->prepare("

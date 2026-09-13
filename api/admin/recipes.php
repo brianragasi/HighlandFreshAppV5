@@ -69,7 +69,7 @@ function mapCategoryToRecipeType($category) {
         'cream' => 'cream',
         'milk_bar' => 'milk_bar',
     ];
-    return $map[$category] ?? 'pasteurized_milk';
+    return $map[$category] ?? null;
 }
 
 /**
@@ -155,13 +155,17 @@ function resolveProductMaster(PDO $conn, $data) {
             $milkTypeName = $mt->fetchColumn() ?: null;
         }
 
-        $category = $base['category'] ?: 'pasteurized_milk';
+        $category = trim((string) ($base['category'] ?? ''));
+        $recipeType = mapCategoryToRecipeType($category);
+        if (!$recipeType) {
+            return [null, ['category' => 'Choose a valid category on the base product before saving its recipe']];
+        }
 
         return [[
             'base_product_id' => (int) $base['id'],
             'product_id' => null,
             'product_name' => $base['name'],
-            'product_type' => mapCategoryToRecipeType($category),
+            'product_type' => $recipeType,
             'category' => $category,
             'milk_type_id' => ($milkTypeId !== null && $milkTypeId !== '') ? (int) $milkTypeId : null,
             'milk_type_name' => $milkTypeName,
@@ -192,6 +196,10 @@ function resolveProductMaster(PDO $conn, $data) {
         }
 
         $category = $p['base_category'] ?: $p['category'];
+        $recipeType = mapCategoryToRecipeType($category);
+        if (!$recipeType) {
+            return [null, ['category' => 'Choose a valid category on the product before saving its recipe']];
+        }
         $milkTypeId = $p['base_milk_type_id'] ?: $p['milk_type_id'];
         $name = $p['base_name'] ?: preg_replace('/\s+\d+(\.\d+)?\s*(ml|l|g|kg)\b/i', '', $p['product_name']);
         $name = trim($name) ?: $p['product_name'];
@@ -200,7 +208,7 @@ function resolveProductMaster(PDO $conn, $data) {
             'base_product_id' => $p['base_product_id'] ? (int) $p['base_product_id'] : null,
             'product_id' => (int) $p['id'],
             'product_name' => $name,
-            'product_type' => mapCategoryToRecipeType($category),
+            'product_type' => $recipeType,
             'category' => $category,
             'milk_type_id' => ($milkTypeId !== null && $milkTypeId !== '') ? (int) $milkTypeId : null,
             'milk_type_name' => $p['milk_type_name'] ?? null,
@@ -443,6 +451,7 @@ function enrichRecipeRow(PDO $conn, array $recipe) {
             $recipe['product_name'] = $bp['name'];
             $recipe['category'] = $bp['category'];
             $recipe['product_type_display'] = $bp['category'];
+            $recipe['product_type'] = mapCategoryToRecipeType($bp['category']) ?: $recipe['product_type'];
             $recipe['milk_type_id'] = $bp['milk_type_id'] !== null ? (int) $bp['milk_type_id'] : $recipe['milk_type_id'];
             $recipe['milk_type_name'] = $bp['milk_type_name'] ?: ($recipe['milk_type_name'] ?? null);
             $recipe['shelf_life_days_product'] = (int) ($bp['default_shelf_life_days'] ?? HF_MIN_FINISHED_PRODUCT_SHELF_LIFE_DAYS);
@@ -495,11 +504,14 @@ function getRecipes($conn) {
     }
 
     if ($productType) {
-        // Accept both pasteurized_milk and legacy bottled_milk filter
+        $effectiveType = $hasBpTable
+            ? "COALESCE(NULLIF(bp.category, ''), r.product_type)"
+            : 'r.product_type';
+        // Accept legacy bottled_milk only when no base-product category exists.
         if ($productType === 'pasteurized_milk') {
-            $where[] = "r.product_type IN ('pasteurized_milk', 'bottled_milk')";
+            $where[] = "{$effectiveType} IN ('pasteurized_milk', 'bottled_milk')";
         } else {
-            $where[] = "r.product_type = ?";
+            $where[] = "{$effectiveType} = ?";
             $params[] = $productType;
         }
     }
@@ -511,7 +523,7 @@ function getRecipes($conn) {
 
     $whereClause = count($where) > 0 ? 'WHERE ' . implode(' AND ', $where) : '';
 
-    $countSql = "SELECT COUNT(*) as total FROM master_recipes r $whereClause";
+    $countSql = "SELECT COUNT(*) as total FROM master_recipes r {$bpJoin} $whereClause";
     $countStmt = $conn->prepare($countSql);
     $countStmt->execute($params);
     $total = $countStmt->fetch(PDO::FETCH_ASSOC)['total'];
@@ -631,6 +643,9 @@ function createRecipe($conn) {
 
     if ($master && empty($master['milk_type_id'])) {
         $errors['milk_type_id'] = 'Set the milk type on the base product before saving a recipe';
+    }
+    if ($master && empty($master['product_type'])) {
+        $errors['category'] = 'Choose a valid product category before saving a recipe';
     }
     // An approved recipe may be configured while its product is still a draft.
     // Production continues to require an active product; Product Setup performs
@@ -787,6 +802,9 @@ function updateRecipe($conn, $id) {
         : (int) $existing['is_active'] === 1;
     if ($master && empty($master['milk_type_id'])) {
         $errors['milk_type_id'] = 'Set the milk type on the base product before saving a recipe';
+    }
+    if ($master && empty($master['product_type'])) {
+        $errors['category'] = 'Choose a valid product category before saving a recipe';
     }
     // Allow recipe configuration for a draft product. The active-product gate
     // remains in Production and the Product Setup readiness flow.
