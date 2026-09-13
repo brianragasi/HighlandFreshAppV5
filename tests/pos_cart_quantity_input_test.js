@@ -44,8 +44,18 @@ assert.match(page, /grid-template-areas:\s*"identity remove"\s*"quantity total"/
     'cart rows must give the product identity a full row above the controls');
 assert.match(page, /\.cart-item__name\s*\{[^}]*overflow-wrap:\s*anywhere;[^}]*white-space:\s*normal;/s,
     'selected product names must wrap instead of being clipped with an ellipsis');
-assert.match(page, /\.pos-cart-footer\s*\{[^}]*max-height:\s*calc\(100% - 15rem\);[^}]*overflow-y:\s*auto;/s,
-    'checkout must remain inside the viewport on short desktop screens');
+assert.match(page, /<dialog id="checkoutModal" class="modal">/,
+    'payment controls must open as a separate checkout step');
+assert.match(page, /id="btnProceedToPay"[\s\S]*onclick="openCheckout\(\)"/,
+    'the cart footer must provide one clear payment action');
+assert.match(page, /<details class="tax-details">/,
+    'tax lines must stay collapsed until the cashier asks for them');
+assert.match(page, /\.cart-scroll-shell\s*\{[^}]*flex:\s*1 1 auto;[^}]*min-height:\s*0;/s,
+    'the cart list must receive the remaining vertical workspace');
+assert.match(page, /function scrollCart\(direction\)/,
+    'cart overflow must provide touch-sized paging controls');
+assert.match(page, /touch-action:\s*pan-y/,
+    'the cart must support intentional vertical touch scrolling');
 assert.match(page, /\.pos-cart-panel\s*\{[^}]*flex:\s*0 0 clamp\(23rem, 37%, 28rem\);[^}]*width:\s*clamp\(23rem, 37%, 28rem\);/s,
     'desktop checkout must stay usable without swallowing the product catalog');
 assert.match(page, /@media \(min-width: 1024px\) and \(max-height: 900px\)/,
