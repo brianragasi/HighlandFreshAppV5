@@ -15,9 +15,6 @@ FTP_PASSWORD = os.environ["FTP_PASSWORD"]
 GMAIL_APP_PASSWORD = os.environ["GMAIL_APP_PASSWORD"].replace(" ", "")
 GOOGIEHOST_SMTP_PASSWORD = os.environ["GOOGIEHOST_SMTP_PASSWORD"].strip()
 BREVO_API_KEY = os.environ.get("BREVO_API_KEY", "").strip()
-# Confirmed when the GoogieHost database was recreated. Do not let the older
-# repository secret overwrite the replacement credential during deployment.
-GOOGIEHOST_DB_PASSWORD = "QAqE5HrfQPFNRCcKP2TH"
 REMOTE_ENV = ".env"
 
 if len(GMAIL_APP_PASSWORD) != 16:
@@ -48,19 +45,6 @@ LIVE_SETTINGS = {
     "ORDER_MAILBOX_RECENT_MODE": "false",
     "ORDER_MAILBOX_MAX_MESSAGES": "20",
 }
-
-# Database name and user are account-scoped values, while the password stays in
-# a GitHub Actions secret. If the secret has not been added yet, preserve the
-# server's existing DB settings instead of replacing them with an empty value.
-if GOOGIEHOST_DB_PASSWORD:
-    LIVE_SETTINGS.update({
-        "DB_HOST": "localhost",
-        "DB_PORT": "3306",
-        "DB_NAME": "fhfpfmfm_highlandfresh",
-        "DB_USERNAME": "fhfpfmfm_highlandfresh",
-        "DB_PASSWORD": GOOGIEHOST_DB_PASSWORD,
-    })
-
 
 def connect() -> ftplib.FTP:
     client = ftplib.FTP(timeout=30)
