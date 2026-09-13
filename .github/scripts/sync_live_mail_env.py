@@ -14,6 +14,7 @@ USERNAME = os.environ["FTP_USERNAME"]
 FTP_PASSWORD = os.environ["FTP_PASSWORD"]
 GMAIL_APP_PASSWORD = os.environ["GMAIL_APP_PASSWORD"].replace(" ", "")
 GOOGIEHOST_SMTP_PASSWORD = os.environ["GOOGIEHOST_SMTP_PASSWORD"].strip()
+BREVO_API_KEY = os.environ.get("BREVO_API_KEY", "").strip()
 REMOTE_ENV = ".env"
 
 if len(GMAIL_APP_PASSWORD) != 16:
@@ -22,9 +23,11 @@ if not GOOGIEHOST_SMTP_PASSWORD:
     raise SystemExit("GOOGIEHOST_SMTP_PASSWORD must not be empty")
 
 MAIL_SETTINGS = {
-    # Outbound application messages use the authenticated relay assigned by
-    # GoogieHost support. The Gmail account below remains the separate,
-    # read-only POP3 inbox used to import customer purchase orders.
+    # Outbound application messages prefer Brevo over HTTPS because the shared
+    # host blocks SMTP routes. SMTP settings stay available as a fallback. The
+    # Gmail account below is a separate read-only customer-order inbox.
+    "MAIL_TRANSPORT": "brevo_api" if BREVO_API_KEY else "smtp",
+    "BREVO_API_KEY": BREVO_API_KEY,
     "SMTP_HOST": "cloud3.googiehost.com",
     "SMTP_PORT": "465",
     "SMTP_ENCRYPTION": "ssl",

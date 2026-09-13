@@ -68,6 +68,22 @@ $checks = [
         && str_contains($liveMailSync, '"SMTP_ENCRYPTION": "ssl"')
         && str_contains($liveMailSync, '"SMTP_USERNAME": "notifications@highlandfresh.whf.bz"')
         && str_contains($liveMailSync, '"SMTP_PASSWORD": GOOGIEHOST_SMTP_PASSWORD'),
+    'Outbound email can use Brevo HTTPS without changing mail callers' =>
+        str_contains($configSource, "define('MAIL_TRANSPORT'")
+        && str_contains($configSource, "define('BREVO_API_URL', 'https://api.brevo.com/v3/smtp/email')")
+        && str_contains($mailerSource, "MAIL_TRANSPORT === 'brevo_api'")
+        && str_contains($mailerSource, "'api-key: ' . \$apiKey")
+        && str_contains($mailerSource, "CURLOPT_FOLLOWLOCATION => false")
+        && str_contains($mailerSource, "\$status !== 201")
+        && str_contains($mailerSource, "'attachment'"),
+    'Deployment keeps the Brevo key in a repository secret' =>
+        str_contains($deployWorkflow, 'BREVO_API_KEY: ${{ secrets.BREVO_API_KEY }}')
+        && str_contains($liveMailSync, 'BREVO_API_KEY = os.environ.get("BREVO_API_KEY", "").strip()')
+        && str_contains($liveMailSync, '"MAIL_TRANSPORT": "brevo_api" if BREVO_API_KEY else "smtp"'),
+    'Admin email test understands the active HTTPS provider' =>
+        str_contains($smtpDiagnostics, "'provider' => 'Brevo HTTPS API'")
+        && str_contains($smtpDiagnostics, 'Check the API key and verify the sender in Brevo.')
+        && str_contains($smtpDiagnostics, 'Email service accepted the test message.'),
     'Customer-order POP3 remains separate from outbound GoogieHost SMTP' =>
         str_contains($liveMailSync, '"ORDER_MAILBOX_HOST": "pop.gmail.com"')
         && str_contains($liveMailSync, '"ORDER_MAILBOX_PASSWORD": GMAIL_APP_PASSWORD'),

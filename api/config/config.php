@@ -194,8 +194,8 @@ define('PASSWORD_MAX_LENGTH', 128);
 define('RATE_LIMIT_SET_PASSWORD_ATTEMPTS', 5); // Max attempts per window
 define('RATE_LIMIT_SET_PASSWORD_WINDOW', 900); // 15 minutes in seconds
 
-// Outbound email / SMTP. GoogieHost requires its account-local authenticated
-// relay; other deployments retain Gmail-compatible defaults.
+// Outbound email. Prefer an HTTPS email API on shared hosts where outbound
+// SMTP ports may be blocked. SMTP remains available as a fallback.
 $defaultSmtpHost = $isGoogieHost ? 'cloud3.googiehost.com' : 'smtp.gmail.com';
 $defaultSmtpPort = $isGoogieHost ? 465 : 587;
 $defaultSmtpEncryption = $isGoogieHost ? 'ssl' : 'tls';
@@ -213,6 +213,12 @@ define('SMTP_VERIFY_PEER', filter_var(
     envOrDefault('SMTP_VERIFY_PEER', $isProductionHost ? 'true' : 'false'),
     FILTER_VALIDATE_BOOLEAN
 ));
+define('BREVO_API_KEY', envOrDefault('BREVO_API_KEY', ''));
+define('BREVO_API_URL', 'https://api.brevo.com/v3/smtp/email');
+define('MAIL_TRANSPORT', strtolower(envOrDefault(
+    'MAIL_TRANSPORT',
+    BREVO_API_KEY !== '' ? 'brevo_api' : 'smtp'
+)));
 
 // Institutional customer PO inbox (POP3, read-only; messages are never deleted)
 define('ORDER_MAILBOX_ENABLED', filter_var(

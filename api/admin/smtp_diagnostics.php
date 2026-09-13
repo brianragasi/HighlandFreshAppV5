@@ -2,7 +2,7 @@
 /**
  * Authenticated production email diagnostics.
  *
- * GET  returns non-secret SMTP configuration readiness.
+ * GET  returns non-secret email configuration readiness.
  * POST sends one test message to the signed-in GM/Admin's registered email.
  */
 
@@ -14,6 +14,28 @@ $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 function smtpReadiness(): array
 {
     $issues = [];
+    if (MAIL_TRANSPORT === 'brevo_api') {
+        if (!function_exists('curl_init')) {
+            $issues[] = 'PHP cURL is unavailable on this host.';
+        }
+        if (BREVO_API_KEY === '') {
+            $issues[] = 'BREVO_API_KEY is not configured.';
+        }
+        if (!filter_var(SMTP_FROM_EMAIL, FILTER_VALIDATE_EMAIL)) {
+            $issues[] = 'The sender email address is missing or invalid.';
+        }
+
+        return [
+            'configured' => $issues === [],
+            'transport' => 'brevo_api',
+            'provider' => 'Brevo HTTPS API',
+            'sender_domain' => substr(strrchr(SMTP_FROM_EMAIL, '@') ?: '', 1),
+            'issues' => $issues,
+        ];
+    }
+    if (MAIL_TRANSPORT !== 'smtp') {
+        $issues[] = 'MAIL_TRANSPORT must be brevo_api or smtp.';
+    }
     if (!function_exists('stream_socket_client')) {
         $issues[] = 'PHP stream sockets are unavailable on this host.';
     }
@@ -41,6 +63,8 @@ function smtpReadiness(): array
 
     return [
         'configured' => $issues === [],
+        'transport' => 'smtp',
+        'provider' => 'Authenticated SMTP',
         'host' => SMTP_HOST,
         'port' => SMTP_PORT,
         'encryption' => SMTP_ENCRYPTION,
@@ -64,7 +88,7 @@ function safeSmtpTransportDetail(Throwable $error): string
 }
 
 if ($method === 'GET') {
-    Response::success(smtpReadiness(), 'SMTP configuration inspected. No email was sent.');
+    Response::success(smtpReadiness(), 'Email configuration inspected. No email was sent.');
 }
 
 if ($method !== 'POST') {
@@ -73,7 +97,7 @@ if ($method !== 'POST') {
 
 $readiness = smtpReadiness();
 if (!$readiness['configured']) {
-    Response::error('SMTP is not fully configured. Review the reported configuration issues.', 424, $readiness['issues']);
+    Response::error('Email service is not fully configured. Review the reported configuration issues.', 424, $readiness['issues']);
 }
 
 $db = Database::getInstance()->getConnection();
@@ -84,7 +108,7 @@ $account = $emailStmt->fetch(PDO::FETCH_ASSOC);
 $recipient = trim((string) ($account['email'] ?? ''));
 
 if (!filter_var($recipient, FILTER_VALIDATE_EMAIL)) {
-    Response::error('Your GM/Admin account needs a valid email address before an SMTP test can be sent.', 422);
+    Response::error('Your GM/Admin account needs a valid email address before a test can be sent.', 422);
 }
 
 $rateLimitKey = 'smtp_test:v2:user:' . $userId;
@@ -94,7 +118,7 @@ if (!$limit['allowed']) {
     $retryMinutes = max(1, (int) ceil($retryAfter / 60));
     header('Retry-After: ' . $retryAfter);
     Response::error(
-        'SMTP test limit reached. Try again in about ' . $retryMinutes
+        'Email test limit reached. Try again in about ' . $retryMinutes
         . ' minute' . ($retryMinutes === 1 ? '.' : 's.'),
         429
     );
@@ -104,12 +128,12 @@ try {
     $sentAt = date('Y-m-d H:i:s T');
     $name = htmlspecialchars((string) ($account['full_name'] ?? 'Administrator'), ENT_QUOTES, 'UTF-8');
     $body = Mailer::buildTemplate(
-        'Highland Fresh SMTP Test',
+        'Highland Fresh Email Test',
         '<p style="margin:0 0 16px;color:#33443a;line-height:1.6;">Hello ' . $name . ',</p>'
-        . '<p style="margin:0;color:#33443a;line-height:1.6;">The live server successfully authenticated with the configured SMTP account and submitted this test message at <strong>'
+        . '<p style="margin:0;color:#33443a;line-height:1.6;">The live server successfully submitted this test message through the configured email service at <strong>'
         . htmlspecialchars($sentAt, ENT_QUOTES, 'UTF-8') . '</strong>.</p>'
     );
-    Mailer::send($recipient, 'Highland Fresh Live SMTP Test', $body);
+    Mailer::send($recipient, 'Highland Fresh Live Email Test', $body);
 
     logAudit($userId, 'SMTP_TEST_SENT', 'system', null, null, [
         'recipient_domain' => substr(strrchr($recipient, '@') ?: '', 1),
@@ -118,14 +142,24 @@ try {
     Response::success([
         'recipient' => preg_replace('/(^.).*(@.*$)/', '$1***$2', $recipient),
         'accepted_at' => $sentAt,
-    ], 'SMTP accepted the test email. Check the account inbox and spam folder for final delivery.');
+        'provider' => $readiness['provider'],
+    ], 'Email service accepted the test message. Check the account inbox and spam folder.');
 } catch (Throwable $error) {
-    error_log('SMTP diagnostics failed: ' . $error->getMessage());
+    error_log('Email diagnostics failed: ' . $error->getMessage());
     logAudit($userId, 'SMTP_TEST_FAILED', 'system', null, null, [
         'error_type' => get_class($error),
     ]);
 
     $message = $error->getMessage();
+    if (stripos($message, 'Brevo API request failed') !== false) {
+        if (stripos($message, 'HTTP 401') !== false || stripos($message, 'HTTP 403') !== false) {
+            Response::error('Brevo rejected the saved API key or sender. Check the API key and verify the sender in Brevo.', 424);
+        }
+        Response::error('Brevo rejected the test email. Check that the sender address is verified in Brevo.', 424);
+    }
+    if (stripos($message, 'Brevo HTTPS connection failed') !== false) {
+        Response::error('The live server could not reach Brevo through HTTPS. Try again, then check the server error log.', 424);
+    }
     if (stripos($message, 'connection failed') !== false || stripos($message, 'timed out') !== false) {
         $detail = safeSmtpTransportDetail($error);
         $summary = 'The live host could not connect to ' . SMTP_HOST . ':' . SMTP_PORT
@@ -138,5 +172,5 @@ try {
     if (stripos($message, 'TLS') !== false || stripos($message, 'crypto') !== false) {
         Response::error('The live host could not establish a verified TLS connection to the configured SMTP server.', 424);
     }
-    Response::error('The SMTP test failed. Check the server error log for the technical detail.', 424);
+    Response::error('The email test failed. Check the server error log for the technical detail.', 424);
 }

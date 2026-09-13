@@ -1,9 +1,8 @@
 <?php
 /**
- * Highland Fresh System - SMTP Email Helper
+ * Highland Fresh System - Email Helper
  *
- * Lightweight provider-neutral SMTP mailer using PHP sockets.
- * No external dependencies required.
+ * Supports Brevo's HTTPS API and authenticated SMTP without dependencies.
  *
  * @package HighlandFresh
  * @version 4.0
@@ -18,7 +17,7 @@ if (!defined('HIGHLAND_FRESH')) {
 class Mailer {
 
     /**
-     * Send an email via authenticated SMTP.
+     * Send an email through the configured transport.
      *
      * @param string $to        Recipient email
      * @param string $subject   Email subject
@@ -29,6 +28,13 @@ class Mailer {
      * @throws Exception         On failure
      */
     public static function send($to, $subject, $htmlBody, $textBody = '', $attachments = []) {
+        if (MAIL_TRANSPORT === 'brevo_api') {
+            return self::sendViaBrevoApi($to, $subject, $htmlBody, $textBody, $attachments);
+        }
+        if (MAIL_TRANSPORT !== 'smtp') {
+            throw new Exception('Email transport is not configured correctly.');
+        }
+
         $host = SMTP_HOST;
         $port = SMTP_PORT;
         $username = SMTP_USERNAME;
@@ -194,6 +200,95 @@ class Mailer {
         return true;
     }
 
+    /** Send through Brevo over HTTPS, which works when a host blocks SMTP ports. */
+    private static function sendViaBrevoApi($to, $subject, $htmlBody, $textBody, $attachments) {
+        $apiKey = trim((string) BREVO_API_KEY);
+        $fromEmail = trim((string) SMTP_FROM_EMAIL);
+        $fromName = trim((string) SMTP_FROM_NAME);
+
+        if ($apiKey === '') {
+            throw new Exception('Brevo API key is not configured.');
+        }
+        if (!filter_var($fromEmail, FILTER_VALIDATE_EMAIL) || preg_match('/[\r\n]/', $fromEmail)) {
+            throw new Exception('Email sender address is invalid.');
+        }
+        if (!filter_var($to, FILTER_VALIDATE_EMAIL) || preg_match('/[\r\n]/', $to)) {
+            throw new Exception('Recipient email address is invalid.');
+        }
+        if (preg_match('/[\r\n]/', (string) $subject)) {
+            throw new Exception('Email subject is invalid.');
+        }
+        if (!is_array($attachments)) {
+            throw new Exception('Email attachments must be an array.');
+        }
+        if ($textBody === '') {
+            $textBody = strip_tags(str_replace(['<br>', '<br/>', '<br />', '</p>'], "\n", $htmlBody));
+        }
+
+        $payload = [
+            'sender' => ['name' => $fromName, 'email' => $fromEmail],
+            'to' => [['email' => $to]],
+            'subject' => (string) $subject,
+            'htmlContent' => (string) $htmlBody,
+            'textContent' => (string) $textBody,
+        ];
+
+        if ($attachments) {
+            $payload['attachment'] = [];
+            foreach ($attachments as $attachment) {
+                $filename = basename((string) ($attachment['filename'] ?? 'attachment.bin'));
+                $filename = preg_replace('/[^A-Za-z0-9._-]/', '_', $filename);
+                $content = $attachment['content'] ?? null;
+                if (!is_string($content) || $content === '') {
+                    throw new Exception("Attachment {$filename} has no content.");
+                }
+                $payload['attachment'][] = [
+                    'name' => $filename,
+                    'content' => base64_encode($content),
+                ];
+            }
+        }
+
+        $json = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        if ($json === false) {
+            throw new Exception('Email content could not be prepared.');
+        }
+        if (!function_exists('curl_init')) {
+            throw new Exception('Brevo HTTPS sending is unavailable because PHP cURL is disabled.');
+        }
+
+        $curl = curl_init(BREVO_API_URL);
+        curl_setopt_array($curl, [
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => $json,
+            CURLOPT_HTTPHEADER => [
+                'Accept: application/json',
+                'Content-Type: application/json',
+                'api-key: ' . $apiKey,
+            ],
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_CONNECTTIMEOUT => 10,
+            CURLOPT_TIMEOUT => 30,
+            CURLOPT_FOLLOWLOCATION => false,
+        ]);
+        $responseBody = curl_exec($curl);
+        $curlError = curl_error($curl);
+        $status = (int) curl_getinfo($curl, CURLINFO_HTTP_CODE);
+        curl_close($curl);
+
+        if ($responseBody === false) {
+            throw new Exception('Brevo HTTPS connection failed: ' . ($curlError ?: 'unknown connection error'));
+        }
+        if ($status !== 201) {
+            $response = json_decode((string) $responseBody, true);
+            $detail = trim((string) ($response['message'] ?? 'The email service rejected the request.'));
+            $detail = substr(preg_replace('/\s+/', ' ', $detail), 0, 300);
+            throw new Exception("Brevo API request failed (HTTP {$status}): {$detail}");
+        }
+
+        return true;
+    }
+
     /** Retry unreachable hostname routes using freshly resolved IPv4 addresses.
      * This runs before authentication or message submission, so retrying cannot
      * duplicate an email. The original hostname remains the TLS peer identity.
@@ -253,6 +348,7 @@ class Mailer {
         $message = (string) $error->getMessage();
 
         if (stripos($message, 'not configured') !== false
+            || stripos($message, 'transport is not configured') !== false
             || stripos($message, 'SMTP username is not') !== false
             || stripos($message, 'SMTP sender email') !== false
             || stripos($message, 'SMTP host is invalid') !== false
@@ -276,6 +372,8 @@ class Mailer {
         }
 
         if (stripos($message, 'expected 235') !== false
+            || stripos($message, 'HTTP 401') !== false
+            || stripos($message, 'HTTP 403') !== false
             || preg_match('/\b(534|535)\b/', $message)) {
             return [
                 'code' => 'smtp_authentication_failed',
