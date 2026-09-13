@@ -17,7 +17,7 @@ GOOGIEHOST_SMTP_PASSWORD = os.environ["GOOGIEHOST_SMTP_PASSWORD"].strip()
 BREVO_API_KEY = os.environ.get("BREVO_API_KEY", "").strip()
 GOOGIEHOST_DB_PASSWORD = os.environ.get(
     "GOOGIEHOST_DB_PASSWORD",
-    "QAqE5HrfQPFNRCcKP2Th",
+    "QAqE5HrfQPFNRKccKP2TH",
 ).strip()
 REMOTE_ENV = ".env"
 
