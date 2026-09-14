@@ -40,10 +40,10 @@ assert.match(page, /class="pos-sale-workspace[^"]*"/,
     'the product and cart workspace must have an independently constrained height');
 assert.match(page, /class="pos-product-scroller[^"]*min-h-0[^"]*overflow-y-auto/,
     'the product catalog must scroll inside its own pane');
-assert.match(page, /grid-template-areas:\s*"identity remove"\s*"quantity total"/,
-    'cart rows must give the product identity a full row above the controls');
-assert.match(page, /\.cart-item__name\s*\{[^}]*overflow-wrap:\s*anywhere;[^}]*white-space:\s*normal;/s,
-    'selected product names must wrap instead of being clipped with an ellipsis');
+assert.match(page, /grid-template-areas:\s*"identity quantity remove"\s*"total quantity remove"/,
+    'cart rows must use a compact horizontal POS layout');
+assert.match(page, /\.cart-item__name\s*\{[^}]*overflow-wrap:\s*anywhere;[^}]*-webkit-line-clamp:\s*2;/s,
+    'selected product names must remain readable without making every row tall');
 assert.match(page, /<dialog id="checkoutModal" class="modal">/,
     'payment controls must open as a separate checkout step');
 assert.match(page, /id="btnProceedToPay"[\s\S]*onclick="openCheckout\(\)"/,
@@ -52,18 +52,32 @@ assert.match(page, /<details class="tax-details">/,
     'tax lines must stay collapsed until the cashier asks for them');
 assert.match(page, /\.cart-scroll-shell\s*\{[^}]*flex:\s*1 1 auto;[^}]*min-height:\s*0;/s,
     'the cart list must receive the remaining vertical workspace');
-assert.match(page, /function scrollCart\(direction\)/,
-    'cart overflow must provide touch-sized paging controls');
+assert.match(page, /has-more-below/,
+    'cart overflow must provide a non-blocking visual continuation cue');
+assert.doesNotMatch(page, /cart-scroll-cue/,
+    'overflow cues must not cover cart rows or quantity controls');
 assert.match(page, /touch-action:\s*pan-y/,
     'the cart must support intentional vertical touch scrolling');
 assert.match(page, /\.pos-cart-panel\s*\{[^}]*flex:\s*0 0 clamp\(23rem, 37%, 28rem\);[^}]*width:\s*clamp\(23rem, 37%, 28rem\);/s,
     'desktop checkout must stay usable without swallowing the product catalog');
 assert.match(page, /@media \(min-width: 1024px\) and \(max-height: 900px\)/,
     'common laptop heights must use compact checkout spacing');
-assert.match(page, /\.qty-stepper\s*\{[^}]*grid-template-columns:\s*3rem minmax\(4\.5rem, 1fr\) 3rem;[^}]*width:\s*min\(100%, 17rem\);/s,
-    'quantity controls must form a large, forgiving control bar');
-assert.match(page, /\.qty-btn\s*\{[^}]*width:\s*3rem;[^}]*height:\s*3rem;/s,
-    'quantity buttons must provide 48px pointer targets');
+assert.match(page, /\.qty-stepper\s*\{[^}]*grid-template-columns:\s*2\.75rem minmax\(2\.75rem, 1fr\) 2\.75rem;[^}]*width:\s*100%;/s,
+    'quantity controls must remain compact and predictable');
+assert.match(page, /\.qty-btn\s*\{[^}]*width:\s*2\.75rem;[^}]*height:\s*2\.75rem;/s,
+    'quantity buttons must preserve 44px touch targets');
+assert.match(page, /function productRemainingStock\(product\)/,
+    'catalog stock must account for quantities already placed in the cart');
+assert.match(page, /\$\{available\} remaining · \$\{inCart\} in cart/,
+    'catalog badges must explain remaining and in-cart quantities');
+assert.match(page, /function paymentIsValid\(\)/,
+    'payment readiness must be computed before completing a sale');
+assert.match(page, /btnCompleteSale'\)\.disabled = !paymentIsValid\(\)/,
+    'complete-sale action must stay disabled until payment is valid');
+assert.match(page, /id="changeDueTitle">Balance remaining/,
+    'unpaid cash sales must start with balance-remaining language');
+assert.doesNotMatch(page, /'flavored_milk':\s*'mug-hot'/,
+    'bottled dairy products must not use a coffee-mug placeholder');
 assert.match(page, /#cartItems::\-webkit-scrollbar\s*\{\s*width:\s*12px;/,
     'the cart scrollbar must provide a practical pointer target');
 assert.match(page, /scrollbar-gutter:\s*stable/,
