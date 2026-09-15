@@ -29,6 +29,10 @@ try {
 
 function handleGet($db, $action) {
     switch ($action) {
+        case 'export_pdf':
+        case 'export_csv':
+            exportSalesReport($db, $action);
+            break;
         case 'summary':
             getSalesSummary($db);
             break;
@@ -58,7 +62,7 @@ function handleGet($db, $action) {
     }
 }
 
-function getSalesSummary($db) {
+function getSalesSummary($db, $returnData = false) {
     $startDate = getParam('start_date', date('Y-m-01'));
     $endDate = getParam('end_date', date('Y-m-d'));
     
@@ -122,7 +126,7 @@ function getSalesSummary($db) {
     $stmt->execute([$startDate, $endDate]);
     $byType = $stmt->fetchAll();
     
-    Response::success([
+    $data = [
         'total_sales' => floatval($summary['total_sales']),
         'total_orders' => intval($summary['total_orders']),
         'avg_order_value' => round(floatval($summary['avg_order_value']), 2),
@@ -133,10 +137,12 @@ function getSalesSummary($db) {
             'start' => $startDate,
             'end' => $endDate
         ]
-    ], 'Sales summary retrieved');
+    ];
+    if ($returnData) return $data;
+    Response::success($data, 'Sales summary retrieved');
 }
 
-function getSalesTrend($db) {
+function getSalesTrend($db, $returnData = false) {
     $startDate = getParam('start_date', date('Y-m-01'));
     $endDate = getParam('end_date', date('Y-m-d'));
     
@@ -181,10 +187,11 @@ function getSalesTrend($db) {
         $cursor = $cursor->modify('+1 day');
     }
     
+    if ($returnData) return $data;
     Response::success($data, 'Sales trend retrieved');
 }
 
-function getSalesByCustomer($db) {
+function getSalesByCustomer($db, $returnData = false) {
     $startDate = getParam('start_date', date('Y-m-01'));
     $endDate = getParam('end_date', date('Y-m-d'));
     $limit = min((int)getParam('limit', 20), 100);
@@ -210,10 +217,11 @@ function getSalesByCustomer($db) {
     $stmt->execute([$startDate, $endDate, $limit]);
     $data = $stmt->fetchAll();
     
+    if ($returnData) return $data;
     Response::success($data, 'Sales by customer retrieved');
 }
 
-function getSalesByProduct($db) {
+function getSalesByProduct($db, $returnData = false) {
     $startDate = getParam('start_date', date('Y-m-01'));
     $endDate = getParam('end_date', date('Y-m-d'));
     $limit = min((int)getParam('limit', 20), 100);
@@ -242,7 +250,42 @@ function getSalesByProduct($db) {
     $stmt->execute([$startDate, $endDate, $limit]);
     $data = $stmt->fetchAll();
     
+    if ($returnData) return $data;
     Response::success($data, 'Sales by product retrieved');
+}
+
+/** Read-only exports share the same summary queries as the report screen. */
+function exportSalesReport(PDO $db, string $action): void {
+    require_once dirname(__DIR__) . '/helpers/sales_report_export.php';
+    $start = (string) getParam('start_date', date('Y-m-01'));
+    $end = (string) getParam('end_date', date('Y-m-d'));
+    if (!hfSalesExportDatesValid($start, $end)) {
+        Response::error('Choose valid dates, with From before To, covering at most one year (366 days).', 422);
+    }
+    // All matching orders, including cancelled records for audit visibility.
+    // Summary calculations keep their existing cancelled/voided exclusion.
+    $stmt = $db->prepare("SELECT o.id, o.created_at, o.order_number, o.total_amount,
+        o.payment_type, o.status, c.name AS customer_name, c.customer_type
+        FROM sales_orders o LEFT JOIN customers c ON c.id = o.customer_id
+        WHERE DATE(o.created_at) BETWEEN ? AND ? ORDER BY o.created_at DESC, o.id DESC");
+    $stmt->execute([$start, $end]);
+    $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $report = [
+        'start' => $start, 'end' => $end,
+        'generated_at' => (new DateTimeImmutable('now', new DateTimeZone(APP_TIMEZONE)))->format('Y-m-d H:i:s P'),
+        'summary' => getSalesSummary($db, true), 'trend' => getSalesTrend($db, true),
+        'customers' => getSalesByCustomer($db, true), 'products' => getSalesByProduct($db, true),
+        'orders' => $orders,
+    ];
+    $pdf = $action === 'export_pdf';
+    $content = $pdf ? hfBuildSalesReportPdf($report) : hfBuildSalesReportCsv($report);
+    header('Content-Type: ' . ($pdf ? 'application/pdf' : 'text/csv; charset=utf-8'));
+    header('Content-Disposition: attachment; filename="Highland-Fresh-Sales-' . $start . '-to-' . $end . ($pdf ? '.pdf' : '.csv') . '"');
+    header('Cache-Control: no-store');
+    header('X-Content-Type-Options: nosniff');
+    header('Content-Length: ' . strlen($content));
+    echo $content;
+    exit;
 }
 
 function getSalesByType($db) {

@@ -16,7 +16,14 @@
     
     <style>
         body { font-family: 'Inter', sans-serif; }
-        @media print { .no-print { display: none !important; } }
+        @media print {
+            .no-print { display: none !important; }
+            #salesReportContent { margin-left: 0 !important; }
+        }
+        @media (max-width: 640px) {
+            .report-navbar { flex-wrap: wrap; }
+            .report-toolbar { width: 100%; justify-content: flex-start; padding-bottom: 8px; }
+        }
     </style>
 </head>
 <body class="bg-base-200 min-h-screen">
@@ -24,8 +31,8 @@
     <!-- Canonical Sales navigation is mounted by js/sales/sidebar.js. -->
     
     <!-- Main Content -->
-    <div class="lg:ml-72 min-h-screen flex flex-col">
-        <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6 no-print">
+    <div id="salesReportContent" class="lg:ml-72 min-h-screen flex flex-col">
+        <header class="report-navbar navbar bg-base-100 border-b border-base-300 sticky top-0 z-30 px-4 lg:px-6 no-print">
             <div class="flex-none lg:hidden">
                 <button class="btn btn-ghost btn-square" onclick="toggleSidebar()"><i class="fas fa-bars text-lg"></i></button>
             </div>
@@ -35,7 +42,7 @@
                     <span class="font-semibold">Sales Report</span>
                 </div>
             </div>
-            <div class="flex-none gap-2 items-center">
+            <div class="report-toolbar flex-none flex flex-wrap justify-end gap-2 items-center">
                 <div class="form-control no-print">
                     <select id="periodSelect" class="select select-bordered select-sm min-w-[11rem]" onchange="onPeriodChange()" title="Date range">
                         <option value="today">Today</option>
@@ -46,8 +53,11 @@
                         <option value="custom">Custom Range…</option>
                     </select>
                 </div>
-                <button class="btn btn-ghost btn-sm no-print" onclick="exportReport()">
-                    <i class="fas fa-file-export"></i> Export
+                <button id="exportPdfBtn" class="btn btn-ghost btn-sm no-print" onclick="exportReport('pdf')" disabled>
+                    <i class="fas fa-file-pdf"></i> Export PDF
+                </button>
+                <button id="exportCsvBtn" class="btn btn-ghost btn-sm no-print" onclick="exportReport('csv')" disabled>
+                    <i class="fas fa-file-csv"></i> Export CSV
                 </button>
                 <button class="btn btn-ghost btn-sm no-print" onclick="window.print()">
                     <i class="fas fa-print"></i> Print
@@ -60,7 +70,8 @@
                 <div>
                     <h1 class="text-2xl font-bold text-base-content">Sales Report</h1>
                     <p class="text-base-content/60">Sales performance analysis and trends</p>
-                    <p class="text-xs text-base-content/50 mt-1" id="periodLabel">This Month: July 1–16, 2026</p>
+                    <p class="text-xs text-base-content/50 mt-1" id="periodLabel">Loading selected period…</p>
+                    <p class="text-xs text-base-content/60 mt-1 no-print" id="reportStatus" role="status">Loading report…</p>
                 </div>
             </div>
             
@@ -70,11 +81,11 @@
                     <div class="flex flex-wrap gap-4 items-end">
                         <div class="form-control">
                             <label class="label"><span class="label-text text-xs">From</span></label>
-                            <input type="date" id="dateFrom" class="input input-bordered input-sm">
+                            <input type="date" id="dateFrom" class="input input-bordered input-sm" onchange="invalidateReportExport()">
                         </div>
                         <div class="form-control">
                             <label class="label"><span class="label-text text-xs">To</span></label>
-                            <input type="date" id="dateTo" class="input input-bordered input-sm">
+                            <input type="date" id="dateTo" class="input input-bordered input-sm" onchange="invalidateReportExport()">
                         </div>
                         <button class="btn btn-primary btn-sm" onclick="loadReport()">
                             <i class="fas fa-sync-alt"></i> Apply Range
@@ -211,10 +222,27 @@
     <script src="../../../js/utils/product-display.js?v=20260909-sizefix1"></script>
     <script src="../../../js/sales/sidebar.js?v=20260828-salesnav1"></script>
     <script src="../../../js/sales/sales.service.js?v=20260716-salesrpt"></script>
+    <script src="../../../js/sales/report-export.js?v=20260916-export1"></script>
     
     <script>
         let salesTrendChart = null;
         let salesByTypeChart = null;
+        let reportRequestId = 0;
+        let reportExportRange = null;
+        let reportExportBusy = false;
+
+        function updateExportButtons() {
+            ['exportPdfBtn', 'exportCsvBtn'].forEach(id => {
+                document.getElementById(id).disabled = !reportExportRange || reportExportBusy;
+            });
+        }
+
+        function invalidateReportExport() {
+            reportExportRange = null;
+            reportRequestId++;
+            updateExportButtons();
+            document.getElementById('reportStatus').textContent = 'Apply the selected date range to load and export its report.';
+        }
         
         
         function showToast(message, type = 'info') {
@@ -265,6 +293,7 @@
         }
         
         function onPeriodChange() {
+            invalidateReportExport();
             const period = document.getElementById('periodSelect').value;
             const showCustom = period === 'custom';
             const card = document.getElementById('customRangeCard');
@@ -329,6 +358,7 @@
                 const pad = (n) => String(n).padStart(2, '0');
                 document.getElementById('dateTo').value = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
                 document.getElementById('dateFrom').value = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-01`;
+                document.querySelector('#periodSelect option[value="month"]').textContent = 'This Month: ' + today.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
                 
                 await loadReport();
             } catch (error) {
@@ -338,8 +368,13 @@
         });
         
         async function loadReport() {
+            const requestId = ++reportRequestId;
+            reportExportRange = null;
+            updateExportButtons();
+            document.getElementById('reportStatus').textContent = 'Loading report…';
             try {
                 const { startDate, endDate, period } = getDateRange();
+                if (!startDate || !endDate || startDate > endDate) throw new Error('From must be on or before To.');
                 const periodEl = document.getElementById('periodLabel');
                 if (periodEl) periodEl.textContent = formatPeriodBanner(startDate, endDate, period);
 
@@ -355,6 +390,7 @@
                         : api.get('/sales/reports.php', { params: { action: 'by_product', start_date: startDate, end_date: endDate, limit: 10 } }),
                     SalesService.getOrders({ date_from: startDate, date_to: endDate, limit: 50 })
                 ]);
+                if (requestId !== reportRequestId) return;
                 
                 const summary = summaryRes.data || summaryRes || {};
                 let trend = trendRes.data || [];
@@ -385,10 +421,16 @@
                 renderTopCustomersTable(Array.isArray(topCustomers) ? topCustomers : []);
                 renderTopProductsTable(Array.isArray(topProducts) ? topProducts : []);
                 renderSalesDetails(ordersRes.data || []);
+                reportExportRange = { startDate, endDate };
+                document.getElementById('reportStatus').textContent = 'Ready. PDF and CSV include all matching orders; the screen shows up to 50. Summary totals exclude cancelled/voided orders.';
                 
             } catch (error) {
+                if (requestId !== reportRequestId) return;
                 console.error('Error loading report:', error);
-                showToast('Failed to load report data', 'error');
+                document.getElementById('reportStatus').textContent = 'Report not ready. Check the date range and try again; exports are unavailable until it loads.';
+                showToast('Failed to load report data: ' + error.message, 'error');
+            } finally {
+                updateExportButtons();
             }
         }
         
@@ -609,8 +651,19 @@
             }).join('');
         }
         
-        function exportReport() {
-            showToast('Export feature coming soon', 'info');
+        async function exportReport(format = 'pdf') {
+            if (!reportExportRange || reportExportBusy) return;
+            reportExportBusy = true;
+            updateExportButtons();
+            try {
+                await SalesReportExport.download({ format, ...reportExportRange });
+                showToast('Sales report downloaded as ' + format.toUpperCase() + '.', 'success');
+            } catch (error) {
+                showToast(error.message || 'Could not export the sales report.', 'error');
+            } finally {
+                reportExportBusy = false;
+                updateExportButtons();
+            }
         }
     </script>
 </body>
