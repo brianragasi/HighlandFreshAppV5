@@ -6,6 +6,8 @@ import ftplib
 import hashlib
 import io
 import os
+import poplib
+import ssl
 import time
 
 
@@ -45,6 +47,38 @@ LIVE_SETTINGS = {
     "ORDER_MAILBOX_RECENT_MODE": "false",
     "ORDER_MAILBOX_MAX_MESSAGES": "20",
 }
+
+
+def verify_order_mailbox_login() -> None:
+    """Check the secret before replacing the live .env; never fetch messages."""
+    client = None
+    try:
+        client = poplib.POP3_SSL(
+            LIVE_SETTINGS["ORDER_MAILBOX_HOST"],
+            int(LIVE_SETTINGS["ORDER_MAILBOX_PORT"]),
+            timeout=15,
+            context=ssl.create_default_context(),
+        )
+        client.user(LIVE_SETTINGS["ORDER_MAILBOX_USERNAME"])
+        client.pass_(GMAIL_APP_PASSWORD)
+        client.stat()
+    except poplib.error_proto:
+        raise SystemExit(
+            "Gmail rejected GMAIL_APP_PASSWORD for the configured order mailbox. "
+            "Create a new App Password for that account, update the GitHub secret, "
+            "and confirm POP access is enabled. The live .env was not changed."
+        ) from None
+    except (OSError, ssl.SSLError):
+        raise SystemExit(
+            "Could not verify Gmail POP access from the deployment runner. "
+            "The live .env was not changed."
+        ) from None
+    finally:
+        if client is not None:
+            try:
+                client.quit()
+            except (OSError, poplib.error_proto):
+                pass
 
 def connect() -> ftplib.FTP:
     client = ftplib.FTP(timeout=30)
@@ -132,7 +166,9 @@ def upload_and_verify(contents: bytes) -> None:
     with_retries(upload, "Live .env upload")
 
 
-original_env = download_remote_env()
-updated_env = merge_live_settings(original_env)
-upload_and_verify(updated_env)
-print(f"Live private configuration synchronized ({len(LIVE_SETTINGS)} keys verified).")
+if __name__ == "__main__":
+    verify_order_mailbox_login()
+    original_env = download_remote_env()
+    updated_env = merge_live_settings(original_env)
+    upload_and_verify(updated_env)
+    print(f"Live private configuration synchronized ({len(LIVE_SETTINGS)} keys verified).")

@@ -22,6 +22,16 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: Verify and synchronize live mailbox credentials
+        env:
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          GOOGIEHOST_SMTP_PASSWORD: ${{ secrets.GOOGIEHOST_SMTP_PASSWORD }}
+          BREVO_API_KEY: ${{ secrets.BREVO_API_KEY }}
+        run: python .github/scripts/sync_live_mail_env.py
+
       - name: FTP deploy to GoogieHost
         id: deploy_primary
         continue-on-error: true
@@ -213,17 +223,3 @@ jobs:
           FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
           FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
         run: python .github/scripts/force_deploy_email_files.py
-
-      - name: Synchronize live email and customer mailbox settings
-        if: >-
-          steps.deploy_primary.outcome == 'success' ||
-          steps.deploy_retry.outcome == 'success' ||
-          steps.deploy_fallback.outcome == 'success'
-        env:
-          FTP_SERVER: ${{ secrets.FTP_SERVER }}
-          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
-          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
-          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
-          GOOGIEHOST_SMTP_PASSWORD: ${{ secrets.GOOGIEHOST_SMTP_PASSWORD }}
-          BREVO_API_KEY: ${{ secrets.BREVO_API_KEY }}
-        run: python .github/scripts/sync_live_mail_env.py
