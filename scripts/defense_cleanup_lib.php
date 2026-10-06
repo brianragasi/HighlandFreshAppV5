@@ -180,6 +180,143 @@ function hfCleanDefenseCatalog(PDO $db, bool $apply): array
             }
         }
 
+        // The three legacy MilkBar sizes were created without packaging. Keep
+        // the 250 mL bar, which has a matching stocked wrapper; retire only
+        // the two sizes that have never entered sales or finished goods.
+        $productByCode = $db->prepare('SELECT p.id, p.product_name, p.category,
+                p.unit_size, p.unit_measure, p.base_unit, p.primary_container_id,
+                p.is_active, b.name AS base_name
+            FROM products p JOIN base_products b ON b.id = p.base_product_id
+            WHERE p.product_code = ? FOR UPDATE');
+        $productReferences = $db->prepare('SELECT
+            (SELECT COUNT(*) FROM sales_order_items WHERE product_id = ?) AS sales_count,
+            (SELECT COUNT(*) FROM finished_goods_inventory WHERE product_id = ?) AS fg_count');
+        $counts['unused_milkbar_skus'] = 0;
+        foreach (['PM0003' => 100, 'BAR-2021' => 1000] as $code => $size) {
+            $productByCode->execute([$code]);
+            $sku = $productByCode->fetch(PDO::FETCH_ASSOC);
+            if (!$sku || $sku['base_name'] !== 'MilkBar' || $sku['category'] !== 'milk_bar'
+                || (float) $sku['unit_size'] !== (float) $size) {
+                throw new RuntimeException("MilkBar SKU {$code} changed; cleanup stopped");
+            }
+            $productReferences->execute([(int) $sku['id'], (int) $sku['id']]);
+            $refs = $productReferences->fetch(PDO::FETCH_ASSOC);
+            if ((int) $refs['sales_count'] || (int) $refs['fg_count']) {
+                throw new RuntimeException("MilkBar SKU {$code} has transaction history; cleanup stopped");
+            }
+            $archive = $db->prepare('UPDATE products SET is_active = 0 WHERE id = ? AND is_active = 1');
+            $archive->execute([(int) $sku['id']]);
+            $counts['unused_milkbar_skus'] += $archive->rowCount();
+        }
+
+        $productByCode->execute(['PM0006']);
+        $milkBar = $productByCode->fetch(PDO::FETCH_ASSOC);
+        $wrapper = $db->query("SELECT id, packaging_role, packaging_capacity_value,
+                packaging_capacity_unit, is_active FROM ingredients
+            WHERE ingredient_code = 'ING-0091' FOR UPDATE")->fetch(PDO::FETCH_ASSOC);
+        if (!$milkBar || $milkBar['base_name'] !== 'MilkBar' || $milkBar['category'] !== 'milk_bar'
+            || (float) $milkBar['unit_size'] !== 250.0 || $milkBar['unit_measure'] !== 'ml'
+            || !$wrapper || $wrapper['packaging_role'] !== 'container'
+            || (float) $wrapper['packaging_capacity_value'] !== 250.0
+            || strtolower($wrapper['packaging_capacity_unit']) !== 'ml'
+            || (int) $wrapper['is_active'] !== 1) {
+            throw new RuntimeException('MilkBar 250 mL wrapper differs from reviewed catalog; cleanup stopped');
+        }
+        $activeBom = $db->prepare('SELECT ingredient_id FROM sku_packaging_bom_items
+            WHERE product_id = ? AND is_active = 1 FOR UPDATE');
+        $activeBom->execute([(int) $milkBar['id']]);
+        foreach ($activeBom->fetchAll(PDO::FETCH_COLUMN) as $materialId) {
+            if ((int) $materialId !== (int) $wrapper['id']) {
+                throw new RuntimeException('MilkBar 250 mL has another active packaging component; cleanup stopped');
+            }
+        }
+        if (!in_array($milkBar['base_unit'], ['piece', 'wrapped_block'], true)
+            || ($milkBar['primary_container_id'] !== null
+                && (int) $milkBar['primary_container_id'] !== (int) $wrapper['id'])) {
+            throw new RuntimeException('MilkBar 250 mL package style changed; cleanup stopped');
+        }
+        $stmt = $db->prepare("UPDATE products SET base_unit = 'wrapped_block',
+            primary_container_id = ? WHERE id = ? AND (base_unit <> 'wrapped_block'
+            OR primary_container_id IS NULL)");
+        $stmt->execute([(int) $wrapper['id'], (int) $milkBar['id']]);
+        $counts['milkbar_package_style'] = $stmt->rowCount();
+        $stmt = $db->prepare("INSERT INTO sku_packaging_bom_items
+            (product_id, ingredient_id, quantity_per_unit, waste_percent, unit, is_active)
+            VALUES (?, ?, 1, 0, 'pcs', 1)
+            ON DUPLICATE KEY UPDATE is_active = 1");
+        $stmt->execute([(int) $milkBar['id'], (int) $wrapper['id']]);
+        $counts['milkbar_wrapper_links'] = $stmt->rowCount();
+
+        // An unrelated Durian Yogurt label had been attached to Plain Yogurt
+        // and Butter. Remove false readiness rather than inventing stock.
+        $wrongLabel = $db->prepare("UPDATE sku_packaging_bom_items b
+            JOIN products p ON p.id = b.product_id
+            JOIN ingredients i ON i.id = b.ingredient_id
+            SET b.is_active = 0
+            WHERE p.product_code = ? AND i.ingredient_code = 'ING-0097'
+              AND b.is_active = 1");
+        $counts['wrong_yogurt_labels'] = 0;
+        foreach (['YOG-500', 'BUT-250'] as $code) {
+            $wrongLabel->execute([$code]);
+            $counts['wrong_yogurt_labels'] += $wrongLabel->rowCount();
+        }
+
+        // Butter is sold by mass. The 250 g SKU has no matching wrapper, and
+        // its bottle/cap BOM belongs to yogurt. Keep open orders untouched.
+        $productByCode->execute(['BUT-250']);
+        $butter250 = $productByCode->fetch(PDO::FETCH_ASSOC);
+        $productByCode->execute(['BT0001']);
+        $butter500 = $productByCode->fetch(PDO::FETCH_ASSOC);
+        if (!$butter250 || !$butter500 || $butter250['base_name'] !== 'Pure Butter'
+            || $butter500['base_name'] !== 'Pure Butter'
+            || $butter250['category'] !== 'butter' || $butter500['category'] !== 'butter'
+            || (float) $butter250['unit_size'] !== 250.0
+            || (float) $butter500['unit_size'] !== 500.0
+            || !in_array($butter250['unit_measure'], ['ml', 'g'], true)
+            || !in_array($butter500['unit_measure'], ['ml', 'g'], true)
+            || !in_array($butter250['base_unit'], ['bottle', 'wrapped_block'], true)
+            || ($butter250['primary_container_id'] !== null
+                && (int) $butter250['primary_container_id'] !== 52)
+            || $butter500['base_unit'] !== 'wrapped_block') {
+            throw new RuntimeException('Butter SKUs differ from reviewed catalog; cleanup stopped');
+        }
+        $butterWrapper = $db->prepare('SELECT ingredient_code, packaging_role,
+            packaging_capacity_value, packaging_capacity_unit FROM ingredients WHERE id = ? FOR UPDATE');
+        $butterWrapper->execute([(int) $butter500['primary_container_id']]);
+        $butterWrapperRow = $butterWrapper->fetch(PDO::FETCH_ASSOC);
+        if (!$butterWrapperRow || $butterWrapperRow['ingredient_code'] !== 'ING-0076'
+            || $butterWrapperRow['packaging_role'] !== 'container'
+            || (float) $butterWrapperRow['packaging_capacity_value'] !== 500.0
+            || !in_array($butterWrapperRow['packaging_capacity_unit'], ['ml', 'g'], true)) {
+            throw new RuntimeException('Butter 500 g wrapper differs from reviewed catalog; cleanup stopped');
+        }
+        $activeBom->execute([(int) $butter250['id']]);
+        $butterBom = array_map('intval', $activeBom->fetchAll(PDO::FETCH_COLUMN));
+        $allowedButterMaterials = $db->query("SELECT id FROM ingredients WHERE ingredient_code IN
+            ('MOCK-PKG-CAP-28', 'TST-PKG-BTL-250')")->fetchAll(PDO::FETCH_COLUMN);
+        if (array_diff($butterBom, array_map('intval', $allowedButterMaterials))) {
+            throw new RuntimeException('Butter 250 g has unreviewed packaging; cleanup stopped');
+        }
+        $stmt = $db->prepare('UPDATE sku_packaging_bom_items SET is_active = 0
+            WHERE product_id = ? AND is_active = 1');
+        $stmt->execute([(int) $butter250['id']]);
+        $counts['wrong_butter_packaging'] = $stmt->rowCount();
+        $stmt = $db->prepare("UPDATE products SET unit_measure = 'g',
+            base_unit = 'wrapped_block', primary_container_id = NULL
+            WHERE id = ? AND (unit_measure <> 'g' OR base_unit <> 'wrapped_block'
+                OR primary_container_id IS NOT NULL)");
+        $stmt->execute([(int) $butter250['id']]);
+        $counts['butter_250_master'] = $stmt->rowCount();
+        $stmt = $db->prepare("UPDATE products SET unit_measure = 'g'
+            WHERE id = ? AND unit_measure <> 'g'");
+        $stmt->execute([(int) $butter500['id']]);
+        $counts['butter_500_master'] = $stmt->rowCount();
+        $stmt = $db->prepare("UPDATE ingredients SET packaging_capacity_unit = 'g'
+            WHERE id = ? AND packaging_capacity_value = 500
+              AND packaging_capacity_unit = 'ml'");
+        $stmt->execute([(int) $butter500['primary_container_id']]);
+        $counts['butter_wrapper_unit'] = $stmt->rowCount();
+
         if ($apply) {
             $db->commit();
         } else {

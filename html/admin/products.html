@@ -1885,7 +1885,10 @@
                     );
                 const matchStatus = status === '' || g.skus.some(s => String(s.is_active) === status);
                 return matchCat && matchSearch && matchStatus;
-            });
+            }).map(g => ({
+                ...g,
+                skus: status === '' ? g.skus : g.skus.filter(s => String(s.is_active) === status)
+            }));
             const skus = filteredGroups.flatMap(g => g.skus || []);
             const el = document.getElementById('listCountLabel');
             if (el) el.textContent = `${filteredGroups.length} bases / ${skus.length} SKUs`;
@@ -1950,6 +1953,10 @@
                         const stock = parseFloat(s.current_stock);
                         const stockDisp = Number.isFinite(stock) ? stock : '—';
                         const packageConfigured = skuHasConfiguredPackage(s);
+                        const samplePackaging = (s.packaging_bom || []).some(item =>
+                            /\b(?:test|mock|demo)\b/i.test(String(item.ingredient_name || ''))
+                            || /^(?:TST-|MOCK-|DEMO-)/i.test(String(item.ingredient_code || ''))
+                        );
                         const packageAction = packageConfigured
                             ? `<button type="button" class="btn btn-ghost btn-xs" title="Review compatible packaging components" onclick="event.stopPropagation(); openPackagingBom(${s.id})">
                                     <i class="fas fa-boxes-stacked"></i><span>${s.packaging_bom_ready ? 'Review packaging' : 'Complete packaging'}</span>
@@ -1962,9 +1969,9 @@
                             <td>
                                 <div class="font-semibold text-xs">${escapeHtml(sizeText)}</div>
                                 <div class="sku-code">${escapeHtml(s.product_code || '—')}</div>
-                                <div class="text-[10px] mt-1 ${s.packaging_bom_ready ? 'text-success' : 'text-warning'}">
+                                <div class="text-[10px] mt-1 ${s.packaging_bom_ready && !samplePackaging ? 'text-success' : 'text-warning'}">
                                     ${s.packaging_bom_ready
-                                        ? `<i class="fas fa-check-circle"></i> Production packaging complete · ${Number(s.packaging_bom_count || 0)} component(s)`
+                                        ? `<i class="fas fa-${samplePackaging ? 'triangle-exclamation' : 'check-circle'}"></i> Packaging BOM configured · ${Number(s.packaging_bom_count || 0)} component(s)${samplePackaging ? ' · sample materials' : ''}`
                                         : `<i class="fas fa-triangle-exclamation"></i> Missing: ${escapeHtml((s.packaging_bom_missing || ['packaging components']).join(', '))}`}
                                 </div>
                             </td>
