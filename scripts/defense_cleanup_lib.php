@@ -44,7 +44,9 @@ function hfCleanDefenseCatalog(PDO $db, bool $apply): array
         $lookup->execute($names);
         $found = $lookup->fetchAll(PDO::FETCH_ASSOC);
         $foundNames = array_column($found, 'name');
-        $missing = array_diff($names, $foundNames);
+        // The local defense copy includes two unapproved prototypes that may
+        // not have been seeded on the live server; archive them if present.
+        $missing = array_diff($names, $foundNames, ['Melon Milk', 'Gouda Cheese']);
         if ($missing) {
             throw new RuntimeException('Expected defense catalog names missing: ' . implode(', ', $missing));
         }
