@@ -583,6 +583,12 @@
             return '₱' + parseFloat(amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         }
 
+        function displayContactNumber(value) {
+            const digits = String(value || '').replace(/\D/g, '');
+            if (!digits) return '—';
+            return /^(09\d{9}|639\d{9})$/.test(digits) ? String(value) : 'Needs verification';
+        }
+
         /** Outstanding + available credit for sales / finance scan */
         function formatOutstandingCell(item) {
             const limit = parseFloat(item.credit_limit) || 0;
@@ -737,12 +743,12 @@
                                 </div>
                                 <div>
                                     <div class="font-semibold">${escapeHtml(item.name || '-')}</div>
-                                    <div class="text-xs text-base-content/60">${escapeHtml(item.customer_code || item.contact_person || 'No code')}</div>
+                                    <div class="text-xs text-base-content/60">${escapeHtml(item.customer_code || `Account #${id}`)}</div>
                                 </div>
                             </div>
                         </td>
                         <td><span class="badge badge-sm badge-ghost">${escapeHtml(item.customer_type?.replace('_', ' ') || '-')}</span></td>
-                        <td class="text-sm">${escapeHtml(item.contact_number || '-')}</td>
+                        <td class="text-sm">${escapeHtml(displayContactNumber(item.contact_number))}</td>
                         <td class="text-sm font-mono tabular-nums">${formatCurrency(item.credit_limit)}</td>
                         <td>
                             <span class="badge badge-sm ${paymentType === 'credit' ? 'badge-info' : 'badge-success'}">${paymentType}</span>
