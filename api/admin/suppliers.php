@@ -100,6 +100,9 @@ function getSuppliers($conn) {
     
     // Get suppliers
     $sql = "SELECT s.*,
+                   (SELECT COUNT(*) FROM purchase_orders po
+                    WHERE po.supplier_id = s.id
+                      AND po.status IN ('draft', 'approved', 'ordered', 'partial_received')) AS open_po_count,
                    COUNT(DISTINCT CASE WHEN si.is_active = 1 AND i.is_active = 1 THEN si.ingredient_id END) AS ingredient_count,
                    COUNT(DISTINCT CASE WHEN smi.is_active = 1 AND m.is_active = 1 THEN smi.mro_item_id END) AS mro_item_count,
                    GROUP_CONCAT(DISTINCT CASE WHEN si.is_active = 1 AND i.is_active = 1 THEN i.ingredient_name END ORDER BY i.ingredient_name SEPARATOR ', ') AS supplied_ingredients,

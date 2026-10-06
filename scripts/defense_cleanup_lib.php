@@ -30,6 +30,12 @@ function hfCleanDefenseCatalog(PDO $db, bool $apply): array
         'ING-0044', 'ING-0045', 'ING-0046', 'ING-0047', 'ING-0048',
         'ING-0049', 'ING-0050', 'ING-0051',
         'ING-0080', 'ING-0081', 'ING-0082', 'ING-0086', 'ING-0087', 'ING-0088',
+        'ING-0067', 'ING-0077', 'ING-0078', 'ING-0079',
+        'ING-0083', 'ING-0084', 'ING-0085', 'ING-0089', 'ING-0090',
+        'ING-0093', 'ING-0095', 'ING-0096', 'ING-0098', 'ING-0099',
+        'MOCK-PKG-BTL-500', 'MOCK-PKG-LBL-CHO500',
+        'TST-LBL-FM0009', 'TST-LBL-FM0010', 'TST-LBL-FM0011',
+        'TST-LBL-YG0001', 'TST-LBL-YG0002', 'TST-LBL-YG0004',
         'DEMO-ING-MELON-FLAVOR', 'DEMO-ING-CHEESE-CULTURE',
         'DEMO-PKG-GOUDA-250', 'DEMO-PKG-GOUDA-500',
         'DEMO-LBL-MEL-500', 'DEMO-LBL-MEL-1000',
@@ -116,6 +122,11 @@ function hfCleanDefenseCatalog(PDO $db, bool $apply): array
                   SELECT 1 FROM recipe_ingredients ri
                   JOIN master_recipes r ON r.id = ri.recipe_id AND r.is_active = 1
                   WHERE ri.ingredient_id = ingredients.id
+              )
+              AND NOT EXISTS (
+                  SELECT 1 FROM sku_packaging_bom_items b
+                  JOIN products p ON p.id = b.product_id AND p.is_active = 1
+                  WHERE b.ingredient_id = ingredients.id AND b.is_active = 1
               )");
         $ingredientUpdate->execute($ingredientCodes);
         $counts['ingredients'] = $ingredientUpdate->rowCount();
@@ -136,6 +147,38 @@ function hfCleanDefenseCatalog(PDO $db, bool $apply): array
                 OR (p.product_code = 'BUT-250' AND i.ingredient_code IN
                     ('MOCK-PKG-CAP-28', 'MOCK-PKG-LBL-CHO500'))
             )");
+
+        $supplierTargets = [
+            'SUP-0019' => 'Darwin Galudo',
+            'SUP-0018' => 'Alexis',
+            'SUP-0017' => 'Supplier B',
+            'SUP-0016' => 'Supplier A',
+            'SUP-0015' => 'San Mig',
+            'SUP-0014' => 'Nestle',
+            'SUP-0011' => 'lordneil',
+        ];
+        $supplierLookup = $db->prepare('SELECT id, supplier_name, is_active FROM suppliers
+            WHERE supplier_code = ? FOR UPDATE');
+        $openOrders = $db->prepare("SELECT COUNT(*) FROM purchase_orders WHERE supplier_id = ?
+            AND status IN ('draft', 'approved', 'ordered', 'partial_received')");
+        $archiveSupplier = $db->prepare('UPDATE suppliers SET is_active = 0
+            WHERE id = ? AND is_active = 1');
+        $counts['suppliers'] = 0;
+        foreach ($supplierTargets as $code => $expectedName) {
+            $supplierLookup->execute([$code]);
+            $supplier = $supplierLookup->fetch(PDO::FETCH_ASSOC);
+            if (!$supplier || $supplier['supplier_name'] !== $expectedName) {
+                throw new RuntimeException("Supplier {$code} does not match the reviewed placeholder; cleanup stopped");
+            }
+            $openOrders->execute([(int) $supplier['id']]);
+            if ((int) $openOrders->fetchColumn() > 0) {
+                throw new RuntimeException("Supplier {$code} has an open purchase order; cleanup stopped");
+            }
+            if ((int) $supplier['is_active'] === 1) {
+                $archiveSupplier->execute([(int) $supplier['id']]);
+                $counts['suppliers'] += $archiveSupplier->rowCount();
+            }
+        }
 
         if ($apply) {
             $db->commit();

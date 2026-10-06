@@ -357,8 +357,8 @@
                         </div>
                     </div>
                     <select id="statusFilter" class="select select-bordered w-full md:w-48" onchange="loadData()">
+                        <option value="1" selected>Active for Purchasing</option>
                         <option value="">All Statuses</option>
-                        <option value="1">Active for Purchasing</option>
                         <option value="0">Archived</option>
                     </select>
                 </div>
@@ -701,7 +701,13 @@
                 return;
             }
             
-            tableBody.innerHTML = suppliers.map(s => `
+            tableBody.innerHTML = suppliers.map(s => {
+                const supplied = [s.supplied_ingredients, s.supplied_mro_items]
+                    .filter(Boolean).join(', ').split(', ').filter(Boolean);
+                const suppliedPreview = supplied.length
+                    ? supplied.slice(0, 3).join(', ') + (supplied.length > 3 ? ` · +${supplied.length - 3} more` : '')
+                    : (Number(s.open_po_count || 0) > 0 ? 'Existing PO · no current catalog items' : 'No current items linked');
+                return `
                 <tr>
                     <td class="supplier-code-cell"><span class="font-mono text-sm whitespace-nowrap">${escapeHtml(s.supplier_code)}</span></td>
                     <td><span class="font-semibold block truncate" title="${escapeHtml(s.supplier_name)}">${escapeHtml(s.supplier_name)}</span></td>
@@ -714,7 +720,7 @@
                             <span class="badge badge-outline badge-sm">${Number(s.ingredient_count || 0)} raw material(s)</span>
                             <span class="badge badge-outline badge-sm">${Number(s.mro_item_count || 0)} MRO item(s)</span>
                         </div>
-                        <div class="text-xs text-base-content/50 mt-1 truncate" title="${escapeHtml([s.supplied_ingredients, s.supplied_mro_items].filter(Boolean).join(', '))}">${escapeHtml([s.supplied_ingredients, s.supplied_mro_items].filter(Boolean).join(', ') || 'No items linked')}</div>
+                        <div class="text-xs text-base-content/50 mt-1 truncate" title="${escapeHtml(supplied.join(', '))}">${escapeHtml(suppliedPreview)}</div>
                     </td>
                     <td class="whitespace-nowrap">
                         <span class="block">${escapeHtml(s.payment_terms || '30 days')}</span>
@@ -736,7 +742,8 @@
                         </div>
                     </td>
                 </tr>
-            `).join('');
+            `;
+            }).join('');
         }
         
         function renderPagination(pagination) {
