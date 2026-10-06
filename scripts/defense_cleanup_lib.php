@@ -38,6 +38,9 @@ function hfCleanDefenseCatalog(PDO $db, bool $apply): array
 
     $db->beginTransaction();
     try {
+        if ($db->query('SELECT type_code FROM milk_types WHERE id = 1')->fetchColumn() !== 'COW') {
+            throw new RuntimeException('Expected Cow Milk type is missing; cleanup stopped');
+        }
         $names = array_values(array_unique(array_values($bases)));
         $nameMarks = implode(',', array_fill(0, count($names), '?'));
         $lookup = $db->prepare("SELECT id, name FROM base_products WHERE name IN ({$nameMarks}) FOR UPDATE");
@@ -92,6 +95,16 @@ function hfCleanDefenseCatalog(PDO $db, bool $apply): array
             WHERE name = 'SM Supermarket' AND customer_type = 'institutional'");
         $counts['customer_types'] += $db->exec("UPDATE customers SET customer_type = 'supermarket'
             WHERE name = 'Robinson''s Supermarket' AND customer_type = 'institutional'");
+
+        $counts['duplicate_recipes'] = $db->exec("UPDATE master_recipes r
+            JOIN base_products b ON b.id = r.base_product_id AND b.name = 'Fresh Milk'
+            SET r.is_active = 0
+            WHERE r.recipe_code = 'RCP-FM-500' AND r.is_active = 1");
+        $counts['cream_milk_type'] = $db->exec("UPDATE base_products
+            SET milk_type_id = 1 WHERE name = 'Fresh Cream' AND milk_type_id IS NULL");
+        $counts['cream_milk_type'] += $db->exec("UPDATE products p
+            JOIN base_products b ON b.id = p.base_product_id AND b.name = 'Fresh Cream'
+            SET p.milk_type_id = 1 WHERE p.milk_type_id IS NULL");
 
         $ingredientMarks = implode(',', array_fill(0, count($ingredientCodes), '?'));
         $ingredientCount = $db->prepare("SELECT COUNT(*) FROM ingredients WHERE ingredient_code IN ({$ingredientMarks}) AND is_active = 1");
