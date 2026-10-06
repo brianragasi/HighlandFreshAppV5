@@ -363,6 +363,12 @@
                         <option value="cash">Cash</option>
                         <option value="credit">Credit</option>
                     </select>
+                    <select id="statusFilter" class="select select-bordered w-full md:w-36" onchange="filterData()">
+                        <option value="active" selected>Active</option>
+                        <option value="">All Statuses</option>
+                        <option value="inactive">Inactive</option>
+                        <option value="blocked">Blocked</option>
+                    </select>
                 </div>
             </div>
 
@@ -595,9 +601,11 @@
             else if (util >= 80) balClass = 'text-warning font-semibold tabular-nums font-mono text-sm';
 
             const availLine = limit > 0
-                ? `<div class="text-[0.7rem] text-base-content/50 font-mono tabular-nums">Avail ${formatCurrency(available)}</div>`
+                ? (outstanding > limit
+                    ? `<div class="text-[0.7rem] text-error font-semibold font-mono tabular-nums">Over limit ${formatCurrency(outstanding - limit)}</div>`
+                    : `<div class="text-[0.7rem] text-base-content/50 font-mono tabular-nums">Avail ${formatCurrency(available)}</div>`)
                 : (outstanding > 0
-                    ? `<div class="text-[0.7rem] text-base-content/45">No credit limit</div>`
+                    ? `<div class="text-[0.7rem] text-base-content/45">Balance due · no credit line</div>`
                     : '');
 
             return `<div class="${balClass}">${formatCurrency(outstanding)}</div>${availLine}`;
@@ -608,9 +616,8 @@
                 const response = await AdminService.getCustomers();
                 if (response.success) {
                     allData = response.data?.customers || response.data || [];
-                    filteredData = [...allData];
+                    filterData();
                     updateStats();
-                    renderTable();
                 }
             } catch (error) {
                 console.error('Error loading data:', error);
@@ -685,6 +692,7 @@
             const search = document.getElementById('searchInput').value.toLowerCase();
             const type = document.getElementById('typeFilter').value;
             const paymentType = document.getElementById('paymentTypeFilter').value;
+            const status = document.getElementById('statusFilter').value;
 
             filteredData = allData.filter(item => {
                 const matchSearch = !search ||
@@ -694,7 +702,8 @@
                     item.contact_number?.includes(search);
                 const matchType = !type || item.customer_type === type;
                 const matchPayment = !paymentType || item.default_payment_type === paymentType;
-                return matchSearch && matchType && matchPayment;
+                const matchStatus = !status || item.status === status;
+                return matchSearch && matchType && matchPayment && matchStatus;
             });
 
             currentPage = 1;
