@@ -1,0 +1,147 @@
+<?php
+/** One-time, token-protected defense inventory job. Uploaded and removed by CI. */
+header('Content-Type: application/json; charset=utf-8');
+$expectedToken = '__DEFENSE_JOB_TOKEN__';
+$actualToken = $_SERVER['HTTP_X_DEFENSE_JOB_TOKEN'] ?? '';
+if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !hash_equals($expectedToken, $actualToken)) {
+    http_response_code(403);
+    exit(json_encode(['error' => 'Forbidden']));
+}
+
+define('HIGHLAND_FRESH', true);
+require_once __DIR__ . '/config/config.php';
+require_once __DIR__ . '/config/database.php';
+
+$mode = $_POST['mode'] ?? 'inspect';
+if (!in_array($mode, ['inspect', 'validate', 'apply'], true)) {
+    http_response_code(400);
+    exit(json_encode(['error' => 'Invalid mode']));
+}
+
+$db = Database::getInstance()->getConnection();
+$targets = [
+    'YOG-500' => 40,  // Plain Yogurt: 14-day catalog shelf life
+    'BT0001' => 24,   // Pure Butter: 30-day catalog shelf life
+    'CRM-1L' => 24,   // Fresh Cream: 10-day catalog shelf life
+];
+
+function defenseRoleId(PDO $db, string $role): int {
+    $stmt = $db->prepare('SELECT id FROM users WHERE role = ? AND is_active = 1 ORDER BY id LIMIT 1');
+    $stmt->execute([$role]);
+    $id = (int) $stmt->fetchColumn();
+    if ($id < 1) throw new RuntimeException("No active {$role} account exists");
+    return $id;
+}
+
+try {
+    $today = new DateTimeImmutable('today');
+    $products = [];
+    $query = $db->prepare('SELECT id, base_product_id, product_code, product_name, category,
+        milk_type_id, unit_size, unit_measure, base_unit, pieces_per_box,
+        shelf_life_days, selling_price, is_active FROM products WHERE product_code = ? LIMIT 1');
+    foreach ($targets as $code => $quantity) {
+        $query->execute([$code]);
+        $row = $query->fetch(PDO::FETCH_ASSOC);
+        if (!$row) throw new RuntimeException("Required demo SKU {$code} is missing");
+        if ((int) $row['is_active'] !== 1 || (int) $row['base_product_id'] < 1
+            || (int) $row['shelf_life_days'] < 9 || (float) $row['selling_price'] <= 0) {
+            throw new RuntimeException("Demo SKU {$code} is inactive or lacks a safe catalog shelf life/price");
+        }
+        $row['demo_quantity'] = $quantity;
+        $row['demo_expiry'] = $today->modify('+' . (int) $row['shelf_life_days'] . ' days')->format('Y-m-d');
+        $row['existing_demo_batch'] = null;
+        $batchCode = 'DEF26-' . $today->format('Ymd') . '-' . $code;
+        $existing = $db->prepare('SELECT id FROM production_batches WHERE batch_code = ? LIMIT 1');
+        $existing->execute([$batchCode]);
+        $row['existing_demo_batch'] = $existing->fetchColumn() ?: null;
+        $products[] = $row;
+    }
+
+    if ($mode === 'inspect') {
+        echo json_encode(['mode' => 'inspect', 'date' => $today->format('Y-m-d'), 'products' => $products]);
+        exit;
+    }
+
+    $productionUserId = defenseRoleId($db, 'production_staff');
+    $qcUserId = defenseRoleId($db, 'qc_officer');
+    $warehouseUserId = defenseRoleId($db, 'warehouse_fg');
+    $db->beginTransaction();
+    $created = [];
+    $existing = [];
+    $note = 'CAPSTONE DEMO STOCK ONLY; synthetic classroom batch, not physical inventory or approved for real sale.';
+
+    foreach ($products as $product) {
+        $code = $product['product_code'];
+        $batchCode = 'DEF26-' . $today->format('Ymd') . '-' . $code;
+        if ($product['existing_demo_batch']) {
+            $existing[] = $batchCode;
+            continue;
+        }
+        $quantity = (int) $product['demo_quantity'];
+        $perBox = max(1, (int) $product['pieces_per_box']);
+        $boxes = $perBox > 1 ? intdiv($quantity, $perBox) : 0;
+        $pieces = $perBox > 1 ? $quantity % $perBox : $quantity;
+        $size = (float) $product['unit_size'];
+        $bulkLiters = strtolower((string) $product['unit_measure']) === 'ml'
+            ? $quantity * $size / 1000 : 0;
+        $expiry = $product['demo_expiry'];
+
+        $batchInsert = $db->prepare("INSERT INTO production_batches
+            (batch_code, product_id, base_product_id, milk_type_id, product_type,
+             raw_milk_liters, manufacturing_date, manufacturing_time, expiry_date,
+             packaging_integrity_passed, labeling_passed, qc_verified_boxes,
+             qc_verified_pieces, qc_count_variance, qc_status, qc_released_at,
+             qc_notes, fg_received, fg_received_at, fg_received_by, expected_yield,
+             actual_yield, bulk_volume_liters, bulk_remaining_liters, barcode,
+             created_by, released_by, released_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, CURTIME(), ?, 1, 1, ?, ?, 0,
+                    'released', NOW(), ?, 1, NOW(), ?, ?, ?, ?, 0, ?, ?, ?, NOW())");
+        $batchInsert->execute([
+            $batchCode, (int) $product['id'], (int) $product['base_product_id'],
+            (int) $product['milk_type_id'], $product['category'], $bulkLiters,
+            $today->format('Y-m-d'), $expiry, $boxes, $pieces, $note,
+            $warehouseUserId, $quantity, $quantity, $bulkLiters,
+            $batchCode, $productionUserId, $qcUserId,
+        ]);
+        $batchId = (int) $db->lastInsertId();
+
+        $releaseInsert = $db->prepare("INSERT INTO qc_batch_release
+            (release_code, batch_id, inspection_datetime, packaging_integrity,
+             label_accuracy, seal_quality, date_code_correct, ccp_records_complete,
+             ccp_all_passed, release_decision, inspected_by, approved_by,
+             approval_datetime, notes)
+            VALUES (?, ?, NOW(), 'pass', 'pass', 'pass', 1, 1, 1,
+                    'approved', ?, ?, NOW(), ?)");
+        $releaseInsert->execute(['QCR-' . $batchCode, $batchId, $qcUserId, $qcUserId, $note]);
+        $releaseId = (int) $db->lastInsertId();
+
+        $inventoryInsert = $db->prepare("INSERT INTO finished_goods_inventory
+            (batch_id, qc_release_id, product_id, milk_type_id, product_name,
+             product_type, size_ml, quantity, remaining_quantity, quantity_available,
+             disposed_quantity, quantity_reserved, quantity_boxes, quantity_pieces,
+             boxes_available, pieces_available, unit, unit_price, manufacturing_date,
+             expiry_date, barcode, chiller_id, chiller_location, received_at,
+             last_movement_at, received_by, status, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, NULL, 'CAPSTONE DEMO', NOW(), NOW(), ?,
+                    'available', ?)");
+        $inventoryInsert->execute([
+            $batchId, $releaseId, (int) $product['id'], (int) $product['milk_type_id'],
+            $product['product_name'], $product['category'], $size,
+            $quantity, $quantity, $quantity, $boxes, $pieces, $boxes, $pieces,
+            $product['base_unit'] ?: 'piece', (float) $product['selling_price'],
+            $today->format('Y-m-d'), $expiry, 'DEMO-FG-' . $batchCode,
+            $warehouseUserId, $note,
+        ]);
+        $created[] = ['code' => $batchCode, 'product' => $product['product_name'], 'quantity' => $quantity, 'expiry' => $expiry];
+    }
+
+    if ($mode === 'apply') $db->commit();
+    else $db->rollBack();
+    echo json_encode(['mode' => $mode, 'created' => $created, 'already_present' => $existing]);
+} catch (Throwable $error) {
+    if ($db->inTransaction()) $db->rollBack();
+    http_response_code(500);
+    error_log('Defense inventory job: ' . $error->getMessage());
+    echo json_encode(['error' => $error->getMessage()]);
+}

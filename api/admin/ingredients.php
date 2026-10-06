@@ -180,6 +180,9 @@ function ensureIngredientMasterSettings($conn) {
         WHERE LOWER(TRIM(COALESCE(c.category_name, ''))) LIKE '%packaging%'
           AND (COALESCE(i.is_perishable, 1) <> 0 OR i.shelf_life_days IS NOT NULL)
     ");
+    // A non-perishable ingredient has no expiry-based shelf life, including
+    // flavorings changed from perishable in an earlier version of the form.
+    $conn->exec("UPDATE ingredients SET shelf_life_days = NULL WHERE is_perishable = 0 AND shelf_life_days IS NOT NULL");
 
     if (!auditColumnExists($conn, 'ingredients', 'maximum_stock')) {
         $conn->exec("ALTER TABLE `ingredients` ADD COLUMN `maximum_stock` DECIMAL(10,2) DEFAULT NULL COMMENT 'Par level / order-up-to stock' AFTER `reorder_point`");
@@ -680,6 +683,16 @@ function getIngredientStatistics($conn) {
 /**
  * Create new ingredient
  */
+function normalizeIngredientExpiryFields(array &$data, int $currentPerishable = 1): void {
+    if (array_key_exists('is_perishable', $data)
+        && !in_array((string) $data['is_perishable'], ['0', '1'], true)) {
+        sendValidationError(['is_perishable' => 'Choose perishable or non-perishable expiry handling']);
+    }
+    if ((int) ($data['is_perishable'] ?? $currentPerishable) === 0) {
+        $data['shelf_life_days'] = null;
+    }
+}
+
 function validateIngredientPlanningNumbers(array &$data): void {
     $errors = [];
     foreach ([
@@ -771,6 +784,7 @@ function createIngredient($conn, $currentUser) {
     $isActive = isset($data['is_active']) ? intval($data['is_active']) : 1;
     $supplierIds = supplierCatalogNormalizeSupplierIds($data['supplier_ids'] ?? []);
     $initialStockRoute = normalizeIngredientInitialStockRoute($data['initial_stock_status'] ?? '');
+    normalizeIngredientExpiryFields($data);
     validateIngredientPlanningNumbers($data);
     
     // Validation
@@ -991,7 +1005,6 @@ function updateIngredient($conn, $id, $currentUser) {
         'storage_requirements' => [1000, true],
     ]);
     $hasSupplierIds = array_key_exists('supplier_ids', $data);
-    validateIngredientPlanningNumbers($data);
     
     // Check if ingredient exists
     $stmt = $conn->prepare("SELECT * FROM ingredients WHERE id = ?");
@@ -1000,6 +1013,8 @@ function updateIngredient($conn, $id, $currentUser) {
     if (!$currentIngredient) {
         sendError('Ingredient not found', 404);
     }
+    normalizeIngredientExpiryFields($data, (int) ($currentIngredient['is_perishable'] ?? 1));
+    validateIngredientPlanningNumbers($data);
 
     $measurementTouched = array_key_exists('unit_of_measure', $data)
         || array_key_exists('category_id', $data)
