@@ -114,17 +114,29 @@ require __DIR__ . '/scripts/defense_cleanup_lib.php';
 try {
     if (($_GET['inspect'] ?? '') === '1') {
         $db = Database::getInstance()->getConnection();
-        $products = $db->query("SELECT p.product_code, p.product_name, p.category,
+        $products = $db->query("SELECT p.id, p.product_code, p.product_name, p.category,
                 p.unit_size, p.unit_measure, p.base_unit, p.primary_container_id,
-                p.is_active, b.name AS base_name
+                p.is_active, b.id AS base_id, b.name AS base_name, b.category AS base_category,
+                (SELECT COUNT(*) FROM sales_order_items soi WHERE soi.product_id = p.id) AS sales_lines,
+                (SELECT COUNT(*) FROM finished_goods_inventory f WHERE f.product_id = p.id) AS fg_rows
             FROM products p LEFT JOIN base_products b ON b.id = p.base_product_id
             WHERE p.product_code IN ('PM0003', 'PM0006', 'BAR-2021',
                 'YOG-500', 'BUT-250', 'BT0001', 'FM0015')")->fetchAll(PDO::FETCH_ASSOC);
+        $bom = $db->query("SELECT p.product_code, i.ingredient_code, b.is_active
+            FROM sku_packaging_bom_items b JOIN products p ON p.id = b.product_id
+            JOIN ingredients i ON i.id = b.ingredient_id
+            WHERE p.product_code IN ('PM0003', 'PM0006', 'BAR-2021',
+                'YOG-500', 'BUT-250', 'BT0001', 'FM0015')")->fetchAll(PDO::FETCH_ASSOC);
+        $types = [
+            'products' => $db->query("SHOW COLUMNS FROM products LIKE 'category'")->fetch(PDO::FETCH_ASSOC)['Type'],
+            'base_products' => $db->query("SHOW COLUMNS FROM base_products LIKE 'category'")->fetch(PDO::FETCH_ASSOC)['Type']
+        ];
         $materials = $db->query("SELECT ingredient_code, ingredient_name,
                 packaging_role, packaging_capacity_value, packaging_capacity_unit,
                 is_active FROM ingredients WHERE ingredient_code IN
                 ('ING-0091', 'ING-0076')")->fetchAll(PDO::FETCH_ASSOC);
-        echo json_encode(['products' => $products, 'materials' => $materials]);
+        echo json_encode(['products' => $products, 'materials' => $materials,
+            'bom' => $bom, 'category_types' => $types]);
         exit;
     }
     $apply = ($_GET['apply'] ?? '') === '1';
