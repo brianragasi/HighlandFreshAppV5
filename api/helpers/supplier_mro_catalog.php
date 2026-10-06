@@ -72,6 +72,38 @@ function supplierMroValidateLinks(PDO $db, array &$links, bool $pricesRequired):
     unset($link);
 }
 
+/** Return active MRO items that would lose their last accredited supplier. */
+function supplierMroCoverageGapsAfterChange(
+    PDO $db,
+    int $supplierId,
+    array $nextLinks,
+    bool $supplierWillBeActive
+): array {
+    $current = $db->prepare('SELECT mro_item_id FROM supplier_mro_items WHERE supplier_id = ? AND is_active = 1');
+    $current->execute([$supplierId]);
+    $ids = array_unique(array_merge(
+        array_map('intval', $current->fetchAll(PDO::FETCH_COLUMN)),
+        array_map('intval', array_column($nextLinks, 'mro_item_id'))
+    ));
+    $nextIds = array_map('intval', array_column($nextLinks, 'mro_item_id'));
+    $item = $db->prepare('SELECT item_name FROM mro_items WHERE id = ? AND is_active = 1');
+    $others = $db->prepare('SELECT COUNT(DISTINCT smi.supplier_id)
+        FROM supplier_mro_items smi
+        JOIN suppliers s ON s.id = smi.supplier_id AND s.is_active = 1
+        WHERE smi.mro_item_id = ? AND smi.is_active = 1 AND smi.supplier_id <> ?');
+    $gaps = [];
+    foreach ($ids as $id) {
+        $item->execute([$id]);
+        $name = $item->fetchColumn();
+        if ($name === false) continue;
+        $others->execute([$id, $supplierId]);
+        $remaining = (int) $others->fetchColumn();
+        if ($supplierWillBeActive && in_array($id, $nextIds, true)) $remaining++;
+        if ($remaining === 0) $gaps[] = (string) $name;
+    }
+    return $gaps;
+}
+
 function supplierMroSyncSupplier(PDO $db, int $supplierId, array $links, ?int $userId): void {
     $db->prepare("UPDATE supplier_mro_items SET is_active = 0 WHERE supplier_id = ?")->execute([$supplierId]);
     if (!$links) return;

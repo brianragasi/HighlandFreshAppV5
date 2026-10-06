@@ -9,6 +9,7 @@ require_once __DIR__ . '/../helpers/supplier_ingredient_catalog.php';
 require_once __DIR__ . '/../helpers/supplier_mro_catalog.php';
 require_once __DIR__ . '/../helpers/supplier_delivery_terms.php';
 require_once __DIR__ . '/../helpers/plain_text.php';
+require_once __DIR__ . '/../helpers/master_archive_guards.php';
 
 // Require GM/Admin role
 $currentUser = Auth::requireRole(['general_manager', 'admin']);
@@ -363,6 +364,12 @@ function updateSupplier($conn, $id, $currentUser) {
         ? supplierMroNormalizeLinks($data['mro_items'])
         : supplierMroNormalizeLinks(supplierMroGetSupplierItems($conn, (int) $id));
     $nextIsActive = isset($data['is_active']) ? intval($data['is_active']) : intval($currentSupplier['is_active']);
+    if ((int) $currentSupplier['is_active'] === 1 && $nextIsActive === 0) {
+        $openOrders = hfSupplierOpenPurchaseOrderCount($conn, (int) $id);
+        if ($openOrders > 0) {
+            sendValidationError(['supplier' => "This supplier has {$openOrders} open purchase order(s). Close or reassign them before archiving."]);
+        }
+    }
     supplierCatalogValidateIngredientLinks($conn, $ingredientLinks, false, $hasIngredientLinks);
     supplierMroValidateLinks($conn, $mroLinks, $hasMroLinks);
     supplierCatalogValidateSupplierCoverageAfterChange(
@@ -371,6 +378,14 @@ function updateSupplier($conn, $id, $currentUser) {
         $ingredientLinks,
         $nextIsActive === 1
     );
+    $mroGaps = supplierMroCoverageGapsAfterChange($conn, (int) $id, $mroLinks, $nextIsActive === 1);
+    if ($mroGaps) {
+        sendValidationError(['mro_items' =>
+            'These MRO items would have no accredited supplier: ' . implode(', ', array_slice($mroGaps, 0, 4)) .
+            (count($mroGaps) > 4 ? ' and ' . (count($mroGaps) - 4) . ' more' : '') .
+            '. Link another supplier before archiving or removing these offers.'
+        ]);
+    }
 
     if (isset($data['supplier_name'])) {
         $stmt = $conn->prepare("SELECT id FROM suppliers WHERE LOWER(TRIM(supplier_name)) = LOWER(TRIM(?)) AND id != ?");
@@ -450,10 +465,24 @@ function deleteSupplier($conn, $id, $currentUser) {
         sendError('Supplier not found', 404);
     }
 
+    $openOrders = hfSupplierOpenPurchaseOrderCount($conn, (int) $id);
+    if ($openOrders > 0) {
+        sendValidationError(['supplier' => "This supplier has {$openOrders} open purchase order(s). Close or reassign them before archiving."]);
+    }
+
     $currentLinks = supplierCatalogNormalizeIngredientLinks(
         supplierCatalogGetSupplierIngredients($conn, (int) $id)
     );
     supplierCatalogValidateSupplierCoverageAfterChange($conn, (int) $id, $currentLinks, false);
+    $mroGaps = supplierMroCoverageGapsAfterChange($conn, (int) $id,
+        supplierMroNormalizeLinks(supplierMroGetSupplierItems($conn, (int) $id)), false);
+    if ($mroGaps) {
+        sendValidationError(['mro_items' =>
+            'These MRO items would have no accredited supplier: ' . implode(', ', array_slice($mroGaps, 0, 4)) .
+            (count($mroGaps) > 4 ? ' and ' . (count($mroGaps) - 4) . ' more' : '') .
+            '. Link another supplier before archiving.'
+        ]);
+    }
     
     $stmt = $conn->prepare("UPDATE suppliers SET is_active = 0 WHERE id = ?");
     $stmt->execute([$id]);

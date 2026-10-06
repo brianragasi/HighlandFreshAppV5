@@ -637,12 +637,14 @@
             const alertClass = type === 'success' ? 'alert-success' : type === 'error' ? 'alert-error' : 'alert-info';
             const toast = document.createElement('div');
             toast.className = `alert ${alertClass} shadow-lg`;
+            toast.style.maxWidth = 'min(560px, calc(100vw - 2rem))';
             const text = document.createElement('span');
             text.textContent = String(message ?? '');
+            text.style.whiteSpace = 'normal';
             toast.appendChild(text);
             container.appendChild(toast);
             window.HighlandNotificationLayer?.sync();
-            setTimeout(() => toast.remove(), 3000);
+            setTimeout(() => toast.remove(), type === 'error' ? 10000 : 3000);
         }
         
         function handleSearch(event) {
@@ -1294,7 +1296,10 @@
                 }
             } catch (error) {
                 console.error('Error archiving supplier:', error);
-                showToast('Error archiving supplier', 'error');
+                const details = error?.errors
+                    ? Object.values(error.errors).flat().filter(Boolean).join(' ')
+                    : '';
+                showToast(details || error?.message || 'Error archiving supplier', 'error');
             }
         }
         

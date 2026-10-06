@@ -391,6 +391,7 @@ function supplierCatalogValidateSupplierCoverageAfterChange(
           AND si.supplier_id <> ?
     ");
 
+    $uncoveredNames = [];
     foreach ($affectedIngredientIds as $ingredientId) {
         $ingredientStmt->execute([$ingredientId]);
         $ingredient = $ingredientStmt->fetch(PDO::FETCH_ASSOC);
@@ -405,13 +406,18 @@ function supplierCatalogValidateSupplierCoverageAfterChange(
         }
 
         if ($remainingCount < 1) {
-            sendValidationError([
-                'ingredients' => sprintf(
-                    '%s would have no accredited supplier. Link another supplier before removing this one.',
-                    $ingredient['ingredient_name']
-                )
-            ]);
+            $uncoveredNames[] = (string) $ingredient['ingredient_name'];
         }
+    }
+    if ($uncoveredNames) {
+        $preview = implode(', ', array_slice($uncoveredNames, 0, 4));
+        if (count($uncoveredNames) > 4) {
+            $preview .= ' and ' . (count($uncoveredNames) - 4) . ' more';
+        }
+        sendValidationError(['ingredients' => sprintf(
+            '%d active material(s) would have no accredited supplier: %s. Link another supplier before archiving or removing these offers.',
+            count($uncoveredNames), $preview
+        )]);
     }
 }
 

@@ -714,11 +714,13 @@
             const alertClass = type === 'success' ? 'alert-success' : type === 'error' ? 'alert-error' : 'alert-info';
             const toast = document.createElement('div');
             toast.className = `alert ${alertClass} shadow-lg`;
+            toast.style.maxWidth = 'min(560px, calc(100vw - 2rem))';
             const messageElement = document.createElement('span');
             messageElement.textContent = String(message ?? '');
+            messageElement.style.whiteSpace = 'normal';
             toast.appendChild(messageElement);
             container.appendChild(toast);
-            setTimeout(() => toast.remove(), 3000);
+            setTimeout(() => toast.remove(), type === 'error' ? 10000 : 3000);
         }
 
         function openPrimaryAdd() {
@@ -1602,7 +1604,10 @@
                 }
             } catch (error) {
                 console.error('Error archiving ingredient:', error);
-                showToast('Error archiving ingredient', 'error');
+                const details = error?.errors
+                    ? Object.values(error.errors).flat().filter(Boolean).join(' ')
+                    : '';
+                showToast(details || error?.message || 'Error archiving ingredient', 'error');
             }
         }
 

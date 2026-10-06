@@ -9,6 +9,7 @@ require_once __DIR__ . '/../helpers/supplier_ingredient_catalog.php';
 require_once __DIR__ . '/../helpers/plain_text.php';
 require_once __DIR__ . '/../helpers/ingredient_onboarding.php';
 require_once __DIR__ . '/../helpers/ingredient_packaging_roles.php';
+require_once __DIR__ . '/../helpers/master_archive_guards.php';
 require_once __DIR__ . '/../helpers/stock_validation_support.php';
 require_once __DIR__ . '/../helpers/procurement_notifications.php';
 require_once __DIR__ . '/../warehouse/raw/ingredient_stock_helpers.php';
@@ -1078,6 +1079,12 @@ function updateIngredient($conn, $id, $currentUser) {
         ? supplierCatalogNormalizeSupplierIds($data['supplier_ids'])
         : supplierCatalogNormalizeSupplierIds(supplierCatalogGetIngredientSuppliers($conn, (int) $id));
     $nextIsActive = isset($data['is_active']) ? intval($data['is_active']) : intval($currentIngredient['is_active']);
+    if ((int) $currentIngredient['is_active'] === 1 && $nextIsActive === 0) {
+        $blockers = hfIngredientArchiveBlockers($conn, (int) $id);
+        if ($blockers) {
+            sendValidationError(['ingredient' => implode(' ', $blockers)]);
+        }
+    }
     supplierCatalogValidateSupplierIds($conn, $supplierIds, false);
 
     if (array_key_exists('minimum_stock', $data)
@@ -1166,6 +1173,12 @@ function deleteIngredient($conn, $id, $currentUser) {
     $currentIngredient = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$currentIngredient) {
         sendError('Ingredient not found', 404);
+    }
+    if ((int) $currentIngredient['is_active'] === 1) {
+        $blockers = hfIngredientArchiveBlockers($conn, (int) $id);
+        if ($blockers) {
+            sendValidationError(['ingredient' => implode(' ', $blockers)]);
+        }
     }
     
     $stmt = $conn->prepare("UPDATE ingredients SET is_active = 0 WHERE id = ?");
