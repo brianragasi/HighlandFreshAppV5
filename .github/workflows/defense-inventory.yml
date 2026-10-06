@@ -1,0 +1,29 @@
+name: One-time capstone demo inventory
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Inspect, validate with rollback, or apply labeled demo stock
+        required: true
+        type: choice
+        options:
+          - inspect
+          - validate
+          - apply
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Inspect or seed capstone demo inventory
+        env:
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          DEFENSE_INVENTORY_MODE: ${{ inputs.mode }}
+        run: python .github/scripts/run_live_defense_inventory.py
