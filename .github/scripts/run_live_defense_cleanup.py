@@ -8,6 +8,7 @@ import json
 import os
 import pathlib
 import secrets
+import time
 import urllib.error
 import urllib.request
 
@@ -39,29 +40,42 @@ def upload(remote: str, content: bytes) -> None:
 
 
 def call_live(apply: bool) -> dict:
-    url = LIVE_URL + ("?apply=1" if apply else "?apply=0")
-    request = urllib.request.Request(
-        url,
-        data=b"",
-        headers={
-            "X-HF-Cleanup-Token": TOKEN,
-            "Content-Type": "application/octet-stream",
-            "User-Agent": "HighlandFreshDefenseCleanup/1.0",
-        },
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=60) as response:
-            result = json.load(response)
-    except urllib.error.HTTPError as error:
+    for attempt in range(1, 6):
+        url = LIVE_URL + ("?apply=1" if apply else "?apply=0") + "&nonce=" + secrets.token_hex(4)
+        request = urllib.request.Request(
+            url,
+            data=b"",
+            headers={
+                "X-HF-Cleanup-Token": TOKEN,
+                "Content-Type": "application/octet-stream",
+                "Cache-Control": "no-cache",
+                "User-Agent": "HighlandFreshDefenseCleanup/1.0",
+            },
+            method="POST",
+        )
         try:
-            detail = json.load(error).get("error", "unknown server error")
-        except (ValueError, AttributeError):
-            detail = "server did not return a cleanup error"
-        raise RuntimeError(f"Live cleanup HTTP {error.code}: {str(detail)[:250]}") from None
-    if not isinstance(result, dict) or result.get("applied") is not apply:
-        raise RuntimeError("Live cleanup returned an unexpected result")
-    return result
+            with urllib.request.urlopen(request, timeout=60) as response:
+                body = response.read()
+                content_type = response.headers.get("Content-Type", "")
+        except urllib.error.HTTPError as error:
+            try:
+                detail = json.load(error).get("error", "unknown server error")
+            except (ValueError, AttributeError):
+                detail = "server did not return a cleanup error"
+            raise RuntimeError(f"Live cleanup HTTP {error.code}: {str(detail)[:250]}") from None
+        try:
+            result = json.loads(body)
+        except ValueError:
+            if attempt == 5:
+                raise RuntimeError(
+                    f"Live cleanup returned non-JSON HTTP 200 ({len(body)} bytes; {content_type})"
+                ) from None
+            time.sleep(attempt * 2)
+            continue
+        if not isinstance(result, dict) or result.get("applied") is not apply:
+            raise RuntimeError("Live cleanup returned an unexpected result")
+        return result
+    raise RuntimeError("Live cleanup did not return a result")
 
 
 php = """<?php
@@ -78,7 +92,6 @@ try {
     $apply = ($_GET['apply'] ?? '') === '1';
     $result = hfCleanDefenseCatalog(Database::getInstance()->getConnection(), $apply);
     echo json_encode($result, JSON_UNESCAPED_SLASHES);
-    if ($apply) @unlink(__FILE__);
 } catch (Throwable $error) {
     http_response_code(500);
     echo json_encode(['error' => $error->getMessage()]);
