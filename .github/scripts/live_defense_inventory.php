@@ -54,6 +54,19 @@ try {
         $existing = $db->prepare('SELECT id FROM production_batches WHERE batch_code = ? LIMIT 1');
         $existing->execute([$batchCode]);
         $row['existing_demo_batch'] = $existing->fetchColumn() ?: null;
+        $stock = $db->prepare("SELECT COALESCE(SUM(GREATEST(0, quantity_available)), 0)
+            FROM finished_goods_inventory
+            WHERE product_id = ? AND status = 'available'
+              AND expiry_date > DATE_ADD(CURDATE(), INTERVAL 7 DAY)
+              AND quantity_available > 0");
+        $stock->execute([(int) $row['id']]);
+        $row['sellable_on_hand'] = (int) $stock->fetchColumn();
+        $reserved = $db->prepare("SELECT COALESCE(SUM(soi.quantity_ordered), 0)
+            FROM sales_order_items soi JOIN sales_orders so ON so.id = soi.order_id
+            WHERE soi.product_id = ? AND so.status IN ('pending', 'approved', 'picking', 'preparing')");
+        $reserved->execute([(int) $row['id']]);
+        $row['reserved_units'] = (int) $reserved->fetchColumn();
+        $row['available_to_order'] = max(0, $row['sellable_on_hand'] - $row['reserved_units']);
         $products[] = $row;
     }
 
