@@ -78,6 +78,29 @@ def call_live(apply: bool) -> dict:
     raise RuntimeError("Live cleanup did not return a result")
 
 
+def inspect_live() -> dict:
+    for attempt in range(1, 6):
+        request = urllib.request.Request(
+            LIVE_URL + "?inspect=1&nonce=" + secrets.token_hex(4),
+            data=b"",
+            headers={
+                "X-HF-Cleanup-Token": TOKEN,
+                "Content-Type": "application/octet-stream",
+                "Cache-Control": "no-cache",
+                "User-Agent": "HighlandFreshDefenseCleanup/1.0",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=60) as response:
+            body = response.read()
+        try:
+            return json.loads(body)
+        except ValueError:
+            if attempt == 5:
+                raise RuntimeError("Live product inspection returned non-JSON") from None
+            time.sleep(attempt * 2)
+
+
 php = """<?php
 if ($_SERVER['REQUEST_METHOD'] !== 'POST' ||
     !hash_equals('__TOKEN__', $_SERVER['HTTP_X_HF_CLEANUP_TOKEN'] ?? '')) {
@@ -89,6 +112,21 @@ require __DIR__ . '/api/config/config.php';
 require __DIR__ . '/api/config/database.php';
 require __DIR__ . '/scripts/defense_cleanup_lib.php';
 try {
+    if (($_GET['inspect'] ?? '') === '1') {
+        $db = Database::getInstance()->getConnection();
+        $products = $db->query("SELECT p.product_code, p.product_name, p.category,
+                p.unit_size, p.unit_measure, p.base_unit, p.primary_container_id,
+                p.is_active, b.name AS base_name
+            FROM products p LEFT JOIN base_products b ON b.id = p.base_product_id
+            WHERE p.product_code IN ('PM0003', 'PM0006', 'BAR-2021',
+                'YOG-500', 'BUT-250', 'BT0001', 'FM0015')")->fetchAll(PDO::FETCH_ASSOC);
+        $materials = $db->query("SELECT ingredient_code, ingredient_name,
+                packaging_role, packaging_capacity_value, packaging_capacity_unit,
+                is_active FROM ingredients WHERE ingredient_code IN
+                ('ING-0091', 'ING-0076')")->fetchAll(PDO::FETCH_ASSOC);
+        echo json_encode(['products' => $products, 'materials' => $materials]);
+        exit;
+    }
     $apply = ($_GET['apply'] ?? '') === '1';
     $result = hfCleanDefenseCatalog(Database::getInstance()->getConnection(), $apply);
     echo json_encode($result, JSON_UNESCAPED_SLASHES);
@@ -102,6 +140,7 @@ try {
 try:
     upload(LIBRARY, (ROOT / LIBRARY).read_bytes())
     upload(REMOTE_RUNNER, php)
+    print("Live product identity:", json.dumps(inspect_live(), sort_keys=True))
     preview = call_live(False)
     print("Live defense cleanup preview:", json.dumps(preview["changes"], sort_keys=True))
     result = call_live(True)
