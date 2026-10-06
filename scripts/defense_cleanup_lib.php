@@ -291,6 +291,12 @@ function hfCleanDefenseCatalog(PDO $db, bool $apply): array
         $butter250 = $productByCode->fetch(PDO::FETCH_ASSOC);
         $productByCode->execute(['BT0001']);
         $butter500 = $productByCode->fetch(PDO::FETCH_ASSOC);
+        $butterPrimaryCode = null;
+        if ($butter250 && $butter250['primary_container_id'] !== null) {
+            $primaryLookup = $db->prepare('SELECT ingredient_code FROM ingredients WHERE id = ?');
+            $primaryLookup->execute([(int) $butter250['primary_container_id']]);
+            $butterPrimaryCode = $primaryLookup->fetchColumn();
+        }
         if (!$butter250 || !$butter500
             || !in_array($butter250['base_name'], ['Butter', 'Pure Butter'], true)
             || !in_array($butter500['base_name'], ['Butter', 'Pure Butter'], true)
@@ -301,7 +307,8 @@ function hfCleanDefenseCatalog(PDO $db, bool $apply): array
             || !in_array($butter500['unit_measure'], ['ml', 'g'], true)
             || !in_array($butter250['base_unit'], ['bottle', 'block', 'wrapped_block'], true)
             || ($butter250['primary_container_id'] !== null
-                && (int) $butter250['primary_container_id'] !== 52)
+                && !in_array($butterPrimaryCode,
+                    ['TST-PKG-BTL-250', 'DEMO-WRAP-BUT-250'], true))
             || $butter500['base_unit'] !== 'wrapped_block') {
             throw new RuntimeException('Butter SKUs differ from reviewed catalog; cleanup stopped');
         }
@@ -318,18 +325,23 @@ function hfCleanDefenseCatalog(PDO $db, bool $apply): array
         $activeBom->execute([(int) $butter250['id']]);
         $butterBom = array_map('intval', $activeBom->fetchAll(PDO::FETCH_COLUMN));
         $allowedButterMaterials = $db->query("SELECT id FROM ingredients WHERE ingredient_code IN
-            ('MOCK-PKG-CAP-28', 'TST-PKG-BTL-250')")->fetchAll(PDO::FETCH_COLUMN);
+            ('MOCK-PKG-CAP-28', 'TST-PKG-BTL-250', 'DEMO-WRAP-BUT-250')")->fetchAll(PDO::FETCH_COLUMN);
         if (array_diff($butterBom, array_map('intval', $allowedButterMaterials))) {
             throw new RuntimeException('Butter 250 g has unreviewed packaging; cleanup stopped');
         }
-        $stmt = $db->prepare('UPDATE sku_packaging_bom_items SET is_active = 0
-            WHERE product_id = ? AND is_active = 1');
+        $stmt = $db->prepare("UPDATE sku_packaging_bom_items b
+            JOIN ingredients i ON i.id = b.ingredient_id
+            SET b.is_active = 0
+            WHERE b.product_id = ? AND b.is_active = 1
+              AND i.ingredient_code IN ('MOCK-PKG-CAP-28', 'TST-PKG-BTL-250')");
         $stmt->execute([(int) $butter250['id']]);
         $counts['wrong_butter_packaging'] = $stmt->rowCount();
         $stmt = $db->prepare("UPDATE products SET unit_measure = 'g',
-            base_unit = 'wrapped_block', primary_container_id = NULL
+            base_unit = 'wrapped_block',
+            primary_container_id = CASE WHEN primary_container_id = 52
+                THEN NULL ELSE primary_container_id END
             WHERE id = ? AND (unit_measure <> 'g' OR base_unit <> 'wrapped_block'
-                OR primary_container_id IS NOT NULL)");
+                OR primary_container_id = 52)");
         $stmt->execute([(int) $butter250['id']]);
         $counts['butter_250_master'] = $stmt->rowCount();
         $stmt = $db->prepare("UPDATE products SET unit_measure = 'g'
@@ -341,6 +353,97 @@ function hfCleanDefenseCatalog(PDO $db, bool $apply): array
               AND packaging_capacity_unit = 'ml'");
         $stmt->execute([(int) $butter500['primary_container_id']]);
         $counts['butter_wrapper_unit'] = $stmt->rowCount();
+
+        // Complete the two remaining packaging PLANS with clearly marked demo
+        // materials. Zero opening stock and no supplier quote mean Production
+        // still cannot consume these components until they are really received.
+        $packageCategory = $db->query("SELECT id FROM ingredient_categories
+            WHERE category_code = 'CAT-PACK' AND is_active = 1")->fetchColumn();
+        if (!$packageCategory) {
+            throw new RuntimeException('Packaging Materials category is missing; cleanup stopped');
+        }
+        $demoMaterials = [
+            'DEMO-LBL-YOG-250' => ['Plain Yogurt 250 mL Label (Demo, unverified)', 'label', 'label', 250, 'ml'],
+            'DEMO-WRAP-BUT-250' => ['250 g Butter Wrapper (Demo, unverified)', 'container', 'wrapper', 250, 'g'],
+        ];
+        $materialByCode = $db->prepare('SELECT id, ingredient_name, category_id,
+                packaging_role, packaging_form, packaging_capacity_value,
+                packaging_capacity_unit, is_active FROM ingredients
+            WHERE ingredient_code = ? FOR UPDATE');
+        $insertMaterial = $db->prepare("INSERT INTO ingredients
+            (ingredient_code, ingredient_name, category_id, unit_of_measure,
+             physical_state, packaging_role, packaging_form,
+             packaging_capacity_value, packaging_capacity_unit,
+             packaging_capacity_confirmed, purchase_format,
+             current_stock, available_stock, reserved_stock,
+             minimum_stock, reorder_point, maximum_stock,
+             unit_cost, market_price, is_perishable, is_active)
+            VALUES (?, ?, ?, 'pcs', 'count', ?, ?, ?, ?, 0, 'direct_unit',
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 1)");
+        $demoIds = [];
+        $counts['demo_packaging_materials'] = 0;
+        foreach ($demoMaterials as $code => [$name, $role, $form, $capacity, $unit]) {
+            $materialByCode->execute([$code]);
+            $material = $materialByCode->fetch(PDO::FETCH_ASSOC);
+            if ($material) {
+                if ($material['ingredient_name'] !== $name
+                    || (int) $material['category_id'] !== (int) $packageCategory
+                    || $material['packaging_role'] !== $role
+                    || $material['packaging_form'] !== $form
+                    || (float) $material['packaging_capacity_value'] !== (float) $capacity
+                    || $material['packaging_capacity_unit'] !== $unit
+                    || (int) $material['is_active'] !== 1) {
+                    throw new RuntimeException("Demo packaging {$code} changed; cleanup stopped");
+                }
+                $demoIds[$code] = (int) $material['id'];
+            } else {
+                $insertMaterial->execute([$code, $name, (int) $packageCategory,
+                    $role, $form, $capacity, $unit]);
+                $demoIds[$code] = (int) $db->lastInsertId();
+                $counts['demo_packaging_materials']++;
+            }
+        }
+
+        $productByCode->execute(['YOG-500']);
+        $plainYogurt = $productByCode->fetch(PDO::FETCH_ASSOC);
+        if (!$plainYogurt || $plainYogurt['base_name'] !== 'Plain Yogurt'
+            || $plainYogurt['category'] !== 'yogurt'
+            || (float) $plainYogurt['unit_size'] !== 250.0
+            || $plainYogurt['unit_measure'] !== 'ml'
+            || $plainYogurt['base_unit'] !== 'bottle') {
+            throw new RuntimeException('Plain Yogurt SKU changed; cleanup stopped');
+        }
+        $activeBom->execute([(int) $plainYogurt['id']]);
+        $plainBom = array_map('intval', $activeBom->fetchAll(PDO::FETCH_COLUMN));
+        $permittedPlain = $db->query("SELECT id FROM ingredients WHERE ingredient_code IN
+            ('TST-PKG-BTL-250', 'MOCK-PKG-CAP-28')")->fetchAll(PDO::FETCH_COLUMN);
+        $permittedPlain[] = $demoIds['DEMO-LBL-YOG-250'];
+        if (array_diff($plainBom, array_map('intval', $permittedPlain))) {
+            throw new RuntimeException('Plain Yogurt has unreviewed packaging; cleanup stopped');
+        }
+        $activeBom->execute([(int) $butter250['id']]);
+        $butterBom = array_map('intval', $activeBom->fetchAll(PDO::FETCH_COLUMN));
+        if (array_diff($butterBom, [$demoIds['DEMO-WRAP-BUT-250']])
+            || ($butter250['primary_container_id'] !== null
+                && (int) $butter250['primary_container_id'] !== $demoIds['DEMO-WRAP-BUT-250'])) {
+            throw new RuntimeException('Butter 250 g has unreviewed packaging; cleanup stopped');
+        }
+        $insertBom = $db->prepare("INSERT INTO sku_packaging_bom_items
+            (product_id, ingredient_id, quantity_per_unit, waste_percent, unit, is_active)
+            VALUES (?, ?, 1, 0, 'pcs', 1)
+            ON DUPLICATE KEY UPDATE is_active = 1");
+        $counts['demo_packaging_links'] = 0;
+        foreach ([
+            [(int) $plainYogurt['id'], $demoIds['DEMO-LBL-YOG-250']],
+            [(int) $butter250['id'], $demoIds['DEMO-WRAP-BUT-250']],
+        ] as [$productId, $ingredientId]) {
+            $insertBom->execute([$productId, $ingredientId]);
+            $counts['demo_packaging_links'] += $insertBom->rowCount();
+        }
+        $stmt = $db->prepare('UPDATE products SET primary_container_id = ?
+            WHERE id = ? AND primary_container_id IS NULL');
+        $stmt->execute([$demoIds['DEMO-WRAP-BUT-250'], (int) $butter250['id']]);
+        $counts['butter_250_wrapper'] = $stmt->rowCount();
 
         if ($apply) {
             $db->commit();
