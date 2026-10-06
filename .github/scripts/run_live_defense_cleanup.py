@@ -127,6 +127,11 @@ try {
             JOIN ingredients i ON i.id = b.ingredient_id
             WHERE p.product_code IN ('PM0003', 'PM0006', 'BAR-2021',
                 'YOG-500', 'BUT-250', 'BT0001', 'FM0015')")->fetchAll(PDO::FETCH_ASSOC);
+        $recipes = $db->query("SELECT b.name AS base_name, r.recipe_code,
+                r.product_type, r.is_active FROM master_recipes r
+            JOIN base_products b ON b.id = r.base_product_id
+            WHERE b.name IN ('MilkBar', 'Butter', 'Pure Butter',
+                'Plain Yogurt', 'Yogurt Durian Flavor (250ml)')")->fetchAll(PDO::FETCH_ASSOC);
         $types = [
             'products' => $db->query("SHOW COLUMNS FROM products LIKE 'category'")->fetch(PDO::FETCH_ASSOC)['Type'],
             'base_products' => $db->query("SHOW COLUMNS FROM base_products LIKE 'category'")->fetch(PDO::FETCH_ASSOC)['Type']
@@ -136,7 +141,7 @@ try {
                 is_active FROM ingredients WHERE ingredient_code IN
                 ('ING-0091', 'ING-0076')")->fetchAll(PDO::FETCH_ASSOC);
         echo json_encode(['products' => $products, 'materials' => $materials,
-            'bom' => $bom, 'category_types' => $types]);
+            'bom' => $bom, 'recipes' => $recipes, 'category_types' => $types]);
         exit;
     }
     $apply = ($_GET['apply'] ?? '') === '1';

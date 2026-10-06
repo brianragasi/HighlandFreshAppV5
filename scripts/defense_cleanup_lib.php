@@ -183,7 +183,7 @@ function hfCleanDefenseCatalog(PDO $db, bool $apply): array
         // The three legacy MilkBar sizes were created without packaging. Keep
         // the 250 mL bar, which has a matching stocked wrapper; retire only
         // the two sizes that have never entered sales or finished goods.
-        $productByCode = $db->prepare('SELECT p.id, p.product_name, p.category,
+        $productByCode = $db->prepare('SELECT p.id, p.base_product_id, p.product_name, p.category,
                 p.unit_size, p.unit_measure, p.base_unit, p.primary_container_id,
                 p.is_active, b.name AS base_name
             FROM products p JOIN base_products b ON b.id = p.base_product_id
@@ -195,7 +195,8 @@ function hfCleanDefenseCatalog(PDO $db, bool $apply): array
         foreach (['PM0003' => 100, 'BAR-2021' => 1000] as $code => $size) {
             $productByCode->execute([$code]);
             $sku = $productByCode->fetch(PDO::FETCH_ASSOC);
-            if (!$sku || $sku['base_name'] !== 'MilkBar' || $sku['category'] !== 'milk_bar'
+            if (!$sku || $sku['base_name'] !== 'MilkBar'
+                || !in_array($sku['category'], ['pasteurized_milk', 'milk_bar'], true)
                 || (float) $sku['unit_size'] !== (float) $size) {
                 throw new RuntimeException("MilkBar SKU {$code} changed; cleanup stopped");
             }
@@ -214,7 +215,8 @@ function hfCleanDefenseCatalog(PDO $db, bool $apply): array
         $wrapper = $db->query("SELECT id, packaging_role, packaging_capacity_value,
                 packaging_capacity_unit, is_active FROM ingredients
             WHERE ingredient_code = 'ING-0091' FOR UPDATE")->fetch(PDO::FETCH_ASSOC);
-        if (!$milkBar || $milkBar['base_name'] !== 'MilkBar' || $milkBar['category'] !== 'milk_bar'
+        if (!$milkBar || $milkBar['base_name'] !== 'MilkBar'
+            || !in_array($milkBar['category'], ['pasteurized_milk', 'milk_bar'], true)
             || (float) $milkBar['unit_size'] !== 250.0 || $milkBar['unit_measure'] !== 'ml'
             || !$wrapper || $wrapper['packaging_role'] !== 'container'
             || (float) $wrapper['packaging_capacity_value'] !== 250.0
@@ -247,6 +249,23 @@ function hfCleanDefenseCatalog(PDO $db, bool $apply): array
         $stmt->execute([(int) $milkBar['id'], (int) $wrapper['id']]);
         $counts['milkbar_wrapper_links'] = $stmt->rowCount();
 
+        $milkBarRecipe = $db->prepare('SELECT product_type FROM master_recipes
+            WHERE base_product_id = ? AND is_active = 1');
+        $milkBarRecipe->execute([(int) $milkBar['base_product_id']]);
+        $recipeTypes = $milkBarRecipe->fetchAll(PDO::FETCH_COLUMN);
+        if (!$recipeTypes || array_diff($recipeTypes, ['milk_bar'])) {
+            throw new RuntimeException('MilkBar active recipe type is not milk_bar; cleanup stopped');
+        }
+        $stmt = $db->prepare("UPDATE base_products SET category = 'milk_bar'
+            WHERE id = ? AND name = 'MilkBar' AND category = 'pasteurized_milk'");
+        $stmt->execute([(int) $milkBar['base_product_id']]);
+        $counts['milkbar_base_category'] = $stmt->rowCount();
+        $stmt = $db->prepare("UPDATE products SET category = 'milk_bar'
+            WHERE base_product_id = ? AND product_code IN ('PM0003', 'PM0006', 'BAR-2021')
+              AND category = 'pasteurized_milk'");
+        $stmt->execute([(int) $milkBar['base_product_id']]);
+        $counts['milkbar_sku_categories'] = $stmt->rowCount();
+
         // An unrelated Durian Yogurt label had been attached to Plain Yogurt
         // and Butter. Remove false readiness rather than inventing stock.
         $wrongLabel = $db->prepare("UPDATE sku_packaging_bom_items b
@@ -267,14 +286,15 @@ function hfCleanDefenseCatalog(PDO $db, bool $apply): array
         $butter250 = $productByCode->fetch(PDO::FETCH_ASSOC);
         $productByCode->execute(['BT0001']);
         $butter500 = $productByCode->fetch(PDO::FETCH_ASSOC);
-        if (!$butter250 || !$butter500 || $butter250['base_name'] !== 'Pure Butter'
-            || $butter500['base_name'] !== 'Pure Butter'
+        if (!$butter250 || !$butter500
+            || !in_array($butter250['base_name'], ['Butter', 'Pure Butter'], true)
+            || !in_array($butter500['base_name'], ['Butter', 'Pure Butter'], true)
             || $butter250['category'] !== 'butter' || $butter500['category'] !== 'butter'
             || (float) $butter250['unit_size'] !== 250.0
             || (float) $butter500['unit_size'] !== 500.0
             || !in_array($butter250['unit_measure'], ['ml', 'g'], true)
             || !in_array($butter500['unit_measure'], ['ml', 'g'], true)
-            || !in_array($butter250['base_unit'], ['bottle', 'wrapped_block'], true)
+            || !in_array($butter250['base_unit'], ['bottle', 'block', 'wrapped_block'], true)
             || ($butter250['primary_container_id'] !== null
                 && (int) $butter250['primary_container_id'] !== 52)
             || $butter500['base_unit'] !== 'wrapped_block') {
