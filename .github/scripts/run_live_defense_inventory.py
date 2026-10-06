@@ -9,11 +9,17 @@ import secrets
 import urllib.error
 import urllib.parse
 import urllib.request
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 
 mode = os.environ.get("DEFENSE_INVENTORY_MODE", "inspect")
 if mode not in {"inspect", "validate", "apply"}:
     raise SystemExit("Invalid defense inventory mode")
+if os.environ.get("DEFENSE_INVENTORY_SCHEDULED") == "true":
+    if datetime.now(ZoneInfo("Asia/Manila")).date().isoformat() != "2026-10-08":
+        print("Skipping one-time demo inventory refresh outside October 8, 2026.")
+        raise SystemExit(0)
 
 source = Path(__file__).with_name("live_defense_inventory.php").read_text(encoding="utf-8")
 token = secrets.token_hex(32)

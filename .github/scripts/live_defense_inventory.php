@@ -20,9 +20,12 @@ if (!in_array($mode, ['inspect', 'validate', 'apply'], true)) {
 
 $db = Database::getInstance()->getConnection();
 $targets = [
-    'YOG-500' => 40,  // Plain Yogurt: 14-day catalog shelf life
-    'BT0001' => 24,   // Pure Butter: 30-day catalog shelf life
-    'CRM-1L' => 24,   // Fresh Cream: 10-day catalog shelf life
+    'BUT-250' => 24,
+    'CHO-1L' => 24,
+    'FM0015' => 24,
+    'FMK-1L' => 24,
+    'FMK-500' => 24,
+    'PM0006' => 24,
 ];
 
 function defenseRoleId(PDO $db, string $role): int {
@@ -39,15 +42,14 @@ try {
     $query = $db->prepare('SELECT id, base_product_id, product_code, product_name, category,
         milk_type_id, unit_size, unit_measure, base_unit, pieces_per_box,
         shelf_life_days, selling_price, is_active FROM products WHERE product_code = ? LIMIT 1');
-    foreach ($targets as $code => $quantity) {
+    foreach ($targets as $code => $desiredAvailable) {
         $query->execute([$code]);
         $row = $query->fetch(PDO::FETCH_ASSOC);
         if (!$row) throw new RuntimeException("Required demo SKU {$code} is missing");
         if ((int) $row['is_active'] !== 1 || (int) $row['base_product_id'] < 1
-            || (int) $row['shelf_life_days'] < 9 || (float) $row['selling_price'] <= 0) {
-            throw new RuntimeException("Demo SKU {$code} is inactive or lacks a safe catalog shelf life/price");
+            || (int) $row['shelf_life_days'] < 8 || (float) $row['selling_price'] <= 0) {
+            throw new RuntimeException("Demo SKU {$code} is inactive or lacks a catalog shelf life/price");
         }
-        $row['demo_quantity'] = $quantity;
         $row['demo_expiry'] = $today->modify('+' . (int) $row['shelf_life_days'] . ' days')->format('Y-m-d');
         $row['existing_demo_batch'] = null;
         $batchCode = 'DEF26-' . $today->format('Ymd') . '-' . $code;
@@ -67,6 +69,8 @@ try {
         $reserved->execute([(int) $row['id']]);
         $row['reserved_units'] = (int) $reserved->fetchColumn();
         $row['available_to_order'] = max(0, $row['sellable_on_hand'] - $row['reserved_units']);
+        $row['demo_quantity'] = $row['available_to_order'] > 0
+            ? 0 : max(0, $desiredAvailable + $row['reserved_units'] - $row['sellable_on_hand']);
         $products[] = $row;
     }
 
@@ -115,6 +119,10 @@ try {
     foreach ($products as $product) {
         $code = $product['product_code'];
         $batchCode = 'DEF26-' . $today->format('Ymd') . '-' . $code;
+        if ((int) $product['demo_quantity'] === 0) {
+            $existing[] = $code . ' already available';
+            continue;
+        }
         if ($product['existing_demo_batch']) {
             $existing[] = $batchCode;
             continue;

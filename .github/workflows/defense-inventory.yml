@@ -1,6 +1,9 @@
 name: One-time capstone demo inventory
 
 on:
+  schedule:
+    # Oct 8, 2026 at 00:05 and 07:05 Asia/Manila (UTC Oct 7 16:05/23:05).
+    - cron: '5 16,23 7 10 *'
   workflow_dispatch:
     inputs:
       mode:
@@ -25,5 +28,6 @@ jobs:
           FTP_SERVER: ${{ secrets.FTP_SERVER }}
           FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
           FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
-          DEFENSE_INVENTORY_MODE: ${{ inputs.mode }}
+          DEFENSE_INVENTORY_MODE: ${{ github.event_name == 'schedule' && 'apply' || inputs.mode }}
+          DEFENSE_INVENTORY_SCHEDULED: ${{ github.event_name == 'schedule' }}
         run: python .github/scripts/run_live_defense_inventory.py
