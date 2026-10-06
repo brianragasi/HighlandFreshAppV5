@@ -28,6 +28,10 @@ if ($mode === 'inspect_expired') {
             fg.chiller_id, COALESCE(c.chiller_name, fg.chiller_location, 'Unassigned') AS location_name,
             (SELECT COUNT(*) FROM disposals d WHERE d.source_type = 'finished_goods'
                 AND d.source_id = fg.id AND d.status IN ('pending', 'approved')) AS open_disposals
+            ,(SELECT CONCAT(d.disposal_code, ':', d.status, ':', d.quantity)
+                FROM disposals d WHERE d.source_type = 'finished_goods'
+                AND d.source_id = fg.id AND d.status IN ('pending', 'approved')
+                ORDER BY d.id DESC LIMIT 1) AS open_disposal_detail
         FROM finished_goods_inventory fg
         LEFT JOIN production_batches pb ON pb.id = fg.batch_id
         LEFT JOIN chiller_locations c ON c.id = fg.chiller_id
