@@ -13,111 +13,12 @@ require_once __DIR__ . '/config/config.php';
 require_once __DIR__ . '/config/database.php';
 
 $mode = $_POST['mode'] ?? 'inspect';
-if (!in_array($mode, ['inspect', 'validate', 'apply', 'inspect_expired', 'validate_expired', 'clear_expired'], true)) {
+if (!in_array($mode, ['inspect', 'validate', 'apply'], true)) {
     http_response_code(400);
     exit(json_encode(['error' => 'Invalid mode']));
 }
 
 $db = Database::getInstance()->getConnection();
-function expiredDemoRows(PDO $db, bool $lock = false): array {
-    $sql = "SELECT fg.id, fg.product_id, fg.product_name,
-            COALESCE(pb.batch_code, CONCAT('FG-', fg.id)) AS batch_code,
-            fg.status, fg.expiry_date, fg.quantity_available, fg.remaining_quantity,
-            fg.quantity_reserved, fg.boxes_available, fg.pieces_available,
-            fg.quantity_boxes, fg.quantity_pieces, fg.disposed_quantity,
-            fg.chiller_id, COALESCE(c.chiller_name, fg.chiller_location, 'Unassigned') AS location_name,
-            (SELECT COUNT(*) FROM disposals d WHERE d.source_type = 'finished_goods'
-                AND d.source_id = fg.id AND d.status IN ('pending', 'approved')) AS open_disposals
-            ,(SELECT CONCAT(d.disposal_code, ':', d.status, ':', d.quantity)
-                FROM disposals d WHERE d.source_type = 'finished_goods'
-                AND d.source_id = fg.id AND d.status IN ('pending', 'approved')
-                ORDER BY d.id DESC LIMIT 1) AS open_disposal_detail
-        FROM finished_goods_inventory fg
-        LEFT JOIN production_batches pb ON pb.id = fg.batch_id
-        LEFT JOIN chiller_locations c ON c.id = fg.chiller_id
-        WHERE fg.expiry_date < CURDATE()
-          AND fg.status IN ('available', 'low_stock', 'reserved', 'expired')
-          AND (COALESCE(fg.quantity_available, 0) > 0
-            OR COALESCE(fg.boxes_available, 0) > 0
-            OR COALESCE(fg.pieces_available, 0) > 0)
-        ORDER BY fg.expiry_date, fg.id";
-    return $db->query($sql . ($lock ? ' FOR UPDATE' : ''))->fetchAll(PDO::FETCH_ASSOC);
-}
-if (in_array($mode, ['inspect_expired', 'validate_expired', 'clear_expired'], true)) {
-    try {
-        if ($mode === 'inspect_expired') {
-            $expired = expiredDemoRows($db);
-            echo json_encode(['mode' => $mode, 'count' => count($expired), 'rows' => $expired]);
-            exit;
-        }
-        $db->beginTransaction();
-        $expired = expiredDemoRows($db, true);
-        $warehouseUserId = defenseRoleId($db, 'warehouse_fg');
-        $reason = 'Capstone demo-data reset: expired synthetic stock removed from current inventory; no physical disposal was performed.';
-        $cleared = [];
-        $cancelledRequests = [];
-        $affectedChillers = [];
-        $openRequest = $db->prepare("SELECT id, disposal_code, status FROM disposals
-            WHERE source_type = 'finished_goods' AND source_id = ?
-              AND status IN ('pending', 'approved') FOR UPDATE");
-        $cancelRequest = $db->prepare("UPDATE disposals SET status = 'cancelled',
-            notes = CONCAT_WS(' | ', NULLIF(notes, ''), ?) WHERE id = ?");
-        $clear = $db->prepare("UPDATE finished_goods_inventory SET
-            quantity_available = 0, remaining_quantity = 0, quantity_reserved = 0,
-            quantity_boxes = 0, quantity_pieces = 0,
-            boxes_available = 0, pieces_available = 0,
-            disposed_quantity = COALESCE(disposed_quantity, 0) + ?,
-            status = 'disposed', disposed_at = NOW(), disposal_reason = ?,
-            last_movement_at = NOW(),
-            notes = CONCAT_WS(' | ', NULLIF(notes, ''), ?)
-            WHERE id = ? AND expiry_date < CURDATE()
-              AND status IN ('available', 'low_stock', 'reserved', 'expired')");
-        $record = $db->prepare("INSERT INTO fg_inventory_transactions
-            (transaction_code, transaction_type, inventory_id, product_id,
-             quantity, quantity_before, quantity_after,
-             boxes_before, pieces_before, boxes_after, pieces_after,
-             from_chiller_id, performed_by, reason, reference_type, reference_id)
-            VALUES (?, 'disposal', ?, ?, ?, ?, 0, ?, ?, 0, 0, ?, ?, ?, 'demo_expiry_reset', ?)");
-        foreach ($expired as $row) {
-            if ((int) $row['quantity_reserved'] !== 0) {
-                throw new RuntimeException('Expired lot ' . $row['id'] . ' has reserved stock; investigate before clearing');
-            }
-            $openRequest->execute([(int) $row['id']]);
-            foreach ($openRequest->fetchAll(PDO::FETCH_ASSOC) as $request) {
-                $cancelRequest->execute([$reason . ' Superseded request ' . $request['disposal_code'] . '.', (int) $request['id']]);
-                $cancelledRequests[] = $request['disposal_code'] . ' (' . $request['status'] . ')';
-            }
-            $quantity = max(0, (int) $row['quantity_available']);
-            $clear->execute([$quantity, $reason, $reason, (int) $row['id']]);
-            if ($clear->rowCount() !== 1) throw new RuntimeException('Expired lot changed during cleanup: ' . $row['id']);
-            $record->execute([
-                'DEMOEXP-' . date('Ymd') . '-' . $row['id'],
-                (int) $row['id'], (int) $row['product_id'], $quantity, $quantity,
-                (int) $row['boxes_available'], (int) $row['pieces_available'],
-                $row['chiller_id'] ?: null, $warehouseUserId,
-                $reason . ' Batch ' . $row['batch_code'] . '.', (int) $row['id'],
-            ]);
-            if ($row['chiller_id']) $affectedChillers[(int) $row['chiller_id']] = true;
-            $cleared[] = ['id' => (int) $row['id'], 'batch' => $row['batch_code'], 'units' => $quantity];
-        }
-        require_once __DIR__ . '/warehouse/fg/inventory_helpers.php';
-        foreach (array_keys($affectedChillers) as $chillerId) fgSyncChillerCount($db, $chillerId);
-        $remaining = expiredDemoRows($db);
-        if ($remaining) throw new RuntimeException('Expired stock remains after cleanup: ' . count($remaining));
-        if ($mode === 'clear_expired') $db->commit();
-        else $db->rollBack();
-        echo json_encode(['mode' => $mode, 'cleared_count' => count($cleared),
-            'cleared_units' => array_sum(array_column($cleared, 'units')),
-            'cancelled_demo_requests' => $cancelledRequests,
-            'remaining_expired_rows' => count($remaining)]);
-    } catch (Throwable $error) {
-        if ($db->inTransaction()) $db->rollBack();
-        http_response_code(500);
-        error_log('Demo expiry cleanup: ' . $error->getMessage());
-        echo json_encode(['error' => $error->getMessage()]);
-    }
-    exit;
-}
 $targets = [
     'BUT-250' => 24,
     'CHO-1L' => 24,
