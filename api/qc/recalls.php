@@ -388,6 +388,7 @@ function getActiveRecalls($db) {
  * Handle POST requests - Create new recall
  */
 function handlePostRequest($db, $currentUser) {
+    requireActionRole($currentUser, ['qc_officer', 'general_manager'], 'Only QC or the General Manager can initiate a batch recall');
     $data = getRequestBody();
     $data = hfPlainTextFields($data, [
         'batch_code' => [100, false],

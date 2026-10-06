@@ -13,12 +13,45 @@ require_once __DIR__ . '/config/config.php';
 require_once __DIR__ . '/config/database.php';
 
 $mode = $_POST['mode'] ?? 'inspect';
-if (!in_array($mode, ['inspect', 'validate', 'apply'], true)) {
+if (!in_array($mode, ['inspect', 'validate', 'apply', 'inspect_recall'], true)) {
     http_response_code(400);
     exit(json_encode(['error' => 'Invalid mode']));
 }
 
 $db = Database::getInstance()->getConnection();
+if ($mode === 'inspect_recall') {
+    try {
+        $candidates = $db->query("SELECT pb.id, pb.batch_code,
+                COALESCE(p.product_name, NULLIF(pb.product_type, ''), 'Production Batch') AS product_name,
+                p.product_code, p.is_active, pb.manufacturing_date, pb.expiry_date,
+                (SELECT COALESCE(SUM(fg.quantity_available), 0)
+                 FROM finished_goods_inventory fg WHERE fg.batch_id = pb.id
+                   AND fg.status = 'available' AND fg.expiry_date >= CURDATE()) AS current_stock,
+                (SELECT COALESCE(SUM(di.quantity_dispatched), 0)
+                 FROM delivery_items di JOIN deliveries d ON d.id = di.delivery_id
+                 JOIN finished_goods_inventory fg ON fg.id = di.inventory_id
+                 WHERE fg.batch_id = pb.id AND d.status IN ('dispatched', 'in_transit', 'delivered')) AS delivered_units,
+                (SELECT COUNT(DISTINCT d.customer_id)
+                 FROM delivery_items di JOIN deliveries d ON d.id = di.delivery_id
+                 JOIN finished_goods_inventory fg ON fg.id = di.inventory_id
+                 WHERE fg.batch_id = pb.id AND d.status IN ('dispatched', 'in_transit', 'delivered')) AS affected_customers
+            FROM production_batches pb
+            LEFT JOIN products p ON p.id = pb.product_id
+            WHERE pb.qc_status = 'released'
+              AND NOT EXISTS (SELECT 1 FROM batch_recalls br WHERE br.batch_id = pb.id
+                              AND br.status NOT IN ('completed', 'cancelled'))
+            ORDER BY delivered_units DESC, current_stock DESC, pb.id DESC LIMIT 30")->fetchAll(PDO::FETCH_ASSOC);
+        $existing = $db->query("SELECT br.id, br.recall_code, br.batch_code, br.product_name,
+                br.recall_class, br.status, br.total_dispatched,
+                (SELECT COUNT(*) FROM recall_affected_locations r WHERE r.recall_id = br.id) AS affected_locations
+            FROM batch_recalls br ORDER BY br.id DESC LIMIT 10")->fetchAll(PDO::FETCH_ASSOC);
+        echo json_encode(['mode' => $mode, 'candidates' => $candidates, 'existing' => $existing]);
+    } catch (Throwable $error) {
+        http_response_code(500);
+        echo json_encode(['error' => $error->getMessage()]);
+    }
+    exit;
+}
 $targets = [
     'BUT-250' => 24,
     'CHO-1L' => 24,
