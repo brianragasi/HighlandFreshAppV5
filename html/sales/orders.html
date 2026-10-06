@@ -476,6 +476,7 @@
                         </label>
                         <button class="btn btn-primary" type="button" onclick="addDirectOrderItem()"><i class="fas fa-plus"></i>Add</button>
                     </div>
+                    <div id="directProductNotice" class="alert alert-warning mt-3 hidden" role="status"></div>
                 </div>
 
                 <div class="border border-base-300 rounded-lg overflow-x-auto">
@@ -526,7 +527,7 @@
     <script src="../../js/utils/product-display.js?v=20260909-sizefix1"></script>
     <script src="../../js/ui/searchable-product-picker.js?v=20260909-1"></script>
     <script src="../../js/sales/sidebar.js?v=20260828-salesnav1"></script>
-    <script src="../../js/sales/sales.service.js"></script>
+    <script src="../../js/sales/sales.service.js?v=20261007"></script>
     
     <script>
         let orders = [];
@@ -692,9 +693,9 @@
                     SalesService.getDirectOrderProducts()
                 ]);
                 directCustomers = customerResponse.data || [];
-                // Direct orders can only use stock already released by QC and
-                // available in Finished Goods after existing reservations.
-                directProducts = (productResponse.data || []).filter(product => Number(product.available_qty || 0) > 0);
+                // Show the catalog as context, but only allow QC-released,
+                // unreserved Finished Goods stock to be selected for an order.
+                directProducts = productResponse.data || [];
                 renderDirectCustomerOptions();
                 renderDirectProductOptions();
             } catch (error) {
@@ -790,6 +791,18 @@
 
         function renderDirectProductOptions() {
             const select = document.getElementById('directProduct');
+            const notice = document.getElementById('directProductNotice');
+            const readyCount = directProducts.filter(product => Number(product.available_qty || 0) > 0).length;
+            if (!directProducts.length) {
+                notice.textContent = 'No active product SKUs are configured. Ask the General Manager to check the Product Catalog.';
+                notice.classList.remove('hidden');
+            } else if (!readyCount) {
+                notice.textContent = 'No products have sellable Finished Goods stock. Products below are unavailable until QC-released stock with more than seven days before expiry is received and unreserved.';
+                notice.classList.remove('hidden');
+            } else {
+                notice.classList.add('hidden');
+                notice.textContent = '';
+            }
             select.innerHTML = '<option value="">Select product...</option>' + directProducts.map(product => {
                 const available = Number(product.available_qty || 0);
                 const stockLabel = available > 0

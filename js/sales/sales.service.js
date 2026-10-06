@@ -523,10 +523,10 @@ const SalesService = {
         }
     },
 
-    /** Products that Warehouse FG can currently release. */
+    /** Active SKUs with their current Finished Goods availability. */
     async getDirectOrderProducts() {
         return await api.get('/warehouse/fg/products.php', {
-            params: { action: 'for_sale' }
+            params: { action: 'for_sale', include_unavailable: 1 }
         });
     },
 
