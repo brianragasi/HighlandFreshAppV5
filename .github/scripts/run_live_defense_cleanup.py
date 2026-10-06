@@ -8,6 +8,7 @@ import json
 import os
 import pathlib
 import secrets
+import urllib.error
 import urllib.request
 
 
@@ -49,8 +50,15 @@ def call_live(apply: bool) -> dict:
         },
         method="POST",
     )
-    with urllib.request.urlopen(request, timeout=60) as response:
-        result = json.load(response)
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            result = json.load(response)
+    except urllib.error.HTTPError as error:
+        try:
+            detail = json.load(error).get("error", "unknown server error")
+        except (ValueError, AttributeError):
+            detail = "server did not return a cleanup error"
+        raise RuntimeError(f"Live cleanup HTTP {error.code}: {str(detail)[:250]}") from None
     if not isinstance(result, dict) or result.get("applied") is not apply:
         raise RuntimeError("Live cleanup returned an unexpected result")
     return result
