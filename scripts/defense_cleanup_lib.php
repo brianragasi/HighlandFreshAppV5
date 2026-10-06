@@ -253,9 +253,14 @@ function hfCleanDefenseCatalog(PDO $db, bool $apply): array
             WHERE base_product_id = ? AND is_active = 1');
         $milkBarRecipe->execute([(int) $milkBar['base_product_id']]);
         $recipeTypes = $milkBarRecipe->fetchAll(PDO::FETCH_COLUMN);
-        if (!$recipeTypes || array_diff($recipeTypes, ['milk_bar'])) {
-            throw new RuntimeException('MilkBar active recipe type is not milk_bar; cleanup stopped');
+        if (!$recipeTypes || array_diff($recipeTypes, ['', 'milk_bar'])) {
+            throw new RuntimeException('MilkBar active recipe type changed; cleanup stopped');
         }
+        $stmt = $db->prepare("UPDATE master_recipes SET product_type = 'milk_bar'
+            WHERE base_product_id = ? AND recipe_code = 'RCP-0025'
+              AND is_active = 1 AND product_type = ''");
+        $stmt->execute([(int) $milkBar['base_product_id']]);
+        $counts['milkbar_recipe_type'] = $stmt->rowCount();
         $stmt = $db->prepare("UPDATE base_products SET category = 'milk_bar'
             WHERE id = ? AND name = 'MilkBar' AND category = 'pasteurized_milk'");
         $stmt->execute([(int) $milkBar['base_product_id']]);
