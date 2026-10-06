@@ -38,16 +38,22 @@ function hfCleanDefenseCatalog(PDO $db, bool $apply): array
 
     $db->beginTransaction();
     try {
-        $check = $db->prepare('SELECT name FROM base_products WHERE id = ? FOR UPDATE');
-        foreach ($bases as $id => $name) {
-            $check->execute([$id]);
-            $actual = $check->fetchColumn();
-            if ($actual !== $name) {
-                throw new RuntimeException("Expected base product {$id} to be {$name}; found " . ($actual === false ? 'missing' : $actual));
+        $names = array_values(array_unique(array_values($bases)));
+        $nameMarks = implode(',', array_fill(0, count($names), '?'));
+        $lookup = $db->prepare("SELECT id, name FROM base_products WHERE name IN ({$nameMarks}) FOR UPDATE");
+        $lookup->execute($names);
+        $found = $lookup->fetchAll(PDO::FETCH_ASSOC);
+        $foundNames = array_column($found, 'name');
+        $missing = array_diff($names, $foundNames);
+        if ($missing) {
+            throw new RuntimeException('Expected defense catalog names missing: ' . implode(', ', $missing));
+        }
+        foreach ($foundNames as $name) {
+            if (!in_array($name, $names, true)) {
+                throw new RuntimeException('A name matched only by database collation; cleanup stopped');
             }
         }
-
-        $ids = array_keys($bases);
+        $ids = array_map('intval', array_column($found, 'id'));
         $marks = implode(',', array_fill(0, count($ids), '?'));
         $counts = [];
         foreach (['base_products', 'products', 'master_recipes'] as $table) {
@@ -59,26 +65,31 @@ function hfCleanDefenseCatalog(PDO $db, bool $apply): array
             $stmt->execute($ids);
         }
 
-        $customer = $db->query("SELECT name, status FROM customers WHERE id = 17 FOR UPDATE")->fetch(PDO::FETCH_ASSOC);
+        $customer = $db->query("SELECT id, name, status FROM customers WHERE customer_code = 'CUS00008' FOR UPDATE")->fetch(PDO::FETCH_ASSOC);
         if (!$customer || $customer['name'] !== 'TestLang') {
-            throw new RuntimeException('Expected test customer 17 was changed; cleanup stopped');
+            throw new RuntimeException('Expected test customer CUS00008 was changed; cleanup stopped');
         }
-        $references = (int) $db->query('SELECT COUNT(*) FROM sales_orders WHERE customer_id = 17')->fetchColumn();
+        $referencesStmt = $db->prepare('SELECT COUNT(*) FROM sales_orders WHERE customer_id = ?');
+        $referencesStmt->execute([(int) $customer['id']]);
+        $references = (int) $referencesStmt->fetchColumn();
         if ($references !== 0) {
-            throw new RuntimeException('Test customer 17 has order history; cleanup stopped');
+            throw new RuntimeException('Test customer CUS00008 has order history; cleanup stopped');
         }
         $counts['customers'] = $customer['status'] === 'active' ? 1 : 0;
-        $db->exec("UPDATE customers SET status = 'inactive' WHERE id = 17 AND name = 'TestLang' AND status = 'active'");
+        $db->exec("UPDATE customers SET status = 'inactive' WHERE customer_code = 'CUS00008'
+            AND name = 'TestLang' AND status = 'active'");
 
         // These names identify the institution/store clearly; financial fields stay unchanged.
         $counts['customer_types'] = $db->exec("UPDATE customers SET customer_type = 'feeding_program'
-            WHERE id = 6 AND name = 'DepEd Region X Feeding Program' AND customer_type = 'supermarket'");
+            WHERE customer_code = 'DEPED-CDO-001' AND name = 'DepEd Region X Feeding Program'
+              AND customer_type = 'supermarket'");
         $counts['customer_types'] += $db->exec("UPDATE customers SET customer_type = 'supermarket'
-            WHERE id = 16 AND name = 'Ororama Cogon' AND customer_type = 'institutional'");
+            WHERE customer_code = 'CUS00007' AND name = 'Ororama Cogon'
+              AND customer_type = 'institutional'");
         $counts['customer_types'] += $db->exec("UPDATE customers SET customer_type = 'supermarket'
-            WHERE id = 1 AND name = 'SM Supermarket' AND customer_type = 'institutional'");
+            WHERE name = 'SM Supermarket' AND customer_type = 'institutional'");
         $counts['customer_types'] += $db->exec("UPDATE customers SET customer_type = 'supermarket'
-            WHERE id = 2 AND name = 'Robinson''s Supermarket' AND customer_type = 'institutional'");
+            WHERE name = 'Robinson''s Supermarket' AND customer_type = 'institutional'");
 
         $ingredientMarks = implode(',', array_fill(0, count($ingredientCodes), '?'));
         $ingredientCount = $db->prepare("SELECT COUNT(*) FROM ingredients WHERE ingredient_code IN ({$ingredientMarks}) AND is_active = 1");
@@ -96,17 +107,18 @@ function hfCleanDefenseCatalog(PDO $db, bool $apply): array
 
         $counts['ingredient_labels'] = $db->exec("UPDATE ingredients
             SET ingredient_name = 'Chocolate Powder'
-            WHERE id = 11 AND ingredient_code = 'ING-003'
+            WHERE ingredient_code = 'ING-003'
               AND ingredient_name = 'Chocolate Powder X'");
 
         // These packaging links point to another product's label or a bottle cap
         // on a butter pack. Leave the SKU setup visibly incomplete for review.
         $counts['packaging_links'] = $db->exec("UPDATE sku_packaging_bom_items b
+            JOIN products p ON p.id = b.product_id
             JOIN ingredients i ON i.id = b.ingredient_id
             SET b.is_active = 0
             WHERE b.is_active = 1 AND (
-                (b.product_id = 4 AND i.ingredient_code = 'TST-LBL-FM0010')
-                OR (b.product_id = 7 AND i.ingredient_code IN
+                (p.product_code = 'YOG-500' AND i.ingredient_code = 'TST-LBL-FM0010')
+                OR (p.product_code = 'BUT-250' AND i.ingredient_code IN
                     ('MOCK-PKG-CAP-28', 'MOCK-PKG-LBL-CHO500'))
             )");
 
