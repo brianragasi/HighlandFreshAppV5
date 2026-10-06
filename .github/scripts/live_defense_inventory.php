@@ -13,12 +13,33 @@ require_once __DIR__ . '/config/config.php';
 require_once __DIR__ . '/config/database.php';
 
 $mode = $_POST['mode'] ?? 'inspect';
-if (!in_array($mode, ['inspect', 'validate', 'apply'], true)) {
+if (!in_array($mode, ['inspect', 'validate', 'apply', 'inspect_expired', 'validate_expired', 'clear_expired'], true)) {
     http_response_code(400);
     exit(json_encode(['error' => 'Invalid mode']));
 }
 
 $db = Database::getInstance()->getConnection();
+if ($mode === 'inspect_expired') {
+    $expired = $db->query("SELECT fg.id, fg.product_id, fg.product_name,
+            COALESCE(pb.batch_code, CONCAT('FG-', fg.id)) AS batch_code,
+            fg.status, fg.expiry_date, fg.quantity_available, fg.remaining_quantity,
+            fg.quantity_reserved, fg.boxes_available, fg.pieces_available,
+            fg.quantity_boxes, fg.quantity_pieces, fg.disposed_quantity,
+            fg.chiller_id, COALESCE(c.chiller_name, fg.chiller_location, 'Unassigned') AS location_name,
+            (SELECT COUNT(*) FROM disposals d WHERE d.source_type = 'finished_goods'
+                AND d.source_id = fg.id AND d.status IN ('pending', 'approved')) AS open_disposals
+        FROM finished_goods_inventory fg
+        LEFT JOIN production_batches pb ON pb.id = fg.batch_id
+        LEFT JOIN chiller_locations c ON c.id = fg.chiller_id
+        WHERE fg.expiry_date < CURDATE()
+          AND fg.status IN ('available', 'low_stock', 'reserved', 'expired')
+          AND (COALESCE(fg.quantity_available, 0) > 0
+            OR COALESCE(fg.boxes_available, 0) > 0
+            OR COALESCE(fg.pieces_available, 0) > 0)
+        ORDER BY fg.expiry_date, fg.id")->fetchAll(PDO::FETCH_ASSOC);
+    echo json_encode(['mode' => $mode, 'count' => count($expired), 'rows' => $expired]);
+    exit;
+}
 $targets = [
     'BUT-250' => 24,
     'CHO-1L' => 24,
