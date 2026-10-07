@@ -14,12 +14,48 @@ require_once __DIR__ . '/config/database.php';
 require_once __DIR__ . '/warehouse/fg/inventory_helpers.php';
 
 $mode = $_POST['mode'] ?? 'inspect';
-if (!in_array($mode, ['inspect', 'validate', 'apply', 'inspect_locations', 'validate_locations', 'apply_locations', 'inspect_raw', 'validate_raw', 'apply_raw', 'inspect_gap_packaging', 'validate_gap_packaging', 'apply_gap_packaging'], true)) {
+if (!in_array($mode, ['inspect', 'validate', 'apply', 'inspect_locations', 'validate_locations', 'apply_locations', 'inspect_raw', 'validate_raw', 'apply_raw', 'inspect_gap_packaging', 'validate_gap_packaging', 'apply_gap_packaging', 'inspect_low_stock_scenario'], true)) {
     http_response_code(400);
     exit(json_encode(['error' => 'Invalid mode']));
 }
 
 $db = Database::getInstance()->getConnection();
+if ($mode === 'inspect_low_stock_scenario') {
+    try {
+        $rows = $db->query("SELECT i.id, i.ingredient_code, i.ingredient_name,
+                i.unit_of_measure, i.current_stock, i.minimum_stock,
+                i.reorder_point, i.maximum_stock, i.unit_cost, i.is_active,
+                (SELECT COALESCE(SUM(ib.remaining_quantity),0) FROM ingredient_batches ib
+                 WHERE ib.ingredient_id = i.id AND ib.status IN ('available','partially_used')
+                   AND ib.remaining_quantity > 0 AND
+                   (i.is_perishable = 0 OR (ib.expiry_date > CURDATE()
+                    AND NULLIF(TRIM(ib.supplier_batch_no), '') IS NOT NULL))) AS usable,
+                (SELECT GROUP_CONCAT(CONCAT(s.supplier_code, ':', s.supplier_name,
+                    ':', si.reference_unit_price) SEPARATOR '; ')
+                 FROM supplier_ingredients si JOIN suppliers s ON s.id = si.supplier_id
+                 WHERE si.ingredient_id = i.id AND si.is_active = 1 AND s.is_active = 1) AS suppliers,
+                (SELECT COALESCE(SUM(GREATEST(poi.quantity
+                    - COALESCE(poi.quantity_received,0)
+                    - COALESCE(poi.quantity_rejected,0)
+                    - COALESCE(poi.quantity_short_closed,0),0)),0)
+                 FROM purchase_order_items poi JOIN purchase_orders po ON po.id = poi.po_id
+                 WHERE poi.ingredient_id = i.id
+                   AND po.status IN ('pending','approved','ordered','partial_received')) AS on_order,
+                (SELECT COUNT(*) FROM stock_validation_items svi
+                 JOIN stock_validations sv ON sv.id = svi.stock_validation_id
+                 WHERE svi.ingredient_id = i.id AND svi.is_queue_active = 1
+                   AND sv.status IN ('open','partially_ordered')) AS active_validations
+            FROM ingredients i WHERE i.ingredient_code IN
+                ('ING-0096','ING-0097','ING-0099','ING-0101','ING-0076',
+                 'TST-PKG-BTL-250','ING-003','ING-002','ING-007')
+            ORDER BY i.ingredient_code")->fetchAll(PDO::FETCH_ASSOC);
+        echo json_encode(['mode' => $mode, 'candidates' => $rows]);
+    } catch (Throwable $error) {
+        http_response_code(500);
+        echo json_encode(['error' => $error->getMessage()]);
+    }
+    exit;
+}
 if ($mode === 'validate_gap_packaging' || $mode === 'apply_gap_packaging') {
     try {
         $db->beginTransaction();
