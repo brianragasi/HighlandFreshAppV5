@@ -14,12 +14,92 @@ require_once __DIR__ . '/config/database.php';
 require_once __DIR__ . '/warehouse/fg/inventory_helpers.php';
 
 $mode = $_POST['mode'] ?? 'inspect';
-if (!in_array($mode, ['inspect', 'validate', 'apply', 'inspect_locations', 'validate_locations', 'apply_locations', 'inspect_raw', 'validate_raw', 'apply_raw', 'inspect_gap_packaging', 'validate_gap_packaging', 'apply_gap_packaging', 'inspect_low_stock_scenario'], true)) {
+if (!in_array($mode, ['inspect', 'validate', 'apply', 'inspect_locations', 'validate_locations', 'apply_locations', 'inspect_raw', 'validate_raw', 'apply_raw', 'inspect_gap_packaging', 'validate_gap_packaging', 'apply_gap_packaging', 'inspect_low_stock_scenario', 'validate_low_stock_scenario', 'apply_low_stock_scenario'], true)) {
     http_response_code(400);
     exit(json_encode(['error' => 'Invalid mode']));
 }
 
 $db = Database::getInstance()->getConnection();
+if ($mode === 'validate_low_stock_scenario' || $mode === 'apply_low_stock_scenario') {
+    try {
+        $db->beginTransaction();
+        $item = $db->query("SELECT id, ingredient_code, ingredient_name, unit_of_measure,
+                current_stock, minimum_stock, reorder_point, maximum_stock, is_active
+            FROM ingredients WHERE ingredient_code = 'ING-0101' FOR UPDATE")
+            ->fetch(PDO::FETCH_ASSOC);
+        if (!$item || (int) $item['is_active'] !== 1 || $item['unit_of_measure'] !== 'pcs'
+            || (float) $item['current_stock'] !== 300.0) {
+            throw new RuntimeException('Pineapple yogurt label is no longer at the reviewed 300-piece balance');
+        }
+        $id = (int) $item['id'];
+        $usable = $db->prepare("SELECT COALESCE(SUM(remaining_quantity), 0)
+            FROM ingredient_batches WHERE ingredient_id = ?
+              AND status IN ('available','partially_used') AND remaining_quantity > 0
+              AND (expiry_date IS NULL OR expiry_date > CURDATE())");
+        $usable->execute([$id]);
+        if ((float) $usable->fetchColumn() !== 300.0) {
+            throw new RuntimeException('Usable lot balance changed; review it before preparing the walkthrough');
+        }
+        $supplier = $db->prepare("SELECT s.supplier_code, s.supplier_name, si.reference_unit_price
+            FROM supplier_ingredients si JOIN suppliers s ON s.id = si.supplier_id
+            WHERE si.ingredient_id = ? AND si.is_active = 1 AND s.is_active = 1
+              AND si.reference_unit_price > 0 ORDER BY si.reference_unit_price LIMIT 1");
+        $supplier->execute([$id]);
+        $offer = $supplier->fetch(PDO::FETCH_ASSOC);
+        if (!$offer) throw new RuntimeException('No active supplier with a reference price is linked');
+        $onOrder = $db->prepare("SELECT COALESCE(SUM(GREATEST(poi.quantity
+                - COALESCE(poi.quantity_received, 0)
+                - COALESCE(poi.quantity_rejected, 0)
+                - COALESCE(poi.quantity_short_closed, 0), 0)), 0)
+            FROM purchase_order_items poi JOIN purchase_orders po ON po.id = poi.po_id
+            WHERE poi.ingredient_id = ?
+              AND po.status IN ('pending','approved','ordered','partial_received')");
+        $onOrder->execute([$id]);
+        if ((float) $onOrder->fetchColumn() !== 0.0) {
+            throw new RuntimeException('An active purchase order now covers this item');
+        }
+        $validation = $db->prepare("SELECT COUNT(*) FROM stock_validation_items svi
+            JOIN stock_validations sv ON sv.id = svi.stock_validation_id
+            WHERE svi.ingredient_id = ? AND svi.is_queue_active = 1
+              AND sv.status IN ('open','partially_ordered')");
+        $validation->execute([$id]);
+        if ((int) $validation->fetchColumn() !== 0) {
+            throw new RuntimeException('Warehouse has already confirmed this shortage');
+        }
+        $alreadyPrepared = (float) $item['minimum_stock'] === 150.0
+            && (float) $item['reorder_point'] === 350.0
+            && (float) $item['maximum_stock'] === 500.0;
+        if (!$alreadyPrepared) {
+            if ((float) $item['minimum_stock'] !== 50.0
+                || (float) $item['reorder_point'] !== 100.0
+                || (float) $item['maximum_stock'] !== 400.0) {
+                throw new RuntimeException('Existing thresholds changed; review before overwriting them');
+            }
+            $db->prepare('UPDATE ingredients SET minimum_stock = 150,
+                    reorder_point = 350, maximum_stock = 500, updated_at = NOW()
+                WHERE id = ?')->execute([$id]);
+        }
+        if ($mode === 'apply_low_stock_scenario') $db->commit();
+        else $db->rollBack();
+        echo json_encode([
+            'mode' => $mode, 'item' => $item['ingredient_code'],
+            'name' => $item['ingredient_name'], 'usable_stock_pcs' => 300,
+            'minimum_stock_pcs' => 150, 'reorder_point_pcs' => 350,
+            'restock_target_pcs' => 500, 'suggested_shortage_pcs' => 200,
+            'supplier' => $offer['supplier_name'],
+            'reference_unit_price_php' => (float) $offer['reference_unit_price'],
+            'already_prepared' => $alreadyPrepared,
+            'warehouse_validation_created' => false,
+            'purchase_order_created' => false,
+        ]);
+    } catch (Throwable $error) {
+        if ($db->inTransaction()) $db->rollBack();
+        http_response_code(500);
+        error_log('Defense low-stock scenario job: ' . $error->getMessage());
+        echo json_encode(['error' => $error->getMessage()]);
+    }
+    exit;
+}
 if ($mode === 'inspect_low_stock_scenario') {
     try {
         $rows = $db->query("SELECT i.id, i.ingredient_code, i.ingredient_name,

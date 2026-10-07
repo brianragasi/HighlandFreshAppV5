@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 
 
 mode = os.environ.get("DEFENSE_INVENTORY_MODE", "inspect")
-if mode not in {"inspect", "validate", "apply", "inspect_locations", "validate_locations", "apply_locations", "inspect_raw", "validate_raw", "apply_raw", "inspect_gap_packaging", "validate_gap_packaging", "apply_gap_packaging", "inspect_low_stock_scenario"}:
+if mode not in {"inspect", "validate", "apply", "inspect_locations", "validate_locations", "apply_locations", "inspect_raw", "validate_raw", "apply_raw", "inspect_gap_packaging", "validate_gap_packaging", "apply_gap_packaging", "inspect_low_stock_scenario", "validate_low_stock_scenario", "apply_low_stock_scenario"}:
     raise SystemExit("Invalid defense inventory mode")
 if os.environ.get("DEFENSE_INVENTORY_SCHEDULED") == "true":
     if datetime.now(ZoneInfo("Asia/Manila")).date().isoformat() != "2026-10-08":
