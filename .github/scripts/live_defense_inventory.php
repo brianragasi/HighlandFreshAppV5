@@ -11,14 +11,80 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !hash_equals($expectedToken, $actua
 define('HIGHLAND_FRESH', true);
 require_once __DIR__ . '/config/config.php';
 require_once __DIR__ . '/config/database.php';
+require_once __DIR__ . '/warehouse/fg/inventory_helpers.php';
 
 $mode = $_POST['mode'] ?? 'inspect';
-if (!in_array($mode, ['inspect', 'validate', 'apply', 'inspect_locations'], true)) {
+if (!in_array($mode, ['inspect', 'validate', 'apply', 'inspect_locations', 'validate_locations', 'apply_locations'], true)) {
     http_response_code(400);
     exit(json_encode(['error' => 'Invalid mode']));
 }
 
 $db = Database::getInstance()->getConnection();
+function defenseDemoLocation(PDO $db): array {
+    $stmt = $db->query("SELECT id, chiller_name, capacity, temperature_celsius, status
+        FROM chiller_locations WHERE chiller_code = 'CHILL-A2' AND is_active = 1 FOR UPDATE");
+    $location = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$location || in_array($location['status'], ['maintenance', 'offline', 'full'], true)) {
+        throw new RuntimeException('Chiller A - Section 2 is unavailable');
+    }
+    $temperature = (float) $location['temperature_celsius'];
+    if ($temperature < 2 || $temperature > 4) {
+        throw new RuntimeException('Chiller A - Section 2 is outside the required 2-4 C range');
+    }
+    return $location;
+}
+if ($mode === 'validate_locations' || $mode === 'apply_locations') {
+    try {
+        $db->beginTransaction();
+        $location = defenseDemoLocation($db);
+        $rows = $db->query("SELECT fg.id, fg.product_id, fg.quantity_available,
+                fg.quantity_boxes, fg.quantity_pieces
+            FROM finished_goods_inventory fg JOIN production_batches pb ON pb.id = fg.batch_id
+            WHERE pb.batch_code LIKE 'DEF26-%' AND fg.chiller_id IS NULL
+              AND fg.status = 'available' AND fg.quantity_available > 0
+              AND fg.expiry_date > CURDATE() FOR UPDATE")->fetchAll(PDO::FETCH_ASSOC);
+        $needed = array_sum(array_map(static fn($row) => (int) $row['quantity_available'], $rows));
+        $occupied = fgChillerAuthoritativeCount($db, (int) $location['id']);
+        if ((int) $location['capacity'] > 0 && $occupied + $needed > (int) $location['capacity']) {
+            throw new RuntimeException('Chiller A - Section 2 has insufficient free capacity');
+        }
+        $warehouseUserId = defenseRoleId($db, 'warehouse_fg');
+        $putAway = $db->prepare('UPDATE finished_goods_inventory
+            SET chiller_id = ?, chiller_location = ?, last_movement_at = NOW()
+            WHERE id = ? AND chiller_id IS NULL');
+        $log = $db->prepare("INSERT INTO fg_inventory_transactions
+            (transaction_code, transaction_type, inventory_id, product_id, quantity,
+             boxes_quantity, pieces_quantity, quantity_before, quantity_after,
+             boxes_before, pieces_before, boxes_after, pieces_after,
+             to_chiller_id, performed_by, reason)
+            VALUES (?, 'transfer', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        foreach ($rows as $row) {
+            $id = (int) $row['id'];
+            $quantity = (int) $row['quantity_available'];
+            $boxes = (int) $row['quantity_boxes'];
+            $pieces = (int) $row['quantity_pieces'];
+            $putAway->execute([(int) $location['id'], $location['chiller_name'], $id]);
+            $log->execute([
+                'DEMO-PUT-' . $id, $id, (int) $row['product_id'], $quantity,
+                $boxes, $pieces, $quantity, $quantity, $boxes, $pieces,
+                $boxes, $pieces, (int) $location['id'], $warehouseUserId,
+                'Capstone demo stock put-away; synthetic classroom inventory only.'
+            ]);
+        }
+        $newOccupancy = fgSyncChillerCount($db, (int) $location['id']);
+        if ($mode === 'apply_locations') $db->commit();
+        else $db->rollBack();
+        echo json_encode(['mode' => $mode, 'assigned' => count($rows),
+            'units' => $needed, 'location' => $location['chiller_name'],
+            'occupancy' => $newOccupancy, 'capacity' => (int) $location['capacity']]);
+    } catch (Throwable $error) {
+        if ($db->inTransaction()) $db->rollBack();
+        http_response_code(500);
+        error_log('Defense inventory location job: ' . $error->getMessage());
+        echo json_encode(['error' => $error->getMessage()]);
+    }
+    exit;
+}
 if ($mode === 'inspect_locations') {
     try {
         $locations = $db->query("SELECT c.id, c.chiller_code, c.chiller_name, c.capacity,
@@ -139,6 +205,12 @@ try {
     $qcUserId = defenseRoleId($db, 'qc_officer');
     $warehouseUserId = defenseRoleId($db, 'warehouse_fg');
     $db->beginTransaction();
+    $location = defenseDemoLocation($db);
+    $needed = array_sum(array_map(static fn($product) => (int) $product['demo_quantity'], $products));
+    $occupied = fgChillerAuthoritativeCount($db, (int) $location['id']);
+    if ((int) $location['capacity'] > 0 && $occupied + $needed > (int) $location['capacity']) {
+        throw new RuntimeException('Chiller A - Section 2 has insufficient free capacity for demo batches');
+    }
     $created = [];
     $existing = [];
     $note = 'CAPSTONE DEMO STOCK ONLY; synthetic classroom batch, not physical inventory or approved for real sale.';
@@ -200,7 +272,7 @@ try {
              expiry_date, barcode, chiller_id, chiller_location, received_at,
              last_movement_at, received_by, status, notes)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, NULL, 'CAPSTONE DEMO', NOW(), NOW(), ?,
+                    ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), ?,
                     'available', ?)");
         $inventoryInsert->execute([
             $batchId, $releaseId, (int) $product['id'], (int) $product['milk_type_id'],
@@ -208,14 +280,20 @@ try {
             $quantity, $quantity, $quantity, $boxes, $pieces, $boxes, $pieces,
             $product['base_unit'] ?: 'piece', (float) $product['selling_price'],
             $today->format('Y-m-d'), $expiry, 'DEMO-FG-' . $batchCode,
+            (int) $location['id'], $location['chiller_name'],
             $warehouseUserId, $note,
         ]);
         $created[] = ['code' => $batchCode, 'product' => $product['product_name'], 'quantity' => $quantity, 'expiry' => $expiry];
     }
 
+    $newOccupancy = fgSyncChillerCount($db, (int) $location['id']);
+    if ((int) $location['capacity'] > 0 && $newOccupancy > (int) $location['capacity']) {
+        throw new RuntimeException('Demo stock exceeds chiller capacity');
+    }
     if ($mode === 'apply') $db->commit();
     else $db->rollBack();
-    echo json_encode(['mode' => $mode, 'created' => $created, 'already_present' => $existing]);
+    echo json_encode(['mode' => $mode, 'created' => $created, 'already_present' => $existing,
+        'location' => $location['chiller_name'], 'occupancy' => $newOccupancy]);
 } catch (Throwable $error) {
     if ($db->inTransaction()) $db->rollBack();
     http_response_code(500);
