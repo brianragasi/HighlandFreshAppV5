@@ -120,7 +120,7 @@ function qcGetDemoLabelLines(PDO $db, array $batch): array
     if (!str_starts_with($code, 'DEF26-') && !str_starts_with($code, 'LOCAL-DEF26-')) {
         return [];
     }
-    if (($batch['qc_status'] ?? '') !== 'released' || empty($batch['fg_received'])) {
+    if (($batch['qc_status'] ?? '') !== 'released') {
         return [];
     }
 
@@ -135,10 +135,8 @@ function qcGetDemoLabelLines(PDO $db, array $batch): array
                fg.quantity_available AS quantity
         FROM finished_goods_inventory fg
         JOIN products p ON p.id = fg.product_id
-        JOIN qc_batch_release qcr ON qcr.id = fg.qc_release_id AND qcr.batch_id = fg.batch_id
-        WHERE fg.batch_id = ? AND fg.status = 'available'
+        WHERE fg.batch_id = ? AND fg.status IN ('available', 'low_stock')
           AND fg.quantity_available > 0 AND fg.expiry_date >= CURDATE()
-          AND qcr.release_decision = 'approved'
         ORDER BY fg.product_id, fg.id");
     $stmt->execute([(int) $batch['id']]);
 

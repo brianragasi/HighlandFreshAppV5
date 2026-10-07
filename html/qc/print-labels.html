@@ -715,6 +715,7 @@
         let currentSku = null;
         let batchUnitQty = 0;
         let previewTimer = null;
+        let batchSelectionRevision = 0;
         /** Max labels fully rendered in on-screen preview (all still print) */
         const PREVIEW_RENDER_CAP = 24;
 
@@ -864,6 +865,7 @@
         async function onBatchChange() {
             const select = document.getElementById('batchSelect');
             const batchId = select.value;
+            const revision = ++batchSelectionRevision;
 
             if (!batchId) {
                 currentBatch = null;
@@ -882,6 +884,7 @@
 
             try {
                 const response = await api.get(`/qc/batch_release.php?batch_id=${batchId}`);
+                if (revision !== batchSelectionRevision) return;
                 currentBatch = response.data;
                 currentSku = null;
                 batchUnitQty = 0;
@@ -911,6 +914,7 @@
 
                 populateSkuOptions(currentBatch.label_packaging_lines || currentBatch.released_packaging_lines || currentBatch.packaging_lines || []);
             } catch (error) {
+                if (revision !== batchSelectionRevision) return;
                 console.error('Error loading batch details:', error);
                 currentBatch = null;
                 currentSku = null;
@@ -933,9 +937,17 @@
             select.dataset.lines = JSON.stringify(usable);
 
             if (usable.length === 0) {
-                select.replaceChildren(new Option('No packaged SKU details recorded', ''));
+                const isDemoBatch = /^(?:LOCAL-)?DEF26-/.test(String(currentBatch?.batch_code || ''));
+                select.replaceChildren(new Option(isDemoBatch
+                    ? 'No available finished-goods SKU for this demo batch'
+                    : 'No packaged SKU details recorded', ''));
+                document.getElementById('labelCount').value = 1;
+                document.getElementById('labelMode').value = 'unit';
+                document.getElementById('labelModeHint').textContent = 'Print one label for each individual product.';
                 document.getElementById('labelCountHint').textContent =
-                    'Printing is blocked because this batch has no size-specific packaging record.';
+                    isDemoBatch
+                        ? 'Printing is blocked because this demo batch has no available, unexpired finished-goods stock.'
+                        : 'Printing is blocked because this batch has no size-specific packaging record.';
                 clearPreview();
                 return;
             }
