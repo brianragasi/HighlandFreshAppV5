@@ -14,12 +14,39 @@ require_once __DIR__ . '/config/database.php';
 require_once __DIR__ . '/warehouse/fg/inventory_helpers.php';
 
 $mode = $_POST['mode'] ?? 'inspect';
-if (!in_array($mode, ['inspect', 'validate', 'apply', 'inspect_locations', 'validate_locations', 'apply_locations', 'inspect_raw', 'validate_raw', 'apply_raw'], true)) {
+if (!in_array($mode, ['inspect', 'validate', 'apply', 'inspect_locations', 'validate_locations', 'apply_locations', 'inspect_raw', 'validate_raw', 'apply_raw', 'inspect_gap_packaging'], true)) {
     http_response_code(400);
     exit(json_encode(['error' => 'Invalid mode']));
 }
 
 $db = Database::getInstance()->getConnection();
+if ($mode === 'inspect_gap_packaging') {
+    try {
+        $materials = $db->query("SELECT i.id, i.ingredient_code, i.ingredient_name,
+                i.unit_of_measure, i.current_stock, i.unit_cost, i.market_price,
+                i.packaging_role, i.packaging_form, i.packaging_capacity_value,
+                i.packaging_capacity_unit, i.packaging_capacity_confirmed,
+                i.minimum_stock, i.reorder_point, i.maximum_stock, i.is_active,
+                COUNT(DISTINCT si.supplier_id) AS supplier_count
+            FROM ingredients i LEFT JOIN supplier_ingredients si
+                ON si.ingredient_id = i.id AND si.is_active = 1
+            WHERE i.ingredient_code IN ('DEMO-LBL-YOG-250','DEMO-WRAP-BUT-250')
+            GROUP BY i.id ORDER BY i.ingredient_code")->fetchAll(PDO::FETCH_ASSOC);
+        $skus = $db->query("SELECT p.id, p.product_code, p.product_name,
+                p.unit_size, p.unit_measure, p.base_unit, p.primary_container_id,
+                b.ingredient_id, b.quantity_per_unit, b.waste_percent, b.unit,
+                b.is_active AS bom_active, i.ingredient_code AS material_code
+            FROM products p LEFT JOIN sku_packaging_bom_items b ON b.product_id = p.id
+            LEFT JOIN ingredients i ON i.id = b.ingredient_id
+            WHERE p.product_code IN ('YOG-500','BUT-250')
+            ORDER BY p.product_code, b.id")->fetchAll(PDO::FETCH_ASSOC);
+        echo json_encode(['mode' => $mode, 'materials' => $materials, 'sku_bom' => $skus]);
+    } catch (Throwable $error) {
+        http_response_code(500);
+        echo json_encode(['error' => $error->getMessage()]);
+    }
+    exit;
+}
 if ($mode === 'validate_raw' || $mode === 'apply_raw') {
     try {
         // These are classroom records. Keep every retired lot and correction
