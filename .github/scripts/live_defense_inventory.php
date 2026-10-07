@@ -14,12 +14,42 @@ require_once __DIR__ . '/config/database.php';
 require_once __DIR__ . '/warehouse/fg/inventory_helpers.php';
 
 $mode = $_POST['mode'] ?? 'inspect';
-if (!in_array($mode, ['inspect', 'validate', 'apply', 'inspect_locations', 'validate_locations', 'apply_locations', 'inspect_raw', 'validate_raw', 'apply_raw', 'inspect_gap_packaging', 'validate_gap_packaging', 'apply_gap_packaging', 'inspect_low_stock_scenario', 'validate_low_stock_scenario', 'apply_low_stock_scenario'], true)) {
+if (!in_array($mode, ['inspect', 'validate', 'apply', 'inspect_locations', 'validate_locations', 'apply_locations', 'inspect_raw', 'validate_raw', 'apply_raw', 'inspect_gap_packaging', 'validate_gap_packaging', 'apply_gap_packaging', 'inspect_low_stock_scenario', 'validate_low_stock_scenario', 'apply_low_stock_scenario', 'inspect_qc_labels'], true)) {
     http_response_code(400);
     exit(json_encode(['error' => 'Invalid mode']));
 }
 
 $db = Database::getInstance()->getConnection();
+if ($mode === 'inspect_qc_labels') {
+    try {
+        $batches = $db->prepare("SELECT pb.id, pb.batch_code, pb.product_id,
+                pb.qc_status, pb.fg_received, pb.expiry_date,
+                p.product_code, p.product_name
+            FROM production_batches pb
+            LEFT JOIN products p ON p.id = pb.product_id
+            WHERE pb.batch_code LIKE ? ORDER BY pb.id");
+        $batches->execute(['DEF26-%']);
+        $inventory = $db->prepare("SELECT fg.id, fg.batch_id, fg.product_id,
+                fg.qc_release_id, fg.status, fg.quantity_available,
+                fg.remaining_quantity, fg.expiry_date, fg.chiller_id,
+                qcr.release_decision
+            FROM finished_goods_inventory fg
+            LEFT JOIN qc_batch_release qcr ON qcr.id = fg.qc_release_id
+            WHERE fg.batch_id = ? ORDER BY fg.id");
+        $result = [];
+        foreach ($batches->fetchAll(PDO::FETCH_ASSOC) as $batch) {
+            $inventory->execute([(int) $batch['id']]);
+            $batch['inventory'] = $inventory->fetchAll(PDO::FETCH_ASSOC);
+            $result[] = $batch;
+        }
+        echo json_encode(['mode' => $mode, 'server_date' => $db->query('SELECT CURDATE()')->fetchColumn(),
+            'batches' => $result]);
+    } catch (Throwable $error) {
+        http_response_code(500);
+        echo json_encode(['error' => $error->getMessage()]);
+    }
+    exit;
+}
 if ($mode === 'validate_low_stock_scenario' || $mode === 'apply_low_stock_scenario') {
     try {
         $db->beginTransaction();
