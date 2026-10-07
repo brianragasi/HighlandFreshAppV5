@@ -379,6 +379,13 @@ function handleGet($db, $action) {
                 Response::error('Barcode is required', 400);
             }
 
+            if (hfParseCompactFinishedGoodsLabel($barcode)) {
+                Response::error(
+                    'This is an individual-unit label. Wholesale needs an outside-box label beginning HFB. Use Retail for individual units.',
+                    422
+                );
+            }
+
             $boxLabel = hfParseCompactFinishedGoodsBoxLabel($barcode);
             if ($boxLabel) {
                 $usedStmt = $db->prepare("SELECT transaction_id FROM pos_sold_box_labels WHERE label_code = ? LIMIT 1");
@@ -496,7 +503,7 @@ function handleGet($db, $action) {
                        WHERE barcode = ? LIMIT 1
                    )
                    OR p.id = (
-                       SELECT product_id FROM finished_goods_inventory fgi
+                       SELECT fgi.product_id FROM finished_goods_inventory fgi
                        JOIN production_batches pb ON fgi.batch_id = pb.id
                        WHERE pb.barcode = ? LIMIT 1
                    )

@@ -177,14 +177,32 @@ function qcGetEffectiveReleasedPackagingLines(PDO $db, $batchId, $runId)
 
 function qcGetReleasedSkuQuantity(PDO $db, int $batchId, int $productId): int
 {
-    $runStmt = $db->prepare('SELECT run_id FROM production_batches WHERE id = ? LIMIT 1');
+    $runStmt = $db->prepare('SELECT run_id, batch_code, qc_status FROM production_batches WHERE id = ? LIMIT 1');
     $runStmt->execute([$batchId]);
-    $runId = (int) ($runStmt->fetchColumn() ?: 0);
+    $batch = $runStmt->fetch(PDO::FETCH_ASSOC);
+    if (!$batch) return 0;
+    $runId = (int) ($batch['run_id'] ?? 0);
     $quantity = 0;
     foreach (qcGetEffectiveReleasedPackagingLines($db, $batchId, $runId) as $line) {
         if ((int) ($line['product_id'] ?? 0) === $productId) {
             $quantity += max(0, (int) ($line['quantity'] ?? 0));
         }
     }
-    return $quantity;
+    if ($quantity > 0) return $quantity;
+
+    // Capstone opening balances were released and received directly into FG,
+    // without a production packaging run. Their original FG quantity defines
+    // the range of box serials that the QC demo label page can print.
+    $code = (string) ($batch['batch_code'] ?? '');
+    if (($batch['qc_status'] ?? '') !== 'released'
+        || (!str_starts_with($code, 'DEF26-') && !str_starts_with($code, 'LOCAL-DEF26-'))) {
+        return 0;
+    }
+    $demoStmt = $db->prepare("SELECT COALESCE(SUM(GREATEST(fg.quantity, 0)), 0)
+        FROM finished_goods_inventory fg
+        JOIN qc_batch_release qcr ON qcr.id = fg.qc_release_id AND qcr.batch_id = fg.batch_id
+        WHERE fg.batch_id = ? AND fg.product_id = ?
+          AND qcr.release_decision = 'approved'");
+    $demoStmt->execute([$batchId, $productId]);
+    return max(0, (int) $demoStmt->fetchColumn());
 }

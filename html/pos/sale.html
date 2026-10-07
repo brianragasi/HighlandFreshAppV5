@@ -1610,6 +1610,9 @@
 
             input.disabled = true;
             try {
+                if (/^HF4-\d+-\d+-\d+$/i.test(code)) {
+                    throw new Error('That is an individual-unit label. Wholesale needs the HFB label on the outside of a sealed box.');
+                }
                 const response = await POSService.getProductByBarcode(code);
                 const scanned = response?.data || null;
                 if (!scanned || scanned.scan_type !== 'wholesale_box') {
@@ -1723,7 +1726,14 @@
                     throw new Error('Live camera is unavailable here. Tap “Take Photo Instead” below.');
                 }
 
-                posHtml5QrCode = new Html5Qrcode('posCameraPreview');
+                posHtml5QrCode = new Html5Qrcode('posCameraPreview', {
+                    formatsToSupport: [
+                        Html5QrcodeSupportedFormats.CODE_128,
+                        Html5QrcodeSupportedFormats.EAN_13,
+                        Html5QrcodeSupportedFormats.CODE_39,
+                        Html5QrcodeSupportedFormats.QR_CODE
+                    ]
+                });
                 await posHtml5QrCode.start(
                     { facingMode: 'environment' },
                     {
@@ -1742,7 +1752,11 @@
                 setPosCameraScanStatus('Camera ready. Hold the full barcode inside the guide.', 'info', 'fa-camera');
                 clearTimeout(posCameraScanHintTimer);
                 posCameraScanHintTimer = setTimeout(() => {
-                    setPosCameraScanStatus('Move closer, avoid glare, and keep both ends of the barcode visible.', 'warning', 'fa-lightbulb');
+                    const facebookBrowser = /FBAN|FBAV|FBLite|FB_IAB/i.test(navigator.userAgent || '');
+                    setPosCameraScanStatus(facebookBrowser
+                        ? 'No barcode decoded yet. Try Take Photo Instead, or use Facebook Lite’s menu to open this page in Chrome. Scan the HFB outside-box label.'
+                        : 'No barcode decoded yet. Fill the guide with the full HFB outside-box label, avoid glare, or use Take Photo Instead.',
+                        'warning', 'fa-lightbulb');
                 }, 8000);
             } catch (error) {
                 console.error('Failed to start POS camera:', error);
