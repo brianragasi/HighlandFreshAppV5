@@ -143,7 +143,7 @@ if ($mode === 'validate_raw' || $mode === 'apply_raw') {
 
         // Clearly label intentional demo materials without suggesting that
         // an unverified wrapper or label has become available for production.
-        $rename = $db->prepare('UPDATE ingredients SET ingredient_name = ?, updated_at = NOW
+        $rename = $db->prepare('UPDATE ingredients SET ingredient_name = ?, updated_at = NOW()
             WHERE ingredient_code = ? AND ingredient_name = ?');
         $names = [
             'TST-LBL-CHO-1L' => '1000 mL Chocolate Milk Label [CHO-1L]',
