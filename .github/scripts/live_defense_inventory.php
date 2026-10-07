@@ -720,8 +720,9 @@ try {
         $reserved->execute([(int) $row['id']]);
         $row['reserved_units'] = (int) $reserved->fetchColumn();
         $row['available_to_order'] = max(0, $row['sellable_on_hand'] - $row['reserved_units']);
-        $row['demo_quantity'] = $row['available_to_order'] > 0
-            ? 0 : max(0, $desiredAvailable + $row['reserved_units'] - $row['sellable_on_hand']);
+        $row['demo_quantity'] = max(0,
+            $desiredAvailable + $row['reserved_units'] - $row['sellable_on_hand']
+        );
         $products[] = $row;
     }
 
@@ -848,10 +849,29 @@ try {
     if ((int) $location['capacity'] > 0 && $newOccupancy > (int) $location['capacity']) {
         throw new RuntimeException('Demo stock exceeds chiller capacity');
     }
+    $readyStmt = $db->prepare("SELECT COALESCE(SUM(GREATEST(fg.boxes_available, 0)), 0)
+        FROM finished_goods_inventory fg
+        JOIN products p ON p.id = fg.product_id
+        JOIN production_batches pb ON pb.id = fg.batch_id
+        JOIN qc_batch_release qcr ON qcr.id = fg.qc_release_id
+        WHERE p.product_code = ? AND fg.status = 'available'
+          AND fg.expiry_date > DATE_ADD(CURDATE(), INTERVAL 7 DAY)
+          AND fg.chiller_id IS NOT NULL AND pb.qc_status = 'released'
+          AND pb.fg_received = 1 AND qcr.release_decision = 'approved'");
+    $flavoredReady = [];
+    foreach (['FM0016', 'FM0017', 'FM0018', 'FM0019', 'FM0020', 'FM0021'] as $code) {
+        $readyStmt->execute([$code]);
+        $boxesReady = (int) $readyStmt->fetchColumn();
+        if ($boxesReady < 1) {
+            throw new RuntimeException("{$code} has no QC-released, dispatchable demo box");
+        }
+        $flavoredReady[$code] = $boxesReady;
+    }
     if ($mode === 'apply') $db->commit();
     else $db->rollBack();
     echo json_encode(['mode' => $mode, 'created' => $created, 'already_present' => $existing,
-        'location' => $location['chiller_name'], 'occupancy' => $newOccupancy]);
+        'location' => $location['chiller_name'], 'occupancy' => $newOccupancy,
+        'flavored_boxes_ready' => $flavoredReady]);
 } catch (Throwable $error) {
     if ($db->inTransaction()) $db->rollBack();
     http_response_code(500);
