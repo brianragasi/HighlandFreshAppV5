@@ -20,6 +20,9 @@ if (!in_array($mode, ['inspect', 'validate', 'apply', 'inspect_locations', 'vali
 }
 
 $db = Database::getInstance()->getConnection();
+// The hosted database may use UTC while the defense and PHP dates use Manila.
+// Keep CURDATE() and NOW() aligned with the date on printed demo labels.
+$db->exec("SET time_zone = '+08:00'");
 if ($mode === 'inspect_qc_labels') {
     try {
         $batches = $db->prepare("SELECT pb.id, pb.batch_code, pb.product_id, pb.run_id,
@@ -666,6 +669,14 @@ $targets = [
     'FMK-1L' => 24,
     'FMK-500' => 24,
     'PM0006' => 24,
+    // Fresh, labeled defense stock for the six October 7 flavored-milk batches.
+    // Their eight-day shelf life puts the new October 8 batches at October 16.
+    'FM0016' => 192, // Choco
+    'FM0017' => 192, // Melon
+    'FM0018' => 192, // Strawberry
+    'FM0019' => 192, // Durian
+    'FM0020' => 192, // Avocado
+    'FM0021' => 192, // Ube
 ];
 
 function defenseRoleId(PDO $db, string $role): int {
