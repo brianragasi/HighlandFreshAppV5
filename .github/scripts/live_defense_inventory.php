@@ -14,12 +14,121 @@ require_once __DIR__ . '/config/database.php';
 require_once __DIR__ . '/warehouse/fg/inventory_helpers.php';
 
 $mode = $_POST['mode'] ?? 'inspect';
-if (!in_array($mode, ['inspect', 'validate', 'apply', 'inspect_locations', 'validate_locations', 'apply_locations', 'inspect_raw', 'validate_raw', 'apply_raw', 'inspect_gap_packaging'], true)) {
+if (!in_array($mode, ['inspect', 'validate', 'apply', 'inspect_locations', 'validate_locations', 'apply_locations', 'inspect_raw', 'validate_raw', 'apply_raw', 'inspect_gap_packaging', 'validate_gap_packaging', 'apply_gap_packaging'], true)) {
     http_response_code(400);
     exit(json_encode(['error' => 'Invalid mode']));
 }
 
 $db = Database::getInstance()->getConnection();
+if ($mode === 'validate_gap_packaging' || $mode === 'apply_gap_packaging') {
+    try {
+        $db->beginTransaction();
+        $warehouseUserId = defenseRoleId($db, 'warehouse_raw');
+        $gmUserId = defenseRoleId($db, 'general_manager');
+        $materials = [
+            'DEMO-LBL-YOG-250' => [
+                'product_code' => 'YOG-500', 'name' => 'Plain Yogurt 250 mL Label (Demo)',
+                'role' => 'label', 'form' => 'label', 'size' => 250.0, 'measure' => 'ml',
+                'cost' => 0.75, 'suffix' => 'YOG250',
+            ],
+            'DEMO-WRAP-BUT-250' => [
+                'product_code' => 'BUT-250', 'name' => '250 g Butter Wrapper (Demo)',
+                'role' => 'container', 'form' => 'wrapper', 'size' => 250.0, 'measure' => 'g',
+                'cost' => 1.50, 'suffix' => 'BUT250',
+            ],
+        ];
+        $lookup = $db->prepare('SELECT id, ingredient_code, ingredient_name, current_stock,
+                unit_of_measure, packaging_role, packaging_form, packaging_capacity_value,
+                packaging_capacity_unit, is_active FROM ingredients
+            WHERE ingredient_code = ? FOR UPDATE');
+        $product = $db->prepare('SELECT id, product_code, unit_size, unit_measure,
+                primary_container_id, is_active FROM products WHERE product_code = ?');
+        $bom = $db->prepare('SELECT quantity_per_unit, waste_percent, unit
+            FROM sku_packaging_bom_items WHERE product_id = ? AND ingredient_id = ? AND is_active = 1');
+        $batchCount = $db->prepare("SELECT COALESCE(SUM(remaining_quantity), 0)
+            FROM ingredient_batches WHERE ingredient_id = ?
+              AND status IN ('available','partially_used','quarantine','expired')");
+        $update = $db->prepare('UPDATE ingredients SET ingredient_name = ?, current_stock = 500,
+            minimum_stock = 50, reorder_point = 100, maximum_stock = 500,
+            unit_cost = ?, packaging_capacity_confirmed = 1, updated_at = NOW()
+            WHERE id = ? AND current_stock = 0');
+        $addLot = $db->prepare("INSERT INTO ingredient_batches
+            (batch_code, ingredient_id, quantity, remaining_quantity, unit_cost,
+             supplier_batch_no, received_date, expiry_date, qc_status, received_by, status, notes)
+            VALUES (?, ?, 500, 500, ?, ?, CURDATE(), NULL, 'approved', ?, 'available', ?)");
+        $transaction = $db->prepare("INSERT INTO inventory_transactions
+            (transaction_code, transaction_type, item_type, item_id, batch_id,
+             quantity, unit_of_measure, quantity_before, quantity_after,
+             reference_type, reference_id, performed_by, approved_by, reason)
+            VALUES (?, 'physical_adjust', 'packaging', ?, ?, 500, 'pcs', 0, 500,
+                    'capstone_demo_opening', ?, ?, ?, ?)");
+        $created = [];
+        $alreadyPresent = [];
+        foreach ($materials as $code => $spec) {
+            $lookup->execute([$code]);
+            $row = $lookup->fetch(PDO::FETCH_ASSOC);
+            $product->execute([$spec['product_code']]);
+            $sku = $product->fetch(PDO::FETCH_ASSOC);
+            if (!$row || !$sku || (int) $row['is_active'] !== 1 || (int) $sku['is_active'] !== 1
+                || $row['unit_of_measure'] !== 'pcs' || $row['packaging_role'] !== $spec['role']
+                || $row['packaging_form'] !== $spec['form']
+                || (float) $row['packaging_capacity_value'] !== $spec['size']
+                || strtolower((string) $row['packaging_capacity_unit']) !== $spec['measure']
+                || (float) $sku['unit_size'] !== $spec['size']
+                || strtolower((string) $sku['unit_measure']) !== $spec['measure']) {
+                throw new RuntimeException("{$code} or its SKU differs from the reviewed demo specification");
+            }
+            if ($code === 'DEMO-WRAP-BUT-250'
+                && (int) $sku['primary_container_id'] !== (int) $row['id']) {
+                throw new RuntimeException('Butter 250 g is no longer linked to the reviewed wrapper');
+            }
+            $bom->execute([(int) $sku['id'], (int) $row['id']]);
+            $bomRow = $bom->fetch(PDO::FETCH_ASSOC);
+            if (!$bomRow || (float) $bomRow['quantity_per_unit'] !== 1.0
+                || (float) $bomRow['waste_percent'] !== 0.0 || $bomRow['unit'] !== 'pcs') {
+                throw new RuntimeException("{$code} packaging BOM differs from the reviewed one-per-unit plan");
+            }
+            $batchCount->execute([(int) $row['id']]);
+            $accounted = (float) $batchCount->fetchColumn();
+            if ((float) $row['current_stock'] >= 500.0 && $accounted >= 500.0) {
+                $alreadyPresent[] = $code;
+                continue;
+            }
+            if ((float) $row['current_stock'] !== 0.0 || $accounted !== 0.0) {
+                throw new RuntimeException("{$code} now has stock; refresh its count before applying demo opening stock");
+            }
+            $lotCode = 'DEMO-PKG-' . date('Ymd') . '-' . $spec['suffix'];
+            $existing = $db->prepare('SELECT id FROM ingredient_batches WHERE batch_code = ?');
+            $existing->execute([$lotCode]);
+            if ($existing->fetchColumn()) throw new RuntimeException("Demo lot {$lotCode} already exists");
+            $update->execute([$spec['name'], $spec['cost'], (int) $row['id']]);
+            if ($update->rowCount() !== 1) throw new RuntimeException("Could not update {$code}");
+            $addLot->execute([
+                $lotCode, (int) $row['id'], $spec['cost'],
+                'DEMO-OPEN-' . date('Ymd') . '-' . $spec['suffix'], $warehouseUserId,
+                'CAPSTONE DEMO ONLY: synthetic 500-piece opening balance; planned size and estimated cost, not a physical count, supplier quote, delivery, or actual QC result.',
+            ]);
+            $batchId = (int) $db->lastInsertId();
+            $transaction->execute([
+                'DEMO-PKG-OPEN-' . $batchId, (int) $row['id'], $batchId,
+                $batchId, $warehouseUserId, $gmUserId,
+                'CAPSTONE DEMO synthetic packaging opening balance and estimated cost; not physical stock or a supplier delivery.',
+            ]);
+            $created[] = ['code' => $code, 'sku' => $spec['product_code'],
+                'quantity' => 500, 'estimated_unit_cost' => $spec['cost'],
+                'lot_code' => $lotCode];
+        }
+        if ($mode === 'apply_gap_packaging') $db->commit();
+        else $db->rollBack();
+        echo json_encode(['mode' => $mode, 'created' => $created, 'already_present' => $alreadyPresent]);
+    } catch (Throwable $error) {
+        if ($db->inTransaction()) $db->rollBack();
+        http_response_code(500);
+        error_log('Defense packaging gap job: ' . $error->getMessage());
+        echo json_encode(['error' => $error->getMessage()]);
+    }
+    exit;
+}
 if ($mode === 'inspect_gap_packaging') {
     try {
         $materials = $db->query("SELECT i.id, i.ingredient_code, i.ingredient_name,
