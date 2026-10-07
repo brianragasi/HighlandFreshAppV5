@@ -143,12 +143,13 @@ function qcGetDemoLabelLines(PDO $db, array $batch): array
     $lines = [];
     foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
         $productId = (int) $row['product_id'];
+        $available = (int) $row['quantity'];
         if (!isset($lines[$productId])) {
             $row['quantity'] = 0;
             $row['demo_fg_label_source'] = true;
             $lines[$productId] = $row;
         }
-        $lines[$productId]['quantity'] += (int) $row['quantity'];
+        $lines[$productId]['quantity'] += $available;
     }
     return array_values($lines);
 }
