@@ -51,8 +51,23 @@ if ($mode === 'inspect_qc_labels') {
             $batch['packaging_lines'] = $packaging->fetchAll(PDO::FETCH_ASSOC);
             $result[] = $batch;
         }
+        $qcFile = __DIR__ . '/qc/batch_release.php';
+        $opcache = ['enabled' => function_exists('opcache_get_configuration')];
+        if ($opcache['enabled']) {
+            $config = opcache_get_configuration();
+            $directives = $config['directives'] ?? [];
+            $status = opcache_get_status(true);
+            $cached = is_array($status) ? ($status['scripts'][$qcFile] ?? null) : null;
+            $opcache += [
+                'validate_timestamps' => $directives['opcache.validate_timestamps'] ?? null,
+                'revalidate_freq' => $directives['opcache.revalidate_freq'] ?? null,
+                'qc_file_cached' => $cached !== null,
+                'qc_cached_timestamp' => $cached['timestamp'] ?? null,
+                'qc_file_mtime' => filemtime($qcFile),
+            ];
+        }
         echo json_encode(['mode' => $mode, 'server_date' => $db->query('SELECT CURDATE()')->fetchColumn(),
-            'batches' => $result]);
+            'opcache' => $opcache, 'batches' => $result]);
     } catch (Throwable $error) {
         http_response_code(500);
         echo json_encode(['error' => $error->getMessage()]);
