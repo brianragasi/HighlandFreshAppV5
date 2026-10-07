@@ -13,12 +13,39 @@ require_once __DIR__ . '/config/config.php';
 require_once __DIR__ . '/config/database.php';
 
 $mode = $_POST['mode'] ?? 'inspect';
-if (!in_array($mode, ['inspect', 'validate', 'apply'], true)) {
+if (!in_array($mode, ['inspect', 'validate', 'apply', 'inspect_locations'], true)) {
     http_response_code(400);
     exit(json_encode(['error' => 'Invalid mode']));
 }
 
 $db = Database::getInstance()->getConnection();
+if ($mode === 'inspect_locations') {
+    try {
+        $locations = $db->query("SELECT c.id, c.chiller_code, c.chiller_name, c.capacity,
+                c.current_count AS cached_count, c.temperature_celsius,
+                c.min_temperature, c.max_temperature, c.status, c.is_active,
+                COALESCE((SELECT SUM(GREATEST(COALESCE(fg.quantity_available, 0),
+                    COALESCE(fg.remaining_quantity, 0),
+                    COALESCE(fg.boxes_available, 0) * COALESCE(NULLIF(p.pieces_per_box, 0), 1)
+                        + COALESCE(fg.pieces_available, 0)))
+                    FROM finished_goods_inventory fg LEFT JOIN products p ON p.id = fg.product_id
+                    WHERE fg.chiller_id = c.id AND fg.status IN ('available', 'low_stock')), 0) AS occupied
+            FROM chiller_locations c WHERE c.is_active = 1 ORDER BY c.chiller_code")->fetchAll(PDO::FETCH_ASSOC);
+        $demo = $db->query("SELECT fg.id, fg.product_id, fg.product_name, fg.product_type,
+                fg.quantity_available, fg.expiry_date, fg.chiller_id, fg.chiller_location,
+                pb.batch_code, p.storage_temp_min, p.storage_temp_max
+            FROM finished_goods_inventory fg
+            JOIN production_batches pb ON pb.id = fg.batch_id
+            LEFT JOIN products p ON p.id = fg.product_id
+            WHERE pb.batch_code LIKE 'DEF26-%' AND fg.status = 'available'
+              AND fg.quantity_available > 0 ORDER BY fg.id")->fetchAll(PDO::FETCH_ASSOC);
+        echo json_encode(['mode' => $mode, 'locations' => $locations, 'demo_rows' => $demo]);
+    } catch (Throwable $error) {
+        http_response_code(500);
+        echo json_encode(['error' => $error->getMessage()]);
+    }
+    exit;
+}
 $targets = [
     'BUT-250' => 24,
     'CHO-1L' => 24,
