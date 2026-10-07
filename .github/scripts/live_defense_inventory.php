@@ -14,12 +14,217 @@ require_once __DIR__ . '/config/database.php';
 require_once __DIR__ . '/warehouse/fg/inventory_helpers.php';
 
 $mode = $_POST['mode'] ?? 'inspect';
-if (!in_array($mode, ['inspect', 'validate', 'apply', 'inspect_locations', 'validate_locations', 'apply_locations', 'inspect_raw'], true)) {
+if (!in_array($mode, ['inspect', 'validate', 'apply', 'inspect_locations', 'validate_locations', 'apply_locations', 'inspect_raw', 'validate_raw', 'apply_raw'], true)) {
     http_response_code(400);
     exit(json_encode(['error' => 'Invalid mode']));
 }
 
 $db = Database::getInstance()->getConnection();
+if ($mode === 'validate_raw' || $mode === 'apply_raw') {
+    try {
+        // These are classroom records. Keep every retired lot and correction
+        // traceable; never change an expiry date to make old stock usable.
+        $db->beginTransaction();
+        $db->query('SELECT id FROM raw_material_waste LIMIT 1');
+        $warehouseUserId = defenseRoleId($db, 'warehouse_raw');
+        $gmUserId = defenseRoleId($db, 'general_manager');
+        $retired = [];
+        $rounded = [];
+        $reconciled = [];
+        $renamed = [];
+        $replenished = [];
+        $retiredByIngredient = [];
+        $roundedByIngredient = [];
+        $expiredCodes = ['ING-0092','ING-003','ING-005','ING-0094','ING-006','ING-004','ING-001'];
+        $marks = implode(',', array_fill(0, count($expiredCodes), '?'));
+        $expired = $db->prepare("SELECT ib.*, i.ingredient_code, i.ingredient_name, i.unit_of_measure
+            FROM ingredient_batches ib JOIN ingredients i ON i.id = ib.ingredient_id
+            WHERE i.ingredient_code IN ($marks) AND i.is_active = 1
+              AND ib.remaining_quantity > 0 AND ib.expiry_date <= CURDATE()
+              AND ib.status IN ('available','partially_used','quarantine','expired')
+            ORDER BY ib.id FOR UPDATE");
+        $expired->execute($expiredCodes);
+        $retireBatch = $db->prepare("UPDATE ingredient_batches
+            SET remaining_quantity = 0, status = 'consumed',
+                notes = CONCAT(COALESCE(notes, ''), '\nCAPSTONE DEMO: simulated expiry disposal; no physical disposal claimed.'),
+                updated_at = NOW() WHERE id = ? AND remaining_quantity = ?");
+        $waste = $db->prepare("INSERT INTO raw_material_waste
+            (waste_code, item_type, item_id, batch_id, rr_id, po_id, supplier_id,
+             batch_code, item_name, quantity, unit, unit_cost, total_value,
+             reason_category, reason, waste_date, status, recorded_by, approved_by, approved_at)
+            VALUES (?, 'ingredient', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    'expired', ?, CURDATE(), 'approved', ?, ?, NOW())");
+        $transaction = $db->prepare("INSERT INTO inventory_transactions
+            (transaction_code, transaction_type, item_type, item_id, batch_id,
+             quantity, unit_of_measure, quantity_before, quantity_after,
+             reference_type, reference_id, performed_by, approved_by, reason)
+            VALUES (?, ?, 'ingredient', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        foreach ($expired->fetchAll(PDO::FETCH_ASSOC) as $lot) {
+            $id = (int) $lot['id'];
+            $ingredientId = (int) $lot['ingredient_id'];
+            $quantity = (float) $lot['remaining_quantity'];
+            $retireBatch->execute([$id, $lot['remaining_quantity']]);
+            if ($retireBatch->rowCount() !== 1) throw new RuntimeException("Expired lot {$id} changed during cleanup");
+            $waste->execute([
+                'DEMO-EXP-' . $id, $ingredientId, $id, $lot['rr_id'], $lot['po_id'],
+                $lot['supplier_id'], $lot['batch_code'], $lot['ingredient_name'],
+                $quantity, $lot['unit_of_measure'], (float) $lot['unit_cost'],
+                round($quantity * (float) $lot['unit_cost'], 2),
+                'CAPSTONE DEMO: simulated expiry disposal of historical test stock; no physical disposal claimed.',
+                $warehouseUserId, $gmUserId,
+            ]);
+            $wasteId = (int) $db->lastInsertId();
+            $transaction->execute([
+                'DEMO-EXP-TX-' . $id, 'dispose', $ingredientId, $id,
+                $quantity, $lot['unit_of_measure'], $quantity, 0,
+                'raw_material_waste', $wasteId, $warehouseUserId, $gmUserId,
+                'CAPSTONE DEMO simulated expiry disposal; no physical disposal claimed.',
+            ]);
+            $retiredByIngredient[$ingredientId] = ($retiredByIngredient[$ingredientId] ?? 0) + $quantity;
+            $retired[] = ['code' => $lot['ingredient_code'], 'batch' => $lot['batch_code'], 'quantity' => $quantity];
+        }
+
+        // Historical fractional pieces came from a packaging allowance that
+        // previously rounded counts as decimals. Write off the fraction only.
+        $discrete = $db->query("SELECT ib.id, ib.ingredient_id, ib.remaining_quantity,
+                i.ingredient_code, i.unit_of_measure
+            FROM ingredient_batches ib JOIN ingredients i ON i.id = ib.ingredient_id
+            WHERE i.ingredient_code IN ('TST-PKG-CAP-28','TST-PKG-BTL-500')
+              AND ib.remaining_quantity > 0 AND ib.status IN ('available','partially_used')
+            FOR UPDATE")->fetchAll(PDO::FETCH_ASSOC);
+        $roundLot = $db->prepare('UPDATE ingredient_batches SET remaining_quantity = ?, updated_at = NOW() WHERE id = ?');
+        foreach ($discrete as $lot) {
+            $before = (float) $lot['remaining_quantity'];
+            $after = floor($before + 0.0000001);
+            $difference = round($before - $after, 2);
+            if ($difference < 0.005) continue;
+            $id = (int) $lot['id'];
+            $ingredientId = (int) $lot['ingredient_id'];
+            $roundLot->execute([$after, $id]);
+            $transaction->execute([
+                'DEMO-ROUND-' . $id, 'physical_adjust', $ingredientId, $id,
+                $difference, $lot['unit_of_measure'], $before, $after,
+                'capstone_demo_rounding', $id, $warehouseUserId, $gmUserId,
+                'CAPSTONE DEMO ledger correction: fractional counted piece removed; not a physical loss claim.',
+            ]);
+            $roundedByIngredient[$ingredientId] = ($roundedByIngredient[$ingredientId] ?? 0) + $difference;
+            $rounded[] = ['code' => $lot['ingredient_code'], 'batch_id' => $id, 'before' => $before, 'after' => $after];
+        }
+
+        $masters = $db->query("SELECT i.id, i.ingredient_code, i.current_stock, i.unit_of_measure,
+                COALESCE(SUM(CASE WHEN ib.status IN ('available','partially_used','quarantine','expired')
+                    AND ib.remaining_quantity > 0 THEN ib.remaining_quantity ELSE 0 END),0) AS accounted
+            FROM ingredients i LEFT JOIN ingredient_batches ib ON ib.ingredient_id = i.id
+            WHERE i.is_active = 1 GROUP BY i.id ORDER BY i.id FOR UPDATE")->fetchAll(PDO::FETCH_ASSOC);
+        $setStock = $db->prepare('UPDATE ingredients SET current_stock = ?, updated_at = NOW() WHERE id = ?');
+        foreach ($masters as $master) {
+            $id = (int) $master['id'];
+            $before = (float) $master['current_stock'];
+            $after = (float) $master['accounted'];
+            if ($before + 0.005 < $after) {
+                throw new RuntimeException("Unexplained batch surplus for {$master['ingredient_code']}; cleanup stopped");
+            }
+            if (abs($before - $after) < 0.005) continue;
+            $phantom = round($before - $after - ($retiredByIngredient[$id] ?? 0)
+                - ($roundedByIngredient[$id] ?? 0), 2);
+            if ($phantom < -0.005) throw new RuntimeException("Unexpected stock movement for {$master['ingredient_code']}");
+            $setStock->execute([$after, $id]);
+            if ($phantom > 0.005) {
+                $transaction->execute([
+                    'DEMO-RECON-' . $id, 'physical_adjust', $id, null,
+                    $phantom, $master['unit_of_measure'], $before, $after,
+                    'capstone_demo_reconciliation', $id, $warehouseUserId, $gmUserId,
+                    'CAPSTONE DEMO ledger correction: unsupported summary excess removed; no physical count claimed.',
+                ]);
+            }
+            $reconciled[] = ['code' => $master['ingredient_code'], 'before' => $before,
+                'after' => $after, 'unsupported_excess' => max(0, $phantom)];
+        }
+
+        // Clearly label intentional demo materials without suggesting that
+        // an unverified wrapper or label has become available for production.
+        $rename = $db->prepare('UPDATE ingredients SET ingredient_name = ?, updated_at = NOW
+            WHERE ingredient_code = ? AND ingredient_name = ?');
+        $names = [
+            'TST-LBL-CHO-1L' => '1000 mL Chocolate Milk Label [CHO-1L]',
+            'TST-PKG-BTL-1000' => '1000 mL Food-Grade Bottle',
+            'TST-LBL-CRM-1L' => '1000 mL Fresh Cream Label [CRM-1L]',
+            'TST-LBL-FMK-1L' => '1000 mL Fresh Milk Label [FMK-1L]',
+            'TST-PKG-BTL-250' => '250 mL Food-Grade Bottle',
+            'MOCK-PKG-CAP-28' => '28 mm Bottle Cap',
+            'TST-PKG-CAP-28' => '28 mm Tamper-Evident Bottle Cap',
+            'TST-PKG-BTL-500' => '500 mL Food-Grade Bottle',
+            'TST-LBL-FMK-500' => '500 mL Fresh Milk Label [FMK-500]',
+            'TST-PKG-FILM' => 'Clear Shrink Film Roll',
+            'ING-0113' => 'Avocado Flavored Milk 250 mL Label',
+            'ING-0106' => 'Choco Flavored Milk 250 mL Label',
+            'ING-0111' => 'Durian Flavored Milk 250 mL Label',
+            'ING-0108' => 'Melon Flavored Milk 250 mL Label',
+            'ING-0110' => 'Strawberry Flavored Milk 250 mL Label',
+            'ING-0115' => 'Ube Flavored Milk 250 mL Label',
+            'ING-0097' => 'Yogurt Durian Flavor 250 mL Label',
+            'ING-0101' => 'Yogurt Pineapple Flavor 250 mL Label',
+            'ING-0100' => 'Yogurt Strawberry Flavor 250 mL Label',
+        ];
+        $nameRows = $db->query('SELECT ingredient_code, ingredient_name FROM ingredients WHERE is_active = 1')->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($nameRows as $row) {
+            $code = $row['ingredient_code'];
+            if (!isset($names[$code]) || $names[$code] === $row['ingredient_name']) continue;
+            $rename->execute([$names[$code], $code, $row['ingredient_name']]);
+            if ($rename->rowCount() === 1) $renamed[] = $code;
+        }
+
+        $demoTargets = ['ING-005' => 58, 'ING-003' => 80, 'ING-0097' => 400];
+        $demoMaster = $db->prepare('SELECT id, ingredient_name, unit_of_measure, current_stock,
+                shelf_life_days, is_perishable, unit_cost FROM ingredients
+            WHERE ingredient_code = ? AND is_active = 1 FOR UPDATE');
+        $addLot = $db->prepare("INSERT INTO ingredient_batches
+            (batch_code, ingredient_id, quantity, remaining_quantity, unit_cost,
+             supplier_batch_no, received_date, expiry_date, qc_status, received_by, status, notes)
+            VALUES (?, ?, ?, ?, ?, ?, CURDATE(), ?, 'approved', ?, 'available', ?)");
+        $addStock = $db->prepare('UPDATE ingredients SET current_stock = current_stock + ?, updated_at = NOW() WHERE id = ?');
+        foreach ($demoTargets as $code => $target) {
+            $demoMaster->execute([$code]);
+            $master = $demoMaster->fetch(PDO::FETCH_ASSOC);
+            if (!$master) throw new RuntimeException("Demo ingredient {$code} is missing");
+            $before = (float) $master['current_stock'];
+            $quantity = round(max(0, $target - $before), 2);
+            if ($quantity < 0.005) continue;
+            $batchCode = 'DEMO-RAW-' . date('Ymd') . '-' . $code;
+            $existing = $db->prepare('SELECT id FROM ingredient_batches WHERE batch_code = ?');
+            $existing->execute([$batchCode]);
+            if ($existing->fetchColumn()) throw new RuntimeException("Demo lot {$batchCode} already exists but stock remains below target");
+            $expiry = (int) $master['is_perishable'] === 1
+                ? date('Y-m-d', strtotime('+' . max(1, (int) $master['shelf_life_days']) . ' days')) : null;
+            $addLot->execute([
+                $batchCode, (int) $master['id'], $quantity, $quantity,
+                (float) $master['unit_cost'], 'DEMO-OPEN-' . date('Ymd') . '-' . $code,
+                $expiry, $warehouseUserId,
+                'CAPSTONE DEMO STOCK ONLY: simulated opening balance, not physical stock or a supplier delivery; simulated QC approval.',
+            ]);
+            $batchId = (int) $db->lastInsertId();
+            $addStock->execute([$quantity, (int) $master['id']]);
+            $transaction->execute([
+                'DEMO-OPEN-' . $batchId, 'physical_adjust', (int) $master['id'], $batchId,
+                $quantity, $master['unit_of_measure'], $before, $before + $quantity,
+                'capstone_demo_opening', $batchId, $warehouseUserId, $gmUserId,
+                'CAPSTONE DEMO simulated opening stock; no physical count or supplier delivery claimed.',
+            ]);
+            $replenished[] = ['code' => $code, 'quantity' => $quantity, 'expiry' => $expiry];
+        }
+        if ($mode === 'apply_raw') $db->commit();
+        else $db->rollBack();
+        echo json_encode(['mode' => $mode, 'retired_expired_lots' => $retired,
+            'rounded_piece_lots' => $rounded, 'reconciled' => $reconciled,
+            'renamed_materials' => $renamed, 'synthetic_replenishment' => $replenished]);
+    } catch (Throwable $error) {
+        if ($db->inTransaction()) $db->rollBack();
+        http_response_code(500);
+        error_log('Defense raw cleanup: ' . $error->getMessage());
+        echo json_encode(['error' => $error->getMessage()]);
+    }
+    exit;
+}
 if ($mode === 'inspect_raw') {
     try {
         $items = $db->query("SELECT i.id, i.ingredient_code, i.ingredient_name,

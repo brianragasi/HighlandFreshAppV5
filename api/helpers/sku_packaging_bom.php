@@ -93,7 +93,9 @@ function isRollPackagingUnit($unit)
 function isCountedPackagingUnit($unit)
 {
     return in_array(strtolower(trim((string) $unit)), [
-        'pc', 'pcs', 'piece', 'pieces', 'unit', 'units', 'set', 'sets'
+        'pc', 'pcs', 'piece', 'pieces', 'unit', 'units', 'set', 'sets',
+        'bottle', 'bottles', 'cap', 'caps', 'packet', 'packets',
+        'wrapper', 'wrappers', 'wrap', 'wraps'
     ], true);
 }
 
@@ -296,6 +298,11 @@ function isPlainPackagingNumber($value)
 function roundPackagingRequirementForStock($quantity, $unit)
 {
     $quantity = max(0.0, (float) $quantity);
+    if (isCountedPackagingUnit($unit)) {
+        // Waste allowances may be fractional, but stock counted by piece is not.
+        // Round up so planned production never consumes part of a cap or bottle.
+        return ceil($quantity - 1.0e-12);
+    }
     if (isRollPackagingUnit($unit)) {
         // Roll stock is recorded to hundredths. Always round usage upward so a
         // small real consumption can never disappear from the stock ledger.

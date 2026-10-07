@@ -192,6 +192,10 @@ try {
     if (abs(roundPackagingRequirementForStock(0.0105, 'roll') - 0.02) > 0.000001) {
         throw new RuntimeException('Small roll consumption was allowed to disappear below stock precision');
     }
+    if (roundPackagingRequirementForStock(20.4, 'pcs') !== 21.0
+        || roundPackagingRequirementForStock(20.4, 'bottle') !== 21.0) {
+        throw new RuntimeException('Fractional packaging pieces were accepted as stock usage');
+    }
 
     $fiveLiterTenBottlePlan = validateSkuPackagingPlanVolume([
         ['size_ml' => 500, 'quantity' => 10],
