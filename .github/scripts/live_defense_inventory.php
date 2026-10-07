@@ -14,7 +14,7 @@ require_once __DIR__ . '/config/database.php';
 require_once __DIR__ . '/warehouse/fg/inventory_helpers.php';
 
 $mode = $_POST['mode'] ?? 'inspect';
-if (!in_array($mode, ['inspect', 'validate', 'apply', 'inspect_locations', 'validate_locations', 'apply_locations', 'inspect_raw', 'validate_raw', 'apply_raw', 'inspect_gap_packaging', 'validate_gap_packaging', 'apply_gap_packaging', 'inspect_low_stock_scenario', 'validate_low_stock_scenario', 'apply_low_stock_scenario', 'inspect_qc_labels'], true)) {
+if (!in_array($mode, ['inspect', 'validate', 'apply', 'inspect_locations', 'validate_locations', 'apply_locations', 'inspect_raw', 'validate_raw', 'apply_raw', 'inspect_gap_packaging', 'validate_gap_packaging', 'apply_gap_packaging', 'inspect_low_stock_scenario', 'validate_low_stock_scenario', 'apply_low_stock_scenario', 'inspect_qc_labels', 'inspect_gm_demo', 'validate_gm_demo', 'apply_gm_demo'], true)) {
     http_response_code(400);
     exit(json_encode(['error' => 'Invalid mode']));
 }
@@ -23,6 +23,117 @@ $db = Database::getInstance()->getConnection();
 // The hosted database may use UTC while the defense and PHP dates use Manila.
 // Keep CURDATE() and NOW() aligned with the date on printed demo labels.
 $db->exec("SET time_zone = '+08:00'");
+if (in_array($mode, ['inspect_gm_demo', 'validate_gm_demo', 'apply_gm_demo'], true)) {
+    $customerCode = 'DEMO-GM-20261008';
+    $orderNumber = 'SO-DEMO-20261008-01';
+    try {
+        $productStmt = $db->prepare("SELECT id, product_code, product_name, variant,
+                unit_size, unit_measure, selling_price, wholesale_box_price, pieces_per_box
+            FROM products WHERE product_code = ? AND is_active = 1");
+        $productStmt->execute(['FM0021']);
+        $product = $productStmt->fetch(PDO::FETCH_ASSOC);
+        if (!$product) throw new RuntimeException('Active Ube Flavored Milk SKU FM0021 is missing');
+        $boxSize = (int) $product['pieces_per_box'];
+        $boxPrice = (float) $product['wholesale_box_price'];
+        if ($boxSize !== 24 || $boxPrice <= 100) {
+            throw new RuntimeException('Ube SKU pack size or box price changed; review before preparing the order');
+        }
+        $stockStmt = $db->prepare("SELECT COALESCE(SUM(quantity_available), 0)
+            FROM finished_goods_inventory
+            WHERE product_id = ? AND status = 'available'
+              AND expiry_date > DATE_ADD(CURDATE(), INTERVAL 7 DAY)");
+        $stockStmt->execute([(int) $product['id']]);
+        $readyUnits = (int) $stockStmt->fetchColumn();
+        $customerStmt = $db->prepare('SELECT id, customer_code, name, credit_limit, status FROM customers WHERE customer_code = ?');
+        $customerStmt->execute([$customerCode]);
+        $customer = $customerStmt->fetch(PDO::FETCH_ASSOC);
+        $orderStmt = $db->prepare('SELECT id, order_number, status, total_amount, customer_id FROM sales_orders WHERE order_number = ?');
+        $orderStmt->execute([$orderNumber]);
+        $order = $orderStmt->fetch(PDO::FETCH_ASSOC);
+        $result = ['mode' => $mode, 'server_date' => $db->query('SELECT CURDATE()')->fetchColumn(),
+            'sku' => $product['product_code'], 'product' => $product['product_name'],
+            'units_per_box' => $boxSize, 'box_price_php' => $boxPrice,
+            'dispatchable_units' => $readyUnits, 'customer' => $customer,
+            'order' => $order];
+        if ($mode === 'inspect_gm_demo') {
+            echo json_encode($result);
+            exit;
+        }
+        if ($readyUnits < $boxSize && !$order) {
+            throw new RuntimeException('Ube has fewer than one box of dispatchable stock');
+        }
+        $db->beginTransaction();
+        if ($order) {
+            if (!$customer || (int) $order['customer_id'] !== (int) $customer['id']) {
+                throw new RuntimeException('Demo order number is already used by another customer');
+            }
+        } else {
+            $creditLimit = round($boxPrice - 60, 2);
+            if ($creditLimit <= 0) throw new RuntimeException('Box price is too low for this credit demo');
+            if (!$customer) {
+                $createCustomer = $db->prepare("INSERT INTO customers
+                    (customer_code, name, customer_type, contact_person, address,
+                     default_payment_type, credit_limit, current_balance,
+                     payment_terms_days, status, notes, created_at)
+                    VALUES (?, ?, 'institutional', ?, ?, 'credit', ?, 0, 30, 'active', ?, NOW())");
+                $createCustomer->execute([$customerCode,
+                    'Highland Fresh Demo School Canteen', 'Defense Demo Contact',
+                    'Capstone demonstration, Cagayan de Oro City', $creditLimit,
+                    'CAPSTONE DEMO ONLY. Synthetic customer for GM approval walkthrough.']);
+                $customerId = (int) $db->lastInsertId();
+            } else {
+                if ($customer['status'] !== 'active'
+                    || abs((float) $customer['credit_limit'] - $creditLimit) > 0.001) {
+                    throw new RuntimeException('Existing demo customer changed; review before creating an order');
+                }
+                $customerId = (int) $customer['id'];
+            }
+            $salesUserId = (int) $db->query("SELECT id FROM users
+                WHERE role = 'sales_custodian' AND is_active = 1 ORDER BY id LIMIT 1")->fetchColumn();
+            if ($salesUserId <= 0) throw new RuntimeException('No active Sales Custodian is available');
+            $notes = 'CAPSTONE DEMO ONLY. One box of Ube Flavored Milk for a school-canteen walkthrough.\n'
+                . '[CUSTOMER ORDER - PHONE] GM credit-exception approval required before Warehouse FG fulfillment.\n'
+                . '[GM-CREDIT-OVERRIDE] Projected balance PHP ' . number_format($boxPrice, 2, '.', '')
+                . ' exceeds the PHP ' . number_format($creditLimit, 2, '.', '')
+                . ' trial credit limit. Reason: First demo delivery exceeds the trial limit; GM review requested.';
+            $createOrder = $db->prepare("INSERT INTO sales_orders
+                (order_number, customer_id, customer_name, customer_type, source_type,
+                 payment_type, payment_terms_days, contact_person, delivery_address,
+                 delivery_date, total_items, total_quantity, subtotal, total_amount,
+                 balance_due, due_date, status, created_by, notes)
+                VALUES (?, ?, ?, 'institutional', 'manual_phone', 'credit', 30, ?, ?,
+                        CURDATE(), 1, ?, ?, ?, ?, DATE_ADD(CURDATE(), INTERVAL 30 DAY),
+                        'pending', ?, ?)");
+            $createOrder->execute([$orderNumber, $customerId,
+                'Highland Fresh Demo School Canteen', 'Defense Demo Contact',
+                'Capstone demonstration, Cagayan de Oro City', $boxSize,
+                $boxPrice, $boxPrice, $boxPrice, $salesUserId, $notes]);
+            $orderId = (int) $db->lastInsertId();
+            $createLine = $db->prepare("INSERT INTO sales_order_items
+                (order_id, product_id, product_name, variant, size_value, size_unit,
+                 quantity_ordered, quantity_boxes, quantity_pieces, unit_type, unit_price, line_total)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0, 'box', ?, ?)");
+            $createLine->execute([$orderId, (int) $product['id'], $product['product_name'],
+                $product['variant'], $product['unit_size'], $product['unit_measure'],
+                $boxSize, (float) $product['selling_price'], $boxPrice]);
+            $db->prepare("INSERT INTO sales_order_status_history (order_id, status, notes, changed_by)
+                VALUES (?, 'pending', ?, ?)")->execute([$orderId,
+                    'CAPSTONE DEMO ONLY. Phone order sent for GM credit-exception approval.', $salesUserId]);
+            $orderStmt->execute([$orderNumber]);
+            $order = $orderStmt->fetch(PDO::FETCH_ASSOC);
+        }
+        $result['order'] = $order;
+        $result['created_or_existing'] = $order ? 'ready' : 'missing';
+        if ($mode === 'apply_gm_demo') $db->commit();
+        else $db->rollBack();
+        echo json_encode($result);
+    } catch (Throwable $error) {
+        if ($db->inTransaction()) $db->rollBack();
+        http_response_code(500);
+        echo json_encode(['error' => $error->getMessage()]);
+    }
+    exit;
+}
 if ($mode === 'inspect_qc_labels') {
     try {
         $batches = $db->prepare("SELECT pb.id, pb.batch_code, pb.product_id, pb.run_id,
