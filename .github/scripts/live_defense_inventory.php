@@ -67,6 +67,15 @@ if (in_array($mode, ['inspect_gm_demo', 'validate_gm_demo', 'apply_gm_demo'], tr
             if (!$customer || (int) $order['customer_id'] !== (int) $customer['id']) {
                 throw new RuntimeException('Demo order number is already used by another customer');
             }
+            if ($order['status'] === 'pending') {
+                $existingNotes = $db->prepare('SELECT notes FROM sales_orders WHERE id = ? FOR UPDATE');
+                $existingNotes->execute([(int) $order['id']]);
+                $notes = (string) $existingNotes->fetchColumn();
+                if (str_contains($notes, 'CAPSTONE DEMO ONLY.') && str_contains($notes, '\\n')) {
+                    $db->prepare('UPDATE sales_orders SET notes = ? WHERE id = ?')
+                        ->execute([str_replace('\\n', "\n", $notes), (int) $order['id']]);
+                }
+            }
         } else {
             $creditLimit = round($boxPrice - 60, 2);
             if ($creditLimit <= 0) throw new RuntimeException('Box price is too low for this credit demo');
