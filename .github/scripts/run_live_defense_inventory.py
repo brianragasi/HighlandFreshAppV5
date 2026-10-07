@@ -1,6 +1,7 @@
 """Run and remove a one-time token-protected defense inventory job via FTP."""
 
 import ftplib
+import hashlib
 import io
 import json
 import os
@@ -32,6 +33,19 @@ client = ftplib.FTP(os.environ["FTP_SERVER"], timeout=30)
 uploaded = False
 try:
     client.login(os.environ["FTP_USERNAME"], os.environ["FTP_PASSWORD"])
+    if mode == "inspect_qc_labels":
+        root = Path(__file__).resolve().parents[2]
+        deployed_files = {}
+        for relative in ("api/qc/batch_release.php", "html/qc/print-labels.html"):
+            remote = io.BytesIO()
+            client.retrbinary("RETR " + relative, remote.write)
+            local_digest = hashlib.sha256((root / relative).read_bytes()).hexdigest()
+            deployed_files[relative] = {
+                "matches_repository": hashlib.sha256(remote.getvalue()).hexdigest() == local_digest,
+                "remote_has_demo_label_lookup": b"qcGetDemoLabelLines" in remote.getvalue(),
+                "remote_has_label_selector": b"label_packaging_lines" in remote.getvalue(),
+            }
+        print(json.dumps({"deployed_files": deployed_files}, indent=2))
     client.storbinary("STOR api/" + filename, io.BytesIO(content))
     uploaded = True
     request = urllib.request.Request(
