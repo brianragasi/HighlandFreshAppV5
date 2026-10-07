@@ -22,7 +22,7 @@ if (!in_array($mode, ['inspect', 'validate', 'apply', 'inspect_locations', 'vali
 $db = Database::getInstance()->getConnection();
 if ($mode === 'inspect_qc_labels') {
     try {
-        $batches = $db->prepare("SELECT pb.id, pb.batch_code, pb.product_id,
+        $batches = $db->prepare("SELECT pb.id, pb.batch_code, pb.product_id, pb.run_id,
                 pb.qc_status, pb.fg_received, pb.expiry_date,
                 p.product_code, p.product_name
             FROM production_batches pb
@@ -36,10 +36,19 @@ if ($mode === 'inspect_qc_labels') {
             FROM finished_goods_inventory fg
             LEFT JOIN qc_batch_release qcr ON qcr.id = fg.qc_release_id
             WHERE fg.batch_id = ? ORDER BY fg.id");
+        $packaging = $db->prepare("SELECT pr.id AS packaging_run_id,
+                pr.batch_id AS packaging_batch_id,
+                pr.production_run_id, pri.product_id, pri.quantity
+            FROM packaging_runs pr
+            JOIN packaging_run_items pri ON pri.packaging_run_id = pr.id
+            WHERE pr.batch_id = ? OR pr.production_run_id = ?
+            ORDER BY pr.id, pri.id LIMIT 30");
         $result = [];
         foreach ($batches->fetchAll(PDO::FETCH_ASSOC) as $batch) {
             $inventory->execute([(int) $batch['id']]);
             $batch['inventory'] = $inventory->fetchAll(PDO::FETCH_ASSOC);
+            $packaging->execute([(int) $batch['id'], (int) ($batch['run_id'] ?? 0)]);
+            $batch['packaging_lines'] = $packaging->fetchAll(PDO::FETCH_ASSOC);
             $result[] = $batch;
         }
         echo json_encode(['mode' => $mode, 'server_date' => $db->query('SELECT CURDATE()')->fetchColumn(),
