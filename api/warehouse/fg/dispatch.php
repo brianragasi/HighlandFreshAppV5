@@ -15,6 +15,7 @@ require_once dirname(dirname(__DIR__)) . '/bootstrap.php';
 require_once __DIR__ . '/inventory_helpers.php';
 require_once dirname(dirname(__DIR__)) . '/helpers/lookup_normalization.php';
 require_once dirname(dirname(__DIR__)) . '/helpers/finished_goods_barcode.php';
+require_once dirname(dirname(__DIR__)) . '/helpers/qc_count_discrepancy.php';
 require_once dirname(dirname(__DIR__)) . '/helpers/sellable_expiry_policy.php';
 
 // Require Warehouse FG role
@@ -124,8 +125,10 @@ function handleGet($db, $action) {
                 $pkgId = (int)$m[1];
             }
             $compactLabel = hfParseCompactFinishedGoodsLabel($barcode);
-            $compactBatchId = (int) ($compactLabel['batch_id'] ?? 0);
-            $compactProductId = (int) ($compactLabel['product_id'] ?? 0);
+            $boxLabel = hfParseCompactFinishedGoodsBoxLabel($barcode);
+            $printedLabel = $compactLabel ?: $boxLabel;
+            $compactBatchId = (int) ($printedLabel['batch_id'] ?? 0);
+            $compactProductId = (int) ($printedLabel['product_id'] ?? 0);
 
             $stmt = $db->prepare("
                 SELECT
@@ -170,18 +173,35 @@ function handleGet($db, $action) {
             ]);
             $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-            if ($compactLabel) {
+            if ($printedLabel) {
                 // Do not allow an unrelated ordinary barcode match to win over
                 // the exact batch and product carried by the compact label.
-                $items = array_values(array_filter($items, static function (array $candidate) use ($compactLabel) {
-                    return (int) ($candidate['batch_id'] ?? 0) === $compactLabel['batch_id']
-                        && (int) ($candidate['product_id'] ?? 0) === $compactLabel['product_id'];
+                $items = array_values(array_filter($items, static function (array $candidate) use ($printedLabel) {
+                    return (int) ($candidate['batch_id'] ?? 0) === $printedLabel['batch_id']
+                        && (int) ($candidate['product_id'] ?? 0) === $printedLabel['product_id'];
                 }));
                 foreach ($items as &$compactItem) {
-                    $compactItem['serialized_unit_number'] = $compactLabel['sequence'];
+                    if ($compactLabel) {
+                        $compactItem['serialized_unit_number'] = $compactLabel['sequence'];
+                    }
                     $compactItem['scanned_barcode'] = $barcode;
                 }
                 unset($compactItem);
+
+                if ($boxLabel && $items) {
+                    $packSize = max(1, (int) ($items[0]['pieces_per_box'] ?? 1));
+                    if ($packSize !== (int) $boxLabel['units_per_pack']) {
+                        Response::error('This outside-box label has an old pack size. Print a new QC box label.', 409);
+                    }
+                    $releasedUnits = qcGetReleasedSkuQuantity($db, $compactBatchId, $compactProductId);
+                    if ((int) $boxLabel['sequence'] > intdiv($releasedUnits, $packSize)) {
+                        Response::error('This box number was not issued for the selected batch.', 409);
+                    }
+                    foreach ($items as &$boxItem) {
+                        $boxItem['scanned_box_label'] = $boxLabel['label_code'];
+                    }
+                    unset($boxItem);
+                }
             }
 
             // QC prints one serialized label per finished unit. Its value adds
@@ -252,7 +272,7 @@ function handleGet($db, $action) {
                 // exact batch/SKU before falling back to the generic message so
                 // phone users know whether the issue is receiving, stock, or
                 // the seven-day QC/reprocessing window.
-                if ($compactLabel) {
+                if ($printedLabel) {
                     $diagnosticStmt = $db->prepare("
                         SELECT
                             pb.id AS batch_id,
