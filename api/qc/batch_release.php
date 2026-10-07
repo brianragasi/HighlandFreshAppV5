@@ -109,6 +109,52 @@ function qcCreateCountDisposal(PDO $db, array $batch, array $snapshot, array $us
     return (int) $db->lastInsertId();
 }
 
+/**
+ * Defense opening balances have a QC release and FG receipt, but no production
+ * packaging run. Only expose their recorded FG SKUs to the label printer; do
+ * not substitute these rows for a real production packaging/count record.
+ */
+function qcGetDemoLabelLines(PDO $db, array $batch): array
+{
+    $code = (string) ($batch['batch_code'] ?? '');
+    if (!str_starts_with($code, 'DEF26-') && !str_starts_with($code, 'LOCAL-DEF26-')) {
+        return [];
+    }
+    if (($batch['qc_status'] ?? '') !== 'released' || empty($batch['fg_received'])) {
+        return [];
+    }
+
+    $stmt = $db->prepare("SELECT fg.product_id,
+               COALESCE(NULLIF(p.product_name, ''), NULLIF(fg.product_name, ''), 'Finished product') AS product_name,
+               p.variant AS product_variant, p.product_code,
+               COALESCE(p.unit_size, fg.size_ml) AS size_ml,
+               COALESCE(NULLIF(p.unit_measure, ''), 'ml') AS unit_measure,
+               COALESCE(NULLIF(p.base_unit, ''), 'piece') AS base_unit,
+               COALESCE(NULLIF(p.box_unit, ''), 'box') AS box_unit,
+               COALESCE(NULLIF(p.pieces_per_box, 0), 1) AS pieces_per_box,
+               fg.quantity_available AS quantity
+        FROM finished_goods_inventory fg
+        JOIN products p ON p.id = fg.product_id
+        JOIN qc_batch_release qcr ON qcr.id = fg.qc_release_id AND qcr.batch_id = fg.batch_id
+        WHERE fg.batch_id = ? AND fg.status = 'available'
+          AND fg.quantity_available > 0 AND fg.expiry_date >= CURDATE()
+          AND qcr.release_decision = 'approved'
+        ORDER BY fg.product_id, fg.id");
+    $stmt->execute([(int) $batch['id']]);
+
+    $lines = [];
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $productId = (int) $row['product_id'];
+        if (!isset($lines[$productId])) {
+            $row['quantity'] = 0;
+            $row['demo_fg_label_source'] = true;
+            $lines[$productId] = $row;
+        }
+        $lines[$productId]['quantity'] += (int) $row['quantity'];
+    }
+    return array_values($lines);
+}
+
 try {
     $db = Database::getInstance()->getConnection();
     ensureQcCountDiscrepancyTables($db);
@@ -147,7 +193,9 @@ try {
                 // Get single batch details with full CCP integration
                 $stmt = $db->prepare("
                     SELECT pb.*,
-                           mr.product_name, mr.product_type as recipe_type, mr.variant as recipe_variant,
+                           COALESCE(NULLIF(p.product_name, ''), NULLIF(bp.name, ''),
+                                    NULLIF(mr.product_name, ''), 'Finished product') AS product_name,
+                           mr.product_type as recipe_type, mr.variant as recipe_variant,
                            u.first_name as created_by_first, u.last_name as created_by_last,
                            CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, '')) as produced_by_name,
                            u2.first_name as released_by_first, u2.last_name as released_by_last,
@@ -156,6 +204,8 @@ try {
                            qbr.inspection_datetime as qc_inspected_at
                     FROM production_batches pb
                     LEFT JOIN master_recipes mr ON pb.recipe_id = mr.id
+                    LEFT JOIN products p ON pb.product_id = p.id
+                    LEFT JOIN base_products bp ON pb.base_product_id = bp.id
                     LEFT JOIN users u ON pb.created_by = u.id
                     LEFT JOIN users u2 ON pb.released_by = u2.id
                     LEFT JOIN qc_batch_release qbr ON qbr.batch_id = pb.id
@@ -193,6 +243,7 @@ try {
                 // Printing and downstream handling must use the exact SKU lines
                 // that QC released, including any approved count correction.
                 $batch['released_packaging_lines'] = $effectiveLines;
+                $batch['label_packaging_lines'] = $effectiveLines ?: qcGetDemoLabelLines($db, $batch);
                 $batch['qc_released_total'] = array_sum(array_map(
                     fn($line) => (int) ($line['quantity'] ?? 0),
                     $effectiveLines
@@ -249,13 +300,17 @@ try {
             // Get batches
             $stmt = $db->prepare("
                 SELECT pb.*,
-                       mr.product_name, mr.product_type as recipe_type, mr.variant as recipe_variant,
+                       COALESCE(NULLIF(p.product_name, ''), NULLIF(bp.name, ''),
+                                NULLIF(mr.product_name, ''), 'Finished product') AS product_name,
+                       mr.product_type as recipe_type, mr.variant as recipe_variant,
                        u.first_name as created_by_first, u.last_name as created_by_last,
                        u2.first_name as released_by_first, u2.last_name as released_by_last,
                        u3.first_name as inspected_by_first, u3.last_name as inspected_by_last,
                        qbr.inspection_datetime as qc_inspected_at
                 FROM production_batches pb
                 LEFT JOIN master_recipes mr ON pb.recipe_id = mr.id
+                LEFT JOIN products p ON pb.product_id = p.id
+                LEFT JOIN base_products bp ON pb.base_product_id = bp.id
                 LEFT JOIN users u ON pb.created_by = u.id
                 LEFT JOIN users u2 ON pb.released_by = u2.id
                 LEFT JOIN qc_batch_release qbr ON qbr.batch_id = pb.id
