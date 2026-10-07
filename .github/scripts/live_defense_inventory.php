@@ -14,12 +14,48 @@ require_once __DIR__ . '/config/database.php';
 require_once __DIR__ . '/warehouse/fg/inventory_helpers.php';
 
 $mode = $_POST['mode'] ?? 'inspect';
-if (!in_array($mode, ['inspect', 'validate', 'apply', 'inspect_locations', 'validate_locations', 'apply_locations'], true)) {
+if (!in_array($mode, ['inspect', 'validate', 'apply', 'inspect_locations', 'validate_locations', 'apply_locations', 'inspect_raw'], true)) {
     http_response_code(400);
     exit(json_encode(['error' => 'Invalid mode']));
 }
 
 $db = Database::getInstance()->getConnection();
+if ($mode === 'inspect_raw') {
+    try {
+        $items = $db->query("SELECT i.id, i.ingredient_code, i.ingredient_name,
+                i.current_stock, i.unit_of_measure, i.is_perishable, i.shelf_life_days,
+                i.minimum_stock, i.reorder_point, i.maximum_stock,
+                i.is_active, i.category_id, i.packaging_role,
+                COUNT(ib.id) AS batch_count,
+                COALESCE(SUM(CASE WHEN ib.status IN ('available','partially_used')
+                    AND ib.remaining_quantity > 0 AND
+                    (i.is_perishable = 0 OR (ib.expiry_date > CURDATE()
+                    AND NULLIF(TRIM(ib.supplier_batch_no), '') IS NOT NULL))
+                    THEN ib.remaining_quantity ELSE 0 END),0) AS usable,
+                COALESCE(SUM(CASE WHEN ib.status IN ('available','partially_used','quarantine','expired')
+                    AND ib.remaining_quantity > 0 THEN ib.remaining_quantity ELSE 0 END),0) AS accounted,
+                COALESCE(SUM(CASE WHEN ib.expiry_date <= CURDATE() AND i.is_perishable = 1
+                    AND ib.remaining_quantity > 0 AND ib.status IN ('available','partially_used','quarantine','expired')
+                    THEN ib.remaining_quantity ELSE 0 END),0) AS expired
+            FROM ingredients i LEFT JOIN ingredient_batches ib ON ib.ingredient_id = i.id
+            WHERE i.is_active = 1 GROUP BY i.id ORDER BY i.ingredient_name")->fetchAll(PDO::FETCH_ASSOC);
+        $lots = $db->query("SELECT ib.id, i.ingredient_code, ib.batch_code, ib.remaining_quantity,
+                ib.quantity, ib.status, ib.qc_status, ib.supplier_batch_no,
+                ib.expiry_date, ib.received_date, ib.po_id, ib.rr_id,
+                LEFT(ib.notes, 120) AS notes
+            FROM ingredient_batches ib JOIN ingredients i ON i.id = ib.ingredient_id
+            WHERE i.is_active = 1 AND ib.remaining_quantity > 0
+              AND (ib.expiry_date <= CURDATE() OR i.ingredient_code IN
+                   ('ING-005','ING-003','ING-004','ING-0097','DEMO-WRAP-BUT-250','DEMO-LBL-YOG-250')
+                   OR i.ingredient_code LIKE 'TST-%' OR i.ingredient_code LIKE 'MOCK-%')
+            ORDER BY i.ingredient_code, ib.id")->fetchAll(PDO::FETCH_ASSOC);
+        echo json_encode(['mode' => $mode, 'items' => $items, 'lots' => $lots]);
+    } catch (Throwable $error) {
+        http_response_code(500);
+        echo json_encode(['error' => $error->getMessage()]);
+    }
+    exit;
+}
 function defenseDemoLocation(PDO $db): array {
     $stmt = $db->query("SELECT id, chiller_name, capacity, temperature_celsius, status
         FROM chiller_locations WHERE chiller_code = 'CHILL-A2' AND is_active = 1 FOR UPDATE");
