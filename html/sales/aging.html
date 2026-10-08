@@ -108,8 +108,8 @@
                 </div>
             </div>
             <div class="flex-none gap-2">
-                <button class="btn btn-ghost btn-sm" onclick="exportReport()">
-                    <i class="fas fa-file-export"></i> Export
+                <button id="exportAgingBtn" class="btn btn-ghost btn-sm" onclick="exportReport()" disabled>
+                    <i class="fas fa-file-csv"></i> Export CSV
                 </button>
                 <button class="btn btn-ghost btn-sm" onclick="printReport()">
                     <i class="fas fa-print"></i> Print
@@ -311,9 +311,12 @@
     <script src="../../js/security/role-guard.js" data-allowed-roles="sales_custodian,general_manager"></script>
     <script src="../../js/sales/sidebar.js?v=20260828-salesnav1"></script>
     <script src="../../js/sales/sales.service.js?v=20260720-inv1"></script>
+    <script src="../../js/sales/aging-export.js?v=20261008-1"></script>
     
     <script>
         let agingData = [];
+        let visibleAgingData = [];
+        let agingLoaded = false;
         let lastSummary = {};
         let agingChart = null;
         let customersChart = null;
@@ -385,7 +388,7 @@
                 }
                 
                 document.getElementById('reportDate').textContent = new Date().toLocaleDateString('en-US', {
-                    year: 'numeric', month: 'long', day: 'numeric'
+                    year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Asia/Manila'
                 });
                 
                 await loadAgingData();
@@ -396,6 +399,8 @@
         });
         
         async function loadAgingData() {
+            agingLoaded = false;
+            document.getElementById('exportAgingBtn').disabled = true;
             try {
                 const response = await SalesService.getAgingSummary();
                 agingData = response.data?.customers || [];
@@ -403,7 +408,10 @@
                 updateKpis(lastSummary);
                 filterAging();
                 renderCharts(lastSummary, agingData);
+                agingLoaded = true;
+                document.getElementById('exportAgingBtn').disabled = false;
             } catch (error) {
+                visibleAgingData = [];
                 console.error('Error loading aging data:', error);
                 document.getElementById('agingTable').innerHTML = `
                     <tr><td colspan="9" class="text-center py-8 text-error">
@@ -571,7 +579,7 @@
                 if ((b.over_90 || 0) !== (a.over_90 || 0)) return (b.over_90 || 0) - (a.over_90 || 0);
                 return (b.total || 0) - (a.total || 0);
             });
-            
+            visibleAgingData = filtered;
             renderAgingTable(filtered);
         }
 
@@ -747,7 +755,40 @@
         }
         
         function exportReport() {
-            showToast('Export feature coming soon', 'info');
+            if (!agingLoaded) {
+                showToast('Wait for the aging report to load, then try again.', 'warning');
+                return;
+            }
+            try {
+                const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+                    timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit'
+                }).formatToParts(new Date()).filter(part => part.type !== 'literal')
+                    .map(part => [part.type, part.value]));
+                const asOf = `${parts.year}-${parts.month}-${parts.day}`;
+                const csv = AgingReportExport.buildCsv({
+                    customers: visibleAgingData,
+                    asOf,
+                    filters: {
+                        search: document.getElementById('searchInput').value.trim(),
+                        type: document.getElementById('typeFilter').value,
+                        aging: document.getElementById('agingFilter').value
+                    },
+                    typeLabels: TYPE_LABELS,
+                    bucketLabels: BUCKET_LABELS
+                });
+                const url = URL.createObjectURL(new Blob(['\uFEFF', csv], { type: 'text/csv;charset=utf-8' }));
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `Highland-Fresh-AR-Aging-${asOf}.csv`;
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                setTimeout(() => URL.revokeObjectURL(url), 10000);
+                showToast('Aging report CSV downloaded.', 'success');
+            } catch (error) {
+                console.error('Could not export aging report', error);
+                showToast('Could not export the aging report. Please try again.', 'error');
+            }
         }
         
         function printReport() {
